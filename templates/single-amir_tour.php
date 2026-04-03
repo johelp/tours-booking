@@ -1,0 +1,301 @@
+<?php
+/**
+ * Template para la página individual de un tour (CPT amir_tour).
+ *
+ * Cómo usar:
+ *   1. Copiar este archivo a la carpeta raíz de tu tema activo.
+ *   2. WordPress lo usará automáticamente para las URLs /tour/{slug}/
+ *
+ *   Alternativamente, si usas un tema hijo o un builder como Elementor,
+ *   puedes crear un template con el Loop Builder y usar los Dynamic Tags
+ *   del plugin (amir-price-from, amir-duration, etc.)
+ *
+ * Este template es el fallback funcional que funciona con cualquier tema.
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+get_header();
+
+while ( have_posts() ) :
+    the_post();
+
+    $post_id    = get_the_ID();
+    $db_id = (int) get_post_meta( $post_id, '_amir_tour_db_id', true );
+
+    if ( ! $db_id ) {
+        global $wpdb;
+        $inserted = $wpdb->insert( "{$wpdb->prefix}amir_tours", [
+            'slug'           => get_post_field( 'post_name', $post_id ) ?: sanitize_title( get_the_title( $post_id ) ),
+            'status'         => 'active',
+            'price_model'    => get_post_meta( $post_id, '_amir_price_model', true ) ?: 'percapita',
+            'name_es'        => get_the_title( $post_id ),
+            'name_en'        => get_post_meta( $post_id, '_amir_name_en', true ) ?: get_the_title( $post_id ),
+            'description_es' => wp_strip_all_tags( get_post_field( 'post_content', $post_id ) ),
+            'duration_minutes' => (int) get_post_meta( $post_id, '_amir_duration_minutes', true ),
+            'min_age'        => (int) get_post_meta( $post_id, '_amir_min_age', true ),
+            'max_capacity'   => (int) get_post_meta( $post_id, '_amir_max_capacity', true ) ?: 10,
+            'min_passengers' => (int) get_post_meta( $post_id, '_amir_min_passengers', true ) ?: 1,
+            'languages'      => '["Español"]',
+            'gallery_images' => '[]',
+            'sort_order'     => (int) get_post_meta( $post_id, '_amir_sort_order', true ),
+        ] );
+        if ( $inserted ) {
+            $db_id = (int) $wpdb->insert_id;
+            update_post_meta( $post_id, '_amir_tour_db_id', $db_id );
+        }
+    }
+    $lang       = function_exists('pll_current_language') ? pll_current_language('slug') : 'es';
+    $is_en      = $lang === 'en';
+
+    // Campos del tour
+    $name_en        = get_post_meta( $post_id, '_amir_name_en',          true );
+    $duration       = (int) get_post_meta( $post_id, '_amir_duration_minutes', true );
+    $min_age        = (int) get_post_meta( $post_id, '_amir_min_age',    true );
+    $max_capacity   = (int) get_post_meta( $post_id, '_amir_max_capacity', true );
+    $languages_str  = get_post_meta( $post_id, '_amir_languages',        true );
+    $languages      = json_decode( $languages_str ?: '[]', true );
+    $meeting_es     = get_post_meta( $post_id, '_amir_meeting_point_es', true );
+    $meeting_en     = get_post_meta( $post_id, '_amir_meeting_point_en', true );
+    $meeting        = $is_en ? ($meeting_en ?: $meeting_es) : $meeting_es;
+    $lat            = get_post_meta( $post_id, '_amir_meeting_lat',      true );
+    $lng            = get_post_meta( $post_id, '_amir_meeting_lng',      true );
+    $what_to_expect = get_post_meta( $post_id, $is_en ? '_amir_what_to_expect_en' : '_amir_what_to_expect_es', true );
+    $includes       = json_decode( get_post_meta( $post_id, $is_en ? '_amir_includes_en' : '_amir_includes_es', true ) ?: '[]', true );
+    $excludes       = json_decode( get_post_meta( $post_id, $is_en ? '_amir_excludes_en' : '_amir_excludes_es', true ) ?: '[]', true );
+    $gallery_ids    = json_decode( get_post_meta( $post_id, '_amir_gallery_ids', true ) ?: '[]', true );
+    $price_model    = get_post_meta( $post_id, '_amir_price_model',      true );
+
+    // Precio mínimo
+    $price_from = 0;
+    if ( $db_id ) {
+        global $wpdb;
+        $price_from = (float) $wpdb->get_var( $wpdb->prepare(
+            "SELECT MIN(price_mxn) FROM {$wpdb->prefix}amir_prices WHERE tour_id=%d AND price_mxn>0", $db_id
+        ) );
+    }
+
+    $title        = $is_en ? ($name_en ?: get_the_title()) : get_the_title();
+    $description  = get_the_content();
+    $cover        = get_the_post_thumbnail_url( $post_id, 'full' );
+    $duration_fmt = $duration >= 60
+        ? round($duration/60,1) . ($is_en?' h':' h')
+        : $duration . ($is_en?' min':' min');
+?>
+
+<!-- Schema.org TouristAttraction -->
+<script type="application/ld+json">
+<?php echo json_encode([
+    '@context'    => 'https://schema.org',
+    '@type'       => 'TouristAttraction',
+    'name'        => $title,
+    'description' => wp_strip_all_tags($description),
+    'url'         => get_permalink(),
+    'image'       => $cover,
+    'touristType' => 'Adventure',
+    'geo'         => $lat ? ['@type'=>'GeoCoordinates','latitude'=>$lat,'longitude'=>$lng] : null,
+    'offers'      => $price_from > 0 ? [
+        '@type'         => 'Offer',
+        'price'         => $price_from,
+        'priceCurrency' => 'MXN',
+        'availability'  => 'https://schema.org/InStock',
+    ] : null,
+], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT); ?>
+</script>
+
+<div class="amir-single-tour">
+
+  <!-- Hero -->
+  <div class="amir-single-tour__hero" <?php if ($cover) echo 'style="background-image:url('.esc_url($cover).')"'; ?>>
+    <div class="amir-single-tour__hero-overlay">
+      <div class="amir-single-tour__hero-content">
+        <h1 class="amir-single-tour__title"><?php echo esc_html($title); ?></h1>
+        <div class="amir-single-tour__hero-chips">
+          <?php if ($duration) : ?>
+            <span class="amir-chip">⏱ <?php echo esc_html($duration_fmt); ?></span>
+          <?php endif; ?>
+          <?php if ($min_age) : ?>
+            <span class="amir-chip">👤 <?php echo $is_en?'Min. age':'Edad mín.'; ?> <?php echo $min_age; ?>+</span>
+          <?php endif; ?>
+          <?php if (!empty($languages)) : ?>
+            <span class="amir-chip">🌐 <?php echo esc_html(implode(', ',$languages)); ?></span>
+          <?php endif; ?>
+        </div>
+        <?php if ($price_from > 0) : ?>
+          <div class="amir-single-tour__price">
+            <span class="amir-single-tour__price-from"><?php echo $is_en?'From':'Desde'; ?></span>
+            <span class="amir-single-tour__price-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
+            <span class="amir-single-tour__price-cur">MXN</span>
+          </div>
+        <?php endif; ?>
+      </div>
+    </div>
+  </div>
+
+  <div class="amir-single-tour__body">
+
+    <!-- Galería -->
+    <?php if (!empty($gallery_ids)) : ?>
+    <div class="amir-gallery">
+      <?php foreach ($gallery_ids as $img_id) :
+        $url = wp_get_attachment_image_url($img_id,'large');
+        if (!$url) continue;
+      ?>
+        <a href="<?php echo esc_url(wp_get_attachment_url($img_id)); ?>" class="amir-gallery__item">
+          <img src="<?php echo esc_url($url); ?>" alt="<?php echo esc_attr($title); ?>" loading="lazy" />
+        </a>
+      <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <div class="amir-single-tour__cols">
+
+      <!-- Columna principal -->
+      <div class="amir-single-tour__main">
+
+        <!-- Descripción -->
+        <div class="amir-single-tour__section">
+          <h2><?php echo $is_en?'About this experience':'Acerca de esta experiencia'; ?></h2>
+          <div class="amir-single-tour__description">
+            <?php the_content(); ?>
+          </div>
+        </div>
+
+        <!-- Qué esperar -->
+        <?php if ($what_to_expect) : ?>
+        <div class="amir-single-tour__section">
+          <h2><?php echo $is_en?'What to expect':'Qué esperar'; ?></h2>
+          <div class="amir-single-tour__description">
+            <?php echo wp_kses_post(nl2br($what_to_expect)); ?>
+          </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Incluye / No incluye -->
+        <?php if (!empty($includes) || !empty($excludes)) : ?>
+        <div class="amir-single-tour__section">
+          <div class="amir-incl-grid">
+            <?php if (!empty($includes)) : ?>
+            <div>
+              <h3 class="amir-incl-title amir-incl-title--yes">✓ <?php echo $is_en?'Included':'Incluye'; ?></h3>
+              <ul class="amir-incl-list amir-incl-list--yes">
+                <?php foreach ($includes as $item) : ?>
+                  <li><?php echo esc_html($item); ?></li>
+                <?php endforeach; ?>
+              </ul>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($excludes)) : ?>
+            <div>
+              <h3 class="amir-incl-title amir-incl-title--no">✕ <?php echo $is_en?'Not included':'No incluye'; ?></h3>
+              <ul class="amir-incl-list amir-incl-list--no">
+                <?php foreach ($excludes as $item) : ?>
+                  <li><?php echo esc_html($item); ?></li>
+                <?php endforeach; ?>
+              </ul>
+            </div>
+            <?php endif; ?>
+          </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Punto de encuentro -->
+        <?php if ($meeting) : ?>
+        <div class="amir-single-tour__section">
+          <h2>📍 <?php echo $is_en?'Meeting point':'Punto de encuentro'; ?></h2>
+          <p class="amir-single-tour__meeting-text"><?php echo esc_html($meeting); ?></p>
+          <?php if ($lat && $lng) : ?>
+            <div class="amir-single-tour__map">
+              <iframe
+                src="https://maps.google.com/maps?q=<?php echo esc_attr($lat); ?>,<?php echo esc_attr($lng); ?>&z=15&output=embed"
+                width="100%" height="280" style="border:0;border-radius:10px;" allowfullscreen loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade">
+              </iframe>
+            </div>
+            <a href="https://maps.google.com/?q=<?php echo esc_attr($lat); ?>,<?php echo esc_attr($lng); ?>"
+               target="_blank" rel="noopener" class="amir-single-tour__maps-link">
+              <?php echo $is_en?'Open in Google Maps ↗':'Ver en Google Maps ↗'; ?>
+            </a>
+          <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+      </div><!-- main -->
+
+      <!-- Widget de reserva (sticky en desktop) -->
+      <div class="amir-single-tour__booking-col">
+        <div class="amir-single-tour__booking-sticky">
+          <?php if ( $db_id ) : ?>
+            <?php echo do_shortcode( '[amir_booking tour_id="' . $db_id . '" lang="' . $lang . '"]' ); ?>
+          <?php else : ?>
+            <div style="background:#f8fdfb;border:1px solid #e1f5ee;border-radius:12px;padding:24px;text-align:center;color:#5a7068;font-size:14px;">
+              <?php echo $is_en ? 'Contact us to book this tour.' : 'Contáctanos para reservar.'; ?>
+              <br><br>
+              <a href="https://wa.me/<?php echo esc_attr( preg_replace('/[^0-9]/', '', get_option('amir_wa_phone','5219831649541') ) ); ?>"
+                 style="display:inline-block;background:#25D366;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;">
+                💬 WhatsApp
+              </a>
+            </div>
+          <?php endif; ?>
+        </div>
+      </div>
+
+    </div><!-- cols -->
+  </div><!-- body -->
+</div><!-- single-tour -->
+
+<style>
+.amir-single-tour { --teal:#1D9E75; --teal-dark:#0F6E56; --teal-light:#e1f5ee; }
+.amir-single-tour__hero { background:#1a2e24 center/cover no-repeat; min-height:340px; display:flex; align-items:flex-end; }
+.amir-single-tour__hero-overlay { width:100%; background:linear-gradient(to top,rgba(0,0,0,.65) 0%,transparent 100%); padding:32px 24px 28px; }
+.amir-single-tour__hero-content { max-width:760px; margin:0 auto; }
+.amir-single-tour__title { font-size:clamp(22px,4vw,36px); font-weight:800; color:#fff; margin:0 0 12px; text-shadow:0 1px 4px rgba(0,0,0,.4); }
+.amir-single-tour__hero-chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.amir-chip { background:rgba(255,255,255,.2); color:#fff; font-size:12px; font-weight:700; padding:4px 12px; border-radius:20px; backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+.amir-single-tour__price { display:flex; align-items:baseline; gap:6px; }
+.amir-single-tour__price-from { color:rgba(255,255,255,.75); font-size:13px; }
+.amir-single-tour__price-value { font-size:32px; font-weight:800; color:#fff; }
+.amir-single-tour__price-cur { color:rgba(255,255,255,.75); font-size:14px; }
+
+.amir-single-tour__body { max-width:1140px; margin:0 auto; padding:32px 20px 48px; }
+
+/* Galería */
+.amir-gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; margin-bottom:32px; }
+.amir-gallery__item { display:block; aspect-ratio:4/3; overflow:hidden; border-radius:8px; }
+.amir-gallery__item img { width:100%; height:100%; object-fit:cover; transition:transform .3s; }
+.amir-gallery__item:hover img { transform:scale(1.05); }
+
+/* Layout de dos columnas */
+.amir-single-tour__cols { display:grid; grid-template-columns:1fr 420px; gap:32px; align-items:start; }
+.amir-single-tour__booking-sticky { position:sticky; top:80px; }
+
+.amir-single-tour__section { margin-bottom:32px; }
+.amir-single-tour__section h2 { font-size:20px; font-weight:700; color:#1a2e24; margin:0 0 14px; padding-bottom:8px; border-bottom:2px solid var(--teal-light); }
+.amir-single-tour__section h3 { font-size:15px; font-weight:700; margin:0 0 10px; }
+.amir-single-tour__description { font-size:15px; color:#3d3d3a; line-height:1.7; }
+.amir-single-tour__meeting-text { font-size:14px; color:#3d3d3a; margin:0 0 14px; }
+.amir-single-tour__map { margin-bottom:10px; }
+.amir-single-tour__maps-link { color:var(--teal); font-size:13px; font-weight:600; text-decoration:none; }
+.amir-single-tour__maps-link:hover { text-decoration:underline; }
+
+/* Incluye / No incluye */
+.amir-incl-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+.amir-incl-title { display:flex; align-items:center; gap:6px; font-size:14px; }
+.amir-incl-title--yes { color:var(--teal-dark); }
+.amir-incl-title--no  { color:#c53030; }
+.amir-incl-list { list-style:none; padding:0; margin:0; }
+.amir-incl-list li { font-size:13px; color:#3d3d3a; padding:5px 0; border-bottom:1px solid #f5f5f5; display:flex; gap:8px; }
+.amir-incl-list--yes li::before { content:"✓"; color:var(--teal); font-weight:700; flex-shrink:0; }
+.amir-incl-list--no  li::before { content:"✕"; color:#c53030; font-weight:700; flex-shrink:0; }
+
+@media (max-width:768px) {
+  .amir-single-tour__cols { grid-template-columns:1fr; }
+  .amir-single-tour__booking-sticky { position:static; }
+  .amir-incl-grid { grid-template-columns:1fr; }
+  .amir-single-tour__booking-col { order:-1; }
+}
+</style>
+
+<?php endwhile; ?>
+
+<?php get_footer(); ?>
