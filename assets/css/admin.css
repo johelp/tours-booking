@@ -1,0 +1,81 @@
+/* ── Amir Booking Admin CSS ─────────────────────────────────────────────── */
+/* Estilos globales del panel de administración                               */
+/* La mayoría del styling está inline en cada página PHP (más rápido de     */
+/* iterar, sin compilar). Este archivo cubre solo los elementos persistentes  */
+
+/* Badge en el menú lateral */
+#adminmenu .amir-badge {
+  display: inline-block;
+  background: #e24b4a;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 10px;
+  margin-left: 4px;
+  vertical-align: middle;
+  min-width: 14px;
+  text-align: center;
+}
+
+/* Ancho máximo consistente para todas las páginas del plugin */
+.ab-admin-wrap {
+  max-width: 1200px;
+}
+
+/* Foco visible accesible */
+.ab-admin-wrap input:focus,
+.ab-admin-wrap select:focus,
+.ab-admin-wrap textarea:focus,
+.ab-admin-wrap button:focus {
+  outline: 2px solid #1D9E75;
+  outline-offset: 2px;
+}
+
+/* Loader spinner reutilizable */
+.amir-admin-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #c3d9d0;
+  border-top-color: #1D9E75;
+  border-radius: 50%;
+  animation: amir-spin .7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes amir-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Notificaciones */
+.amir-notice-success {
+  border-left-color: #1D9E75 !important;
+}
+
+/* Mejoras a las meta boxes del CPT */
+#amir_tour_main,
+#amir_tour_content,
+#amir_tour_gallery,
+#amir_tour_pricing,
+#amir_tour_avail,
+#amir_tour_meeting,
+#amir_tour_integr {
+  border-top: 3px solid #1D9E75;
+}
+
+#amir_tour_main    .hndle { background: #f0faf6; }
+#amir_tour_pricing .hndle { background: #f0faf6; }
+#amir_tour_gallery .hndle { background: #f0faf6; }
+
+/* Responsive: colapsar grid de meta boxes en pantallas pequeñas */
+@media (max-width: 900px) {
+  .amir-meta-grid  { grid-template-columns: 1fr !important; }
+  .ab-stats-row    { grid-template-columns: 1fr 1fr !important; }
+}
+
+@media (max-width: 600px) {
+  .ab-stats-row    { grid-template-columns: 1fr !important; }
+}

@@ -1,0 +1,898 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { loadStripe }          from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { useT }               from './i18n.js';
+import * as API               from './api.js';
+import './styles/widget.css';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const STEPS = [ 'date', 'schedule', 'people', 'details', 'summary', 'payment', 'confirm' ];
+
+// Steps that require a schedule selector (skip if tour has only 1 schedule)
+const needsScheduleStep = ( schedules ) => schedules?.length > 1;
+
+// Si no hay horarios, usar schedule_id=0 como placeholder
+const resolveScheduleId = ( form, schedules, tourSchedules ) => {
+  if ( form.scheduleId !== null ) return form.scheduleId;
+  const all = schedules ?? tourSchedules ?? [];
+  if ( all.length === 0 ) return 0; // Sin horarios configurados
+  if ( all.length === 1 ) return all[0].id;
+  return null;
+};
+
+// ── Root: mounts the widget from a DOM element injected by the shortcode ──────
+export default function BookingWidget({ tourId, lang: initLang, stripeKey }) {
+  const [ lang,    setLang    ] = useState( initLang ?? 'es' );
+  const [ tour,    setTour    ] = useState( null );
+  const [ loading, setLoading ] = useState( true );
+  const [ error,   setError   ] = useState( '' );
+  const stripeRef = useRef( null );
+
+  const t = useT( lang );
+
+  useEffect( () => {
+    if ( stripeKey && ! stripeRef.current ) {
+      stripeRef.current = loadStripe( stripeKey );
+    }
+  }, [ stripeKey ] );
+
+  // Cargar tour solo una vez al montar — el idioma NO recarga el tour
+  // (el idioma de la UI se maneja por separado via setLang)
+  useEffect( () => {
+    setLoading( true );
+    API.getTour( tourId, initLang ?? 'es' )
+      .then( data => { setTour( data ); setLoading( false ); } )
+      .catch( e => { setError( e.message ); setLoading( false ); } );
+  }, [ tourId ] );  // ← solo tourId, NO lang
+
+  if ( loading ) return (
+    <div className="ab-widget">
+      <div className="ab-loading"><div className="ab-spinner" />{t('loading')}</div>
+    </div>
+  );
+
+  if ( error || ! tour ) return (
+    <div className="ab-widget">
+      <div className="ab-panel">
+        <div className="ab-error-banner">⚠ {error || t('err_generic')}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <BookingFlow
+      tour={tour}
+      lang={lang}
+      setLang={setLang}
+      stripePromise={stripeRef.current}
+      t={t}
+    />
+  );
+}
+
+// ── BookingFlow: manages step state and booking data ─────────────────────────
+function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
+  const [ step,         setStep        ] = useState( 0 ); // index into STEPS
+  const [ availability, setAvailability ] = useState( {} );
+  const [ schedules,    setSchedules    ] = useState( null );
+  const [ quote,        setQuote        ] = useState( null );
+  const [ clientSecret, setClientSecret ] = useState( '' );
+  const [ bookingRef,   setBookingRef   ] = useState( '' );
+  const [ bookingId,    setBookingId    ] = useState( null );
+
+  const [ form, setForm ] = useState({
+    date:            '',
+    scheduleId:      null,
+    scheduleLabel:   '',
+    scheduleTime:    '',
+    adults:          1,
+    children:        0,
+    babies:          0,
+    customerName:    '',
+    customerEmail:   '',
+    customerPhone:   '',
+    specialRequests: '',
+    policyAccepted:  false,
+  });
+
+  const patchForm = ( patch ) => setForm( f => ( { ...f, ...patch } ) );
+
+  // Filter applicable steps (skip schedule step if only 1 schedule)
+  const activeSteps = STEPS.filter( s => {
+    if ( s === 'schedule' ) return needsScheduleStep( schedules ?? tour.schedules );
+    return true;
+  } );
+  const stepName    = activeSteps[ step ];
+  const totalSteps  = activeSteps.length;
+  const stepIndex   = ( name ) => activeSteps.indexOf( name );
+
+  const goNext = () => setStep( s => Math.min( s + 1, totalSteps - 1 ) );
+  const goBack = () => setStep( s => Math.max( s - 1, 0 ) );
+
+  // When schedule step is skipped, auto-select the only schedule
+  useEffect( () => {
+    if ( schedules?.length === 1 && ! form.scheduleId ) {
+      const s = schedules[0];
+      patchForm({
+        scheduleId:    s.id,
+        scheduleLabel: s.label,
+        scheduleTime:  s.time_start,
+      });
+    }
+  }, [ schedules ] );
+
+  // Fetch quote whenever people/schedule/date changes
+  useEffect( () => {
+    if ( ! form.date || ( form.adults + form.children ) === 0 ) return;
+    const sid = resolveScheduleId( form, schedules, tour.schedules ) ?? 0;
+    API.getQuote({
+      tourId:     tour.id,
+      scheduleId: sid,
+      date:       form.date,
+      adults:     form.adults,
+      children:   form.children,
+      babies:     form.babies,
+    })
+    .then( setQuote )
+    .catch( () => {} );
+  }, [ form.date, form.scheduleId, form.adults, form.children, form.babies ] );
+
+  const stepProps = { tour, form, patchForm, lang, setLang, t, goNext, goBack,
+    availability, setAvailability, schedules, setSchedules,
+    quote, clientSecret, setClientSecret, bookingRef, setBookingRef,
+    bookingId, setBookingId, step, activeSteps };
+
+  const stepLabels = activeSteps.map( s => t( `step_${s}` ) );
+
+  return (
+    <div className="ab-widget">
+      <ProgressBar steps={stepLabels} current={step} />
+
+      { stepName === 'date'     && <StepDate     {...stepProps} /> }
+      { stepName === 'schedule' && <StepSchedule {...stepProps} /> }
+      { stepName === 'people'   && <StepPeople   {...stepProps} /> }
+      { stepName === 'details'  && <StepDetails  {...stepProps} /> }
+      { stepName === 'summary'  && <StepSummary  {...stepProps} /> }
+      { stepName === 'payment'  && (
+          <Elements stripe={stripePromise} options={{ clientSecret, locale: lang }}>
+            <StepPayment {...stepProps} />
+          </Elements>
+      )}
+      { stepName === 'confirm'  && <StepConfirm  {...stepProps} /> }
+    </div>
+  );
+}
+
+// ── Progress Bar ──────────────────────────────────────────────────────────────
+function ProgressBar({ steps, current }) {
+  return (
+    <div className="ab-progress">
+      {steps.map( ( label, i ) => (
+        <div key={i} className={`ab-step-dot ${i === current ? 'active' : i < current ? 'done' : ''}`}>
+          <div className="ab-step-dot-circle">{i < current ? '' : i + 1}</div>
+          <div className="ab-step-dot-label">{label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Step 1: Calendar ──────────────────────────────────────────────────────────
+function StepDate({ tour, form, patchForm, t, lang, goNext, availability, setAvailability, setSchedules }) {
+  const today       = new Date();
+  const [ viewYear, setViewYear ] = useState( today.getFullYear() );
+  const [ viewMonth, setViewMonth ] = useState( today.getMonth() + 1 ); // 1-based
+  const [ loadingMonth, setLoadingMonth ] = useState( false );
+
+  const fetchMonth = useCallback( ( y, m ) => {
+    setLoadingMonth( true );
+    API.getMonthAvailability( tour.id, y, m )
+      .then( data => { setAvailability( a => ( { ...a, ...data } ) ); setLoadingMonth( false ); } )
+      .catch( () => setLoadingMonth( false ) );
+  }, [ tour.id, setAvailability ] );
+
+  useEffect( () => {
+    fetchMonth( viewYear, viewMonth );
+  }, [ viewYear, viewMonth ] );
+
+  const navigate = ( dir ) => {
+    let m = viewMonth + dir, y = viewYear;
+    if ( m > 12 ) { m = 1; y++; }
+    if ( m < 1  ) { m = 12; y--; }
+    setViewMonth( m );
+    setViewYear( y );
+  };
+
+  const selectDate = ( dateStr ) => {
+    const info = availability[ dateStr ];
+    if ( ! info?.available ) return;
+    patchForm({ date: dateStr, scheduleId: null, scheduleLabel: '', scheduleTime: '' });
+
+    // Fetch schedules for this date, then advance
+    API.getDaySchedules( tour.id, dateStr, lang )
+      .then( loaded => {
+        setSchedules( loaded );
+        if ( loaded && loaded.length === 1 ) {
+          // Auto-select single schedule and skip that step
+          patchForm({
+            scheduleId:    loaded[0].id,
+            scheduleLabel: loaded[0].label,
+            scheduleTime:  loaded[0].time_start,
+          });
+        }
+        goNext();
+      } )
+      .catch( () => goNext() );
+  };
+
+  const daysInMonth  = new Date( viewYear, viewMonth, 0 ).getDate();
+  const firstDow     = new Date( viewYear, viewMonth - 1, 1 ).getDay(); // 0=Sun
+  const todayStr     = today.toISOString().slice( 0, 10 );
+  const t2 = useT( 'es' ); // day-of-week labels use the i18n from the flow's lang
+  const months = [ 'Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre' ];
+
+  return (
+    <div className="ab-panel">
+      <p className="ab-panel-title">{t('step_date')}</p>
+
+      <div className="ab-cal-header">
+        <button
+          className="ab-cal-nav"
+          onClick={() => navigate(-1)}
+          disabled={ viewYear === today.getFullYear() && viewMonth <= today.getMonth() + 1 }
+          aria-label={t('cal_prev')}
+        >‹</button>
+        <span className="ab-cal-month">
+          {months[ viewMonth - 1 ]} {viewYear}
+          {loadingMonth && <span style={{marginLeft:8, fontSize:11, opacity:.5}}>{t('loading')}</span>}
+        </span>
+        <button className="ab-cal-nav" onClick={() => navigate(1)} aria-label={t('cal_next')}>›</button>
+      </div>
+
+      <div className="ab-cal-grid">
+        {['Do','Lu','Ma','Mi','Ju','Vi','Sá'].map( d => (
+          <div key={d} className="ab-cal-dow">{d}</div>
+        ))}
+
+        {/* Empty cells for first-row offset */}
+        {Array.from({ length: firstDow }, ( _, i ) => (
+          <div key={`e${i}`} className="ab-cal-day empty" />
+        ))}
+
+        {Array.from({ length: daysInMonth }, ( _, i ) => {
+          const day     = i + 1;
+          const dateStr = `${viewYear}-${String(viewMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+          const info    = availability[ dateStr ];
+          const isPast  = dateStr < todayStr;
+          const status  = isPast ? 'past'
+            : ! info         ? 'blocked'
+            : ! info.available ? ( info.reason === 'full' ? 'full' : 'blocked' )
+            : 'available';
+          const isLow   = info?.available && info.slots > 0 && info.slots <= 3;
+          const isSel   = form.date === dateStr;
+
+          return (
+            <button
+              key={dateStr}
+              className={`ab-cal-day ${status}${isSel ? ' selected' : ''}${isLow ? ' low-slots' : ''}`}
+              disabled={ status !== 'available' }
+              onClick={() => selectDate( dateStr )}
+              aria-label={`${day} ${months[viewMonth-1]}: ${status}`}
+              title={ info?.slots > 0 ? t('slots_left', { n: info.slots }) : '' }
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="ab-cal-legend">
+        <span className="ab-cal-legend-item">
+          <span className="ab-cal-legend-dot" style={{background:'#e1f5ee', border:'1px solid #1D9E75'}} />
+          {t('cal_available')}
+        </span>
+        <span className="ab-cal-legend-item">
+          <span className="ab-cal-legend-dot" style={{background:'#fef9ec', border:'1px solid #BA7517'}} />
+          Últimos lugares
+        </span>
+        <span className="ab-cal-legend-item">
+          <span className="ab-cal-legend-dot" style={{background:'#f3f4f6'}} />
+          {t('cal_blocked')}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 2: Schedule Selector ─────────────────────────────────────────────────
+function StepSchedule({ form, patchForm, t, goNext, goBack, schedules }) {
+  const fmtTime = ( t24 ) => {
+    const [ h, m ] = t24.split(':');
+    const hNum = parseInt( h );
+    const ampm = hNum >= 12 ? 'PM' : 'AM';
+    const h12  = hNum > 12 ? hNum - 12 : hNum === 0 ? 12 : hNum;
+    return `${h12}:${m} ${ampm}`;
+  };
+
+  return (
+    <div className="ab-panel">
+      <p className="ab-panel-title">{t('step_schedule')}</p>
+
+      <div className="ab-schedules">
+        { !schedules || schedules.length === 0 ? (
+          <p style={{textAlign:'center',color:'#5a7068',fontSize:'14px',padding:'20px 0'}}>
+            { t('no_schedules') || 'No hay salidas disponibles para esta fecha.' }
+          </p>
+        ) : schedules.map( s => {
+          const available = s.available !== false;
+          const isSel     = form.scheduleId === s.id;
+          const slotsClass = s.slots_remaining <= 0 ? 'full' : s.slots_remaining <= 3 ? 'low' : '';
+          return (
+            <button
+              key={s.id}
+              className={`ab-schedule-btn${isSel ? ' selected' : ''}`}
+              disabled={!available}
+              onClick={() => {
+                patchForm({ scheduleId: s.id, scheduleLabel: s.label, scheduleTime: s.time_start });
+                goNext();
+              }}
+            >
+              <div>
+                <div className="ab-schedule-time">{fmtTime(s.time_start)} – {fmtTime(s.time_end)}</div>
+                {s.label && <div className="ab-schedule-label">{s.label}</div>}
+              </div>
+              {available && s.slots_remaining > 0 && (
+                <span className={`ab-schedule-slots ${slotsClass}`}>
+                  {s.slots_remaining <= 5 ? t('slots_left', { n: s.slots_remaining }) : ''}
+                </span>
+              )}
+              {!available && <span className="ab-schedule-slots full">{t('cal_full')}</span>}
+            </button>
+          );
+        }) }
+      </div>
+
+      <div className="ab-btn-row">
+        <button className="ab-btn ab-btn-ghost" onClick={goBack}>← {t('back')}</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 3: People Counter ────────────────────────────────────────────────────
+function StepPeople({ tour, form, patchForm, t, goNext, goBack, quote }) {
+  const isGroup     = tour.price_model === 'group';
+  const prices      = tour.prices ?? [];
+  const maxCapacity = tour.max_capacity || 99;
+
+  const getPrice = ( type ) => {
+    const p = prices.find( p => p.person_type === type );
+    return p ? p.price_mxn : null;
+  };
+
+  const getGroupPrice = ( total ) => {
+    const p = prices.find( p =>
+      p.person_type === 'group' && total >= p.group_min && total <= p.group_max
+    );
+    return p ? p.price_mxn : null;
+  };
+
+  const total = form.adults + form.children + form.babies;
+
+  const fmtMXN = ( n ) => n === 0
+    ? t('free')
+    : `$${n.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+  const canContinue = isGroup ? total >= 1 : form.adults >= 1;
+
+  if ( isGroup ) {
+    // Group model: single counter 1–4
+    const maxGroup = Math.max( ...prices.filter( p => p.person_type === 'group' ).map( p => p.group_max ), 4 );
+    const gPrice   = getGroupPrice( total );
+
+    return (
+      <div className="ab-panel">
+        <p className="ab-panel-title">{t('group_people')}</p>
+
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'20px 0'}}>
+          <div>
+            <div className="ab-people-label">{t('people_label')}</div>
+            <div className="ab-people-sublabel">{t('max_people', { n: maxGroup })}</div>
+          </div>
+          <Counter
+            value={total}
+            min={1}
+            max={maxGroup}
+            onChange={ v => patchForm({ adults: v, children: 0, babies: 0 }) }
+          />
+        </div>
+
+        {gPrice !== null && (
+          <div className="ab-price-total">
+            <div className="ab-price-total-label">{t('total')}</div>
+            <div className="ab-price-total-amount">
+              <div className="ab-price-mxn">{fmtMXN(gPrice)}</div>
+              {quote?.usd_reference > 0 && (
+                <div className="ab-price-usd">{t('usd_ref', { amount: quote.usd_reference.toFixed(0) })}</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <NavRow t={t} goBack={goBack} onNext={goNext} disabled={!canContinue} />
+      </div>
+    );
+  }
+
+  // Per-capita model
+  const rows = [
+    { key:'adults',   label: t('adults'),   sub: t('adults_age'),   price: getPrice('adult'),   min:1, max:maxCapacity },
+    { key:'children', label: t('children'), sub: t('children_age'), price: getPrice('child'),   min:0, max:maxCapacity },
+    { key:'babies',   label: t('babies'),   sub: t('babies_age'),   price: 0,                   min:0, max:5, free:true },
+  ].filter( r => r.price !== null || r.free );
+
+  return (
+    <div className="ab-panel">
+      <p className="ab-panel-title">{t('step_people')}</p>
+
+      <div className="ab-people-list">
+        {rows.map( r => (
+          <div key={r.key} className="ab-people-row">
+            <div className="ab-people-info">
+              <div className="ab-people-label">{r.label}</div>
+              <div className="ab-people-sublabel">{r.sub}</div>
+            </div>
+            <div className="ab-people-price">
+              {r.free ? <span style={{color:'var(--ab-teal)'}}>Gratis</span> : `$${r.price?.toLocaleString('es-MX')} ${t('per_person')}`}
+            </div>
+            <Counter
+              value={form[r.key]}
+              min={r.min}
+              max={Math.min(r.max, maxCapacity - total + form[r.key])}
+              onChange={ v => patchForm({ [r.key]: v }) }
+            />
+          </div>
+        ))}
+      </div>
+
+      {quote?.total_mxn > 0 && (
+        <div className="ab-price-total">
+          <div className="ab-price-total-label">{t('total')}</div>
+          <div className="ab-price-total-amount">
+            <div className="ab-price-mxn">{fmtMXN(quote.total_mxn)}</div>
+            {quote.usd_reference > 0 && (
+              <div className="ab-price-usd">{t('usd_ref', { amount: quote.usd_reference.toFixed(0) })}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <NavRow t={t} goBack={goBack} onNext={goNext} disabled={!canContinue} />
+    </div>
+  );
+}
+
+// ── Step 4: Customer Details ──────────────────────────────────────────────────
+function StepDetails({ form, patchForm, lang, setLang, t, goNext, goBack }) {
+  const [ errors, setErrors ] = useState({});
+
+  const validate = () => {
+    const e = {};
+    if ( !form.customerName.trim() )  e.customerName = t('err_required');
+    if ( !form.customerEmail.trim() ) e.customerEmail = t('err_required');
+    else if ( !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail) ) e.customerEmail = t('err_email');
+    if ( !form.customerPhone.trim() ) e.customerPhone = t('err_required');
+    setErrors( e );
+    return Object.keys(e).length === 0;
+  };
+
+  const handleNext = () => { if ( validate() ) goNext(); };
+
+  const Field = ({ name, label, ph, type='text', autoComplete }) => (
+    <div className="ab-form-group">
+      <label className="ab-label" htmlFor={`ab-${name}`}>{label}</label>
+      <input
+        id={`ab-${name}`}
+        type={type}
+        className={`ab-input${errors[name] ? ' error' : ''}`}
+        placeholder={ph}
+        value={form[name]}
+        autoComplete={autoComplete}
+        inputMode={type === 'tel' ? 'tel' : type === 'email' ? 'email' : 'text'}
+        onChange={ e => { patchForm({ [name]: e.target.value }); if (errors[name]) setErrors( er => ({...er, [name]:''}) ); } }
+      />
+      {errors[name] && <p className="ab-field-error">{errors[name]}</p>}
+    </div>
+  );
+
+  return (
+    <div className="ab-panel">
+      <p className="ab-panel-title">{t('step_details')}</p>
+
+      <Field name="customerName"  label={t('full_name')} ph={t('full_name_ph')} autoComplete="name" />
+      <Field name="customerEmail" label={t('email')}     ph={t('email_ph')}     type="email" autoComplete="email" />
+      <Field name="customerPhone" label={t('phone')}     ph={t('phone_ph')}     type="tel"   autoComplete="tel" />
+
+      <div className="ab-form-group">
+        <label className="ab-label">{t('lang_pref')}</label>
+        <div className="ab-lang-toggle">
+          <button
+            type="button"
+            className={`ab-lang-btn${(form.lang ?? lang) === 'es' ? ' active' : ''}`}
+            onClick={() => { patchForm({ lang: 'es' }); setLang('es'); }}
+          >{t('lang_es')}</button>
+          <button
+            type="button"
+            className={`ab-lang-btn${(form.lang ?? lang) === 'en' ? ' active' : ''}`}
+            onClick={() => { patchForm({ lang: 'en' }); setLang('en'); }}
+          >{t('lang_en')}</button>
+        </div>
+        <p style={{fontSize:'11px',color:'#5a7068',marginTop:'4px'}}>
+          {t('lang_pref_hint') || (lang === 'es' ? 'Idioma para tu email de confirmación' : 'Language for your confirmation email')}
+        </p>
+      </div>
+
+      <div className="ab-form-group">
+        <label className="ab-label" htmlFor="ab-special">{t('special_req')}</label>
+        <textarea
+          id="ab-special"
+          className="ab-textarea"
+          placeholder={t('special_req_ph')}
+          value={form.specialRequests}
+          onChange={ e => patchForm({ specialRequests: e.target.value }) }
+        />
+      </div>
+
+      <NavRow t={t} goBack={goBack} onNext={handleNext} />
+    </div>
+  );
+}
+
+// ── Step 5: Summary + Policy ──────────────────────────────────────────────────
+function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
+                        setClientSecret, setBookingId, schedules }) {
+  const [ creating, setCreating ] = useState( false );
+  const [ error,    setError    ] = useState( '' );
+
+  const fmtDate = ( dateStr ) => {
+    const [ y, m, d ] = dateStr.split('-');
+    const months = {
+      es: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'],
+      en: ['January','February','March','April','May','June','July','August','September','October','November','December'],
+    };
+    return `${parseInt(d)} ${months[lang]?.[parseInt(m)-1]} ${y}`;
+  };
+
+  const fmtTime = ( t24 ) => {
+    if ( !t24 ) return '';
+    const [ h, m ] = t24.split(':');
+    const hNum = parseInt(h);
+    return `${hNum > 12 ? hNum-12 : hNum || 12}:${m} ${hNum >= 12 ? 'PM' : 'AM'}`;
+  };
+
+  const paxSummary = tour.price_model === 'group'
+    ? `${form.adults} ${t('people_label')}`
+    : [
+        form.adults   > 0 ? `${form.adults} ${t('adults')}`   : '',
+        form.children > 0 ? `${form.children} ${t('children')}` : '',
+        form.babies   > 0 ? `${form.babies} ${t('babies')}`   : '',
+      ].filter(Boolean).join(' · ');
+
+  const handleConfirm = async () => {
+    if ( !form.policyAccepted ) return;
+    setCreating( true );
+    setError( '' );
+    try {
+      const partnerToken = document.cookie
+        .split(';').map(c=>c.trim())
+        .find(c=>c.startsWith('amir_partner_ref='))
+        ?.split('=')[1] ?? '';
+
+      const result = await API.createBooking({
+        tour_id:          tour.id,
+        schedule_id:      resolveScheduleId( form, schedules, tour.schedules ) ?? 0,
+        date:             form.date,
+        adults:           form.adults,
+        children:         form.children,
+        babies:           form.babies,
+        customer_name:    form.customerName,
+        customer_email:   form.customerEmail,
+        customer_phone:   form.customerPhone,
+        lang:             form.lang ?? lang,
+        partner_token:    partnerToken,
+        special_requests: form.specialRequests,
+      });
+
+      setClientSecret( result.client_secret );
+      setBookingId( result.booking_id );
+      goNext();
+    } catch ( e ) {
+      setError( e.message || t('err_generic') );
+    } finally {
+      setCreating( false );
+    }
+  };
+
+  return (
+    <div className="ab-panel">
+      <p className="ab-panel-title">{t('step_summary')}</p>
+
+      <div className="ab-summary-card">
+        {tour.gallery_images?.[0] && (
+          <img src={tour.gallery_images[0]} alt={tour.name} className="ab-summary-cover" loading="lazy" />
+        )}
+        <div className="ab-summary-body">
+          <p className="ab-summary-tour-name">{tour.name}</p>
+
+          <div className="ab-summary-row">
+            <span className="ab-summary-row-label">{t('tour_date')}</span>
+            <span className="ab-summary-row-value">{fmtDate(form.date)}</span>
+          </div>
+          <div className="ab-summary-row">
+            <span className="ab-summary-row-label">{t('departure_time')}</span>
+            <span className="ab-summary-row-value">{fmtTime(form.scheduleTime)}</span>
+          </div>
+          <div className="ab-summary-row">
+            <span className="ab-summary-row-label">{t('people_label')}</span>
+            <span className="ab-summary-row-value">{paxSummary}</span>
+          </div>
+          {tour.meeting_point && (
+            <div className="ab-summary-row">
+              <span className="ab-summary-row-label">{t('meeting_point')}</span>
+              <div>
+                <span className="ab-summary-row-value" style={{display:'block'}}>{tour.meeting_point}</span>
+                {tour.meeting_lat && (
+                  <a
+                    href={`https://maps.google.com/?q=${tour.meeting_lat},${tour.meeting_lng}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="ab-meeting-link"
+                  >↗ {t('open_maps')}</a>
+                )}
+              </div>
+            </div>
+          )}
+          {quote?.breakdown?.map( ( b, i ) => (
+            <div key={i} className="ab-summary-row">
+              <span className="ab-summary-row-label">
+                {b.type === 'group' ? `Grupo (${b.qty} pax)` :
+                 b.type === 'adult' ? `${b.qty} × ${t('adults')}` :
+                 b.type === 'child' ? `${b.qty} × ${t('children')}` :
+                 `${b.qty} × ${t('babies')}`}
+              </span>
+              <span className="ab-summary-row-value">
+                ${b.total_mxn.toLocaleString('es-MX')} MXN
+              </span>
+            </div>
+          ))}
+          { (() => {
+            // Calcular total localmente si el quote no llegó aún
+            const totalMxn = quote?.total_mxn ?? ( () => {
+              const prices = tour.prices ?? [];
+              const adultP = prices.find(p => p.person_type === 'adult')?.price_mxn ?? 0;
+              const childP = prices.find(p => p.person_type === 'child')?.price_mxn ?? 0;
+              const babyP  = prices.find(p => p.person_type === 'baby')?.price_mxn  ?? 0;
+              return form.adults * adultP + form.children * childP + form.babies * babyP;
+            })();
+            const usdRef = quote?.usd_reference ?? null;
+            return (
+              <div className="ab-summary-row" style={{fontWeight:700,borderTop:'2px solid var(--ab-teal)',marginTop:4,paddingTop:10}}>
+                <span className="ab-summary-row-label" style={{color:'var(--ab-text)',fontWeight:700}}>{t('total')}</span>
+                <span className="ab-summary-row-value" style={{fontSize:17}}>
+                  ${totalMxn.toLocaleString('es-MX')} MXN
+                  {usdRef > 0 && (
+                    <span style={{display:'block', fontSize:11, fontWeight:400, color:'var(--ab-muted)'}}>
+                      {t('usd_ref', { amount: usdRef.toFixed(0) })}
+                    </span>
+                  )}
+                </span>
+              </div>
+            );
+          })() }
+        </div>
+      </div>
+
+      <div className="ab-policy-box">
+        <div className="ab-policy-title">📋 {t('policy_title')}</div>
+        <div className="ab-policy-line">{t('policy_line1')}</div>
+        <div className="ab-policy-line">{t('policy_line2')}</div>
+        <div className="ab-policy-line">{t('policy_line3')}</div>
+      </div>
+
+      <label className="ab-policy-check">
+        <input
+          type="checkbox"
+          checked={form.policyAccepted}
+          onChange={ e => patchForm({ policyAccepted: e.target.checked }) }
+        />
+        <span className="ab-policy-check-label">{t('policy_accept')}</span>
+      </label>
+
+      {error && <div className="ab-error-banner">⚠ {error}</div>}
+
+      <div className="ab-btn-row">
+        <button className="ab-btn ab-btn-ghost" onClick={goBack} disabled={creating}>← {t('back')}</button>
+        <button
+          className="ab-btn ab-btn-primary"
+          onClick={handleConfirm}
+          disabled={!form.policyAccepted || creating}
+        >
+          {creating ? <><div className="ab-spinner" style={{width:16,height:16,borderWidth:2}} />{t('processing')}</> : t('book_now')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 6: Stripe Payment ────────────────────────────────────────────────────
+function StepPayment({ t, goBack, goNext, setBookingRef, bookingId }) {
+  const stripe   = useStripe();
+  const elements = useElements();
+  const [ processing, setProcessing ] = useState( false );
+  const [ error,      setError      ] = useState( '' );
+  const siteUrl = window.amirBooking?.siteUrl ?? '';
+
+  const handlePay = async () => {
+    if ( !stripe || !elements ) return;
+    setProcessing( true );
+    setError( '' );
+
+    const { error: stripeError, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      redirect: 'if_required',
+    });
+
+    if ( stripeError ) {
+      setError( stripeError.message || t('err_payment') );
+      setProcessing( false );
+      return;
+    }
+
+    if ( paymentIntent?.status === 'succeeded' ) {
+      // Confirmar la reserva directo en nuestro backend (no depender del webhook de Stripe)
+      try {
+        const base = window.amirBooking?.apiUrl ?? '/wp-json/amir/v1/';
+        const resp = await fetch( `${base}bookings/${bookingId}/confirm-payment`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-WP-Nonce': window.amirBooking?.nonce ?? '',
+          },
+          body: JSON.stringify({ payment_intent_id: paymentIntent.id }),
+        });
+        if ( resp.ok ) {
+          const data = await resp.json();
+          if ( data.booking_ref ) {
+            setBookingRef( data.booking_ref );
+          }
+        }
+      } catch {}
+      // Avanzar al paso de confirmación pase lo que pase
+      goNext();
+    }
+  };
+
+  return (
+    <div className="ab-panel">
+      <p className="ab-panel-title">{t('step_payment')}</p>
+
+      <div className="ab-stripe-badge">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L4 6v6c0 5.25 3.4 10.15 8 11.35C16.6 22.15 20 17.25 20 12V6l-8-4z" fill="#1D9E75" opacity=".25"/>
+          <path d="M9 12l2 2 4-4" stroke="#1D9E75" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        {t('pay_secure')} · {t('pay_methods')}
+      </div>
+
+      <div className="ab-stripe-wrap">
+        <PaymentElement options={{ layout: 'tabs' }} />
+      </div>
+
+      {error && <div className="ab-error-banner">⚠ {error}</div>}
+
+      <div className="ab-btn-row">
+        <button className="ab-btn ab-btn-ghost" onClick={goBack} disabled={processing}>← {t('back')}</button>
+        <button
+          className="ab-btn ab-btn-primary"
+          onClick={handlePay}
+          disabled={processing || !stripe}
+        >
+          {processing
+            ? <><div className="ab-spinner" style={{width:16,height:16,borderWidth:2}} />{t('processing')}</>
+            : '🔒 ' + t('book_now')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 7: Confirmation ──────────────────────────────────────────────────────
+function StepConfirm({ tour, form, bookingRef, t, lang }) {
+  const waPhone  = window.amirBooking?.waPhone ?? '5219831649541';
+  const fmtDate  = ( dateStr ) => {
+    const [ y, m, d ] = dateStr.split('-');
+    const months = lang === 'en'
+      ? ['January','February','March','April','May','June','July','August','September','October','November','December']
+      : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
+  };
+
+  const calUrl = () => {
+    const start = form.date.replace(/-/g,'') + 'T' + (form.scheduleTime??'').replace(':','') + '00';
+    const title = encodeURIComponent(`${tour.name} — Amir Adventours`);
+    const loc   = encodeURIComponent( tour.meeting_point ?? 'Bacalar, México' );
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${start}&location=${loc}`;
+  };
+
+  const waMsg = encodeURIComponent(
+    lang === 'en'
+      ? `Hi! My booking reference is ${bookingRef}. I need help.`
+      : `¡Hola! Mi número de reserva es ${bookingRef}. Necesito ayuda.`
+  );
+
+  return (
+    <div className="ab-panel" style={{textAlign:'center'}}>
+      <div className="ab-confirm-icon">🎉</div>
+      <h2 className="ab-confirm-title">{t('confirmed_title')}</h2>
+      <p className="ab-confirm-sub">{t('confirmed_sub')}</p>
+
+      <div className="ab-ref-box">
+        <div className="ab-ref-label">{t('booking_ref')}</div>
+        <div className="ab-ref-value">{bookingRef || '—'}</div>
+      </div>
+
+      <div className="ab-summary-card" style={{textAlign:'left', marginBottom:20}}>
+        <div className="ab-summary-body">
+          <div className="ab-summary-row">
+            <span className="ab-summary-row-label">{t('tour_date')}</span>
+            <span className="ab-summary-row-value">{fmtDate(form.date)}</span>
+          </div>
+          <div className="ab-summary-row">
+            <span className="ab-summary-row-label">{t('meeting_point')}</span>
+            <span className="ab-summary-row-value">{tour.meeting_point ?? ''}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="ab-confirm-actions">
+        <a
+          href={`${window.amirBooking?.siteUrl ?? ''}/wp-json/amir/v1/bookings/${bookingRef}/pdf?email=${encodeURIComponent(form.customerEmail)}`}
+          className="ab-btn ab-btn-outline ab-btn-sm"
+          download
+        >
+          📄 {t('download_pdf')}
+        </a>
+        <a href={calUrl()} target="_blank" rel="noopener noreferrer" className="ab-btn ab-btn-outline ab-btn-sm">
+          📅 {t('add_calendar')}
+        </a>
+        <a
+          href={`https://wa.me/${waPhone}?text=${waMsg}`}
+          target="_blank" rel="noopener noreferrer"
+          className="ab-btn ab-btn-ghost ab-btn-sm"
+          style={{gridColumn:'1/-1'}}
+        >
+          💬 {t('need_help')}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ── Shared Components ─────────────────────────────────────────────────────────
+function Counter({ value, min, max, onChange }) {
+  return (
+    <div className="ab-counter">
+      <button className="ab-counter-btn" onClick={() => onChange(value-1)} disabled={value<=min} aria-label="Restar">−</button>
+      <span className="ab-counter-val">{value}</span>
+      <button className="ab-counter-btn" onClick={() => onChange(value+1)} disabled={value>=max} aria-label="Sumar">+</button>
+    </div>
+  );
+}
+
+function NavRow({ t, goBack, onNext, disabled = false }) {
+  return (
+    <div className="ab-btn-row">
+      <button className="ab-btn ab-btn-ghost" onClick={goBack}>← {t('back')}</button>
+      <button className="ab-btn ab-btn-primary" onClick={onNext} disabled={disabled}>{t('continue')} →</button>
+    </div>
+  );
+}
