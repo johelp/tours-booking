@@ -224,13 +224,22 @@ class VoucherGenerator {
      * Diseñado para imprimirse bien en A4.
      */
     private function get_full_html_document( object $b ): string {
-        $qr_path   = $this->generate_qr((int)$b->id, $b->booking_ref);
-        $qr_src    = $qr_path ? $this->path_to_data_uri($qr_path) : '';
-        $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
-        $logo_src  = file_exists($logo_path) ? $this->path_to_data_uri($logo_path) : '';
+        $qr_path      = $this->generate_qr((int)$b->id, $b->booking_ref);
+        $qr_src       = $qr_path ? $this->path_to_data_uri($qr_path) : '';
+        $logo_url_opt = get_option( 'amir_brand_logo_url', '' );
+        if ( $logo_url_opt ) {
+            $logo_src = $logo_url_opt; // use URL directly for HTML voucher
+        } else {
+            $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
+            $logo_src  = file_exists($logo_path) ? $this->path_to_data_uri($logo_path) : '';
+        }
+        $brand_color  = get_option( 'amir_brand_color', '#1D9E75' );
+        $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
 
-        $lang       = $b->lang ?? 'es';
+        $lang       = isset($b->lang) ? $b->lang : 'es';
         $is_en      = $lang === 'en';
+        $tagline_opt = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
+        $tagline     = $tagline_opt ?: ( $is_en ? 'Experiences in Bacalar · Quintana Roo, Mexico' : 'Experiencias en Bacalar · Quintana Roo, México' );
         $months     = $is_en
             ? ['January','February','March','April','May','June','July','August','September','October','November','December']
             : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -268,20 +277,20 @@ class VoucherGenerator {
   body { font-family:Arial,Helvetica,sans-serif; color:#1a2e24; font-size:13px; line-height:1.5; background:#fff; }
   .page { max-width:595px; margin:0 auto; padding:30px 32px; }
 
-  .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:16px; border-bottom:3px solid #1D9E75; margin-bottom:20px; }
-  .header-left h1 { font-size:22px; font-weight:800; color:#1D9E75; }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:16px; border-bottom:3px solid <?php echo esc_attr($brand_color); ?>; margin-bottom:20px; }
+  .header-left h1 { font-size:22px; font-weight:800; color:<?php echo esc_attr($brand_color); ?>; }
   .header-left p  { font-size:11px; color:#5a7068; }
   .qr-block { text-align:right; }
   .qr-block img { width:80px; height:80px; border:1px solid #e1f5ee; padding:4px; border-radius:4px; }
   .qr-block .qr-label { font-size:9px; color:#5a7068; margin-top:3px; }
 
-  .ref-box { background:#1D9E75; color:#fff; border-radius:8px; padding:14px 18px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; }
+  .ref-box { background:<?php echo esc_attr($brand_color); ?>; color:#fff; border-radius:8px; padding:14px 18px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; }
   .ref-box .ref-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; opacity:.85; }
   .ref-box .ref-value { font-size:24px; font-weight:800; letter-spacing:2px; }
   .ref-box .ref-date  { font-size:12px; opacity:.85; text-align:right; }
 
   .section { margin-bottom:18px; }
-  .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#1D9E75; border-bottom:1px solid #e1f5ee; padding-bottom:5px; margin-bottom:10px; }
+  .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:<?php echo esc_attr($brand_color); ?>; border-bottom:1px solid #e1f5ee; padding-bottom:5px; margin-bottom:10px; }
   .info-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #f5f5f5; font-size:12px; }
   .info-row:last-child { border-bottom:none; }
   .info-row .label { color:#5a7068; }
@@ -289,14 +298,14 @@ class VoucherGenerator {
 
   .recs-list { list-style:none; }
   .recs-list li { padding:4px 0; font-size:12px; color:#3d3d3a; }
-  .recs-list li::before { content:"✓ "; color:#1D9E75; font-weight:700; }
+  .recs-list li::before { content:"✓ "; color:<?php echo esc_attr($brand_color); ?>; font-weight:700; }
 
   .policy-box { background:#fffbeb; border-left:3px solid #BA7517; padding:10px 14px; border-radius:0 6px 6px 0; }
   .policy-box p { font-size:11px; color:#78350f; padding:2px 0; }
 
-  .footer { border-top:2px solid #1D9E75; margin-top:24px; padding-top:14px; display:flex; justify-content:space-between; align-items:center; }
+  .footer { border-top:2px solid <?php echo esc_attr($brand_color); ?>; margin-top:24px; padding-top:14px; display:flex; justify-content:space-between; align-items:center; }
   .footer p { font-size:10px; color:#5a7068; }
-  .footer .wa { font-size:11px; font-weight:700; color:#1D9E75; }
+  .footer .wa { font-size:11px; font-weight:700; color:<?php echo esc_attr($brand_color); ?>; }
 
   .status-ok { display:inline-block; background:#e1f5ee; color:#0F6E56; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; }
 
@@ -310,9 +319,9 @@ class VoucherGenerator {
 </head>
 <body>
 <!-- Barra de impresión (no se imprime) -->
-<div class="no-print" style="background:#1D9E75;color:#fff;text-align:center;padding:10px 16px;font-family:Arial,sans-serif;font-size:13px;position:sticky;top:0;z-index:99;">
+<div class="no-print" style="background:<?php echo esc_attr($brand_color); ?>;color:#fff;text-align:center;padding:10px 16px;font-family:Arial,sans-serif;font-size:13px;position:sticky;top:0;z-index:99;">
   📄 <?php echo $is_en ? 'To save as PDF, click' : 'Para guardar como PDF, haz clic en'; ?>
-  <button onclick="window.print()" style="background:#fff;color:#1D9E75;border:none;border-radius:5px;padding:5px 14px;font-weight:700;cursor:pointer;margin:0 8px;">
+  <button onclick="window.print()" style="background:#fff;color:<?php echo esc_attr($brand_color); ?>;border:none;border-radius:5px;padding:5px 14px;font-weight:700;cursor:pointer;margin:0 8px;">
     <?php echo $is_en ? '🖨 Print / Save PDF' : '🖨 Imprimir / Guardar PDF'; ?>
   </button>
   <?php echo $is_en ? 'and select "Save as PDF"' : 'y selecciona "Guardar como PDF"'; ?>
@@ -323,11 +332,11 @@ class VoucherGenerator {
   <div class="header">
     <div class="header-left">
       <?php if ($logo_src) : ?>
-        <img src="<?php echo $logo_src; ?>" alt="Amir Adventours" style="height:40px;margin-bottom:6px;" />
+        <img src="<?php echo esc_attr($logo_src); ?>" alt="<?php echo esc_attr($company_name); ?>" style="height:40px;margin-bottom:6px;" />
       <?php else : ?>
-        <h1>AMIR ADVENTOURS</h1>
+        <h1><?php echo esc_html($company_name); ?></h1>
       <?php endif; ?>
-      <p><?php echo $is_en ? 'Experiences in Bacalar · Quintana Roo, Mexico' : 'Experiencias en Bacalar · Quintana Roo, México'; ?></p>
+      <p><?php echo esc_html($tagline); ?></p>
       <span class="status-ok">✓ <?php echo $is_en ? 'CONFIRMED BOOKING' : 'RESERVA CONFIRMADA'; ?></span>
     </div>
     <div class="qr-block">
@@ -357,14 +366,14 @@ class VoucherGenerator {
     <div class="info-row"><span class="label"><?php echo $is_en ? 'Date' : 'Fecha'; ?></span><span class="value"><?php echo $date_fmt; ?></span></div>
     <div class="info-row"><span class="label"><?php echo $is_en ? 'Departure' : 'Hora de salida'; ?></span><span class="value"><?php echo $fmtTime($b->time_start??'00:00'); ?></span></div>
     <div class="info-row"><span class="label"><?php echo $is_en ? 'People' : 'Personas'; ?></span><span class="value"><?php echo esc_html($pax_str); ?></span></div>
-    <div class="info-row"><span class="label"><?php echo $is_en ? 'Total paid' : 'Total pagado'; ?></span><span class="value" style="font-size:14px;color:#1D9E75;">$<?php echo number_format($b->total_mxn,2); ?> MXN</span></div>
+    <div class="info-row"><span class="label"><?php echo $is_en ? 'Total paid' : 'Total pagado'; ?></span><span class="value" style="font-size:14px;color:<?php echo esc_attr($brand_color); ?>;">$<?php echo number_format($b->total_mxn,2); ?> MXN</span></div>
   </div>
 
   <!-- Punto de encuentro -->
   <div class="section">
     <div class="section-title"><?php echo $is_en ? 'Meeting point' : 'Punto de encuentro'; ?></div>
     <p style="font-size:12px;color:#3d3d3a;margin-bottom:6px;"><?php echo esc_html($meeting ?? ''); ?></p>
-    <p style="font-size:11px;color:#1D9E75;">📍 <a href="<?php echo esc_url($maps_url); ?>" style="color:#1D9E75;"><?php echo $is_en ? 'Open in Google Maps' : 'Ver en Google Maps'; ?> → <?php echo $maps_url; ?></a></p>
+    <p style="font-size:11px;color:<?php echo esc_attr($brand_color); ?>;">📍 <a href="<?php echo esc_url($maps_url); ?>" style="color:<?php echo esc_attr($brand_color); ?>;"><?php echo $is_en ? 'Open in Google Maps' : 'Ver en Google Maps'; ?> → <?php echo $maps_url; ?></a></p>
   </div>
 
   <!-- Datos del pasajero -->
@@ -381,21 +390,18 @@ class VoucherGenerator {
   <div class="section">
     <div class="section-title"><?php echo $is_en ? 'Remember to bring' : 'Recuerda llevar'; ?></div>
     <ul class="recs-list">
-      <?php if ($is_en) : ?>
-        <li>Comfortable clothes and swimsuit</li>
-        <li>Biodegradable sunscreen (required on the lagoon)</li>
-        <li>Water and light snacks</li>
-        <li>Photo ID</li>
-        <li>Camera or phone in a waterproof bag</li>
-        <li>Arrive 10 minutes before departure</li>
-      <?php else : ?>
-        <li>Ropa cómoda y traje de baño</li>
-        <li>Protector solar biodegradable (obligatorio en la laguna)</li>
-        <li>Agua y snacks ligeros</li>
-        <li>Documento de identidad</li>
-        <li>Cámara o celular en bolsa impermeable</li>
-        <li>Llega 10 minutos antes a tu hora de salida</li>
-      <?php endif; ?>
+      <?php
+      $recs_raw_v = get_option( $is_en ? 'amir_voucher_recs_en' : 'amir_voucher_recs_es', '' );
+      $recs_items_v = $recs_raw_v
+          ? array_filter( array_map( 'trim', explode( "\n", $recs_raw_v ) ) )
+          : ( $is_en
+              ? array( 'Comfortable clothes and swimsuit', 'Biodegradable sunscreen (required on the lagoon)', 'Water and light snacks', 'Photo ID', 'Camera or phone in a waterproof bag', 'Arrive 10 minutes before departure' )
+              : array( 'Ropa cómoda y traje de baño', 'Protector solar biodegradable (obligatorio en la laguna)', 'Agua y snacks ligeros', 'Documento de identidad', 'Cámara o celular en bolsa impermeable', 'Llega 10 minutos antes a tu hora de salida' )
+            );
+      foreach ( $recs_items_v as $rec_item ) {
+          echo '<li>' . esc_html( $rec_item ) . '</li>';
+      }
+      ?>
     </ul>
   </div>
 
@@ -413,7 +419,7 @@ class VoucherGenerator {
   <!-- Footer -->
   <div class="footer">
     <div>
-      <p><strong>Amir Adventours Bacalar</strong></p>
+      <p><strong><?php echo esc_html($company_name); ?></strong></p>
       <p><?php echo $site; ?></p>
     </div>
     <div>
@@ -499,12 +505,22 @@ class VoucherGenerator {
         $wa   = get_option( 'amir_wa_phone', '5219831649541' );
         $site = get_site_url();
 
-        $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
-        $logo_uri  = file_exists( $logo_path ) ? $this->path_to_data_uri( $logo_path ) : '';
+        $logo_url_opt = get_option( 'amir_brand_logo_url', '' );
+        if ( $logo_url_opt ) {
+            // For TCPDF inline we need a data URI; fetch remote logo
+            $logo_body = wp_remote_retrieve_body( wp_remote_get( $logo_url_opt, array( 'timeout' => 8 ) ) );
+            $logo_uri  = ( $logo_body && strlen($logo_body) > 100 )
+                ? ( 'data:image/png;base64,' . base64_encode( $logo_body ) )
+                : '';
+        } else {
+            $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
+            $logo_uri  = file_exists( $logo_path ) ? $this->path_to_data_uri( $logo_path ) : '';
+        }
         $qr_path   = $this->generate_qr( (int)$b->id, $b->booking_ref );
         $qr_uri    = $qr_path ? $this->path_to_data_uri( $qr_path ) : '';
 
-        $green = '#1D9E75';
+        $green        = get_option( 'amir_brand_color', '#1D9E75' );
+        $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
         $amber = '#BA7517';
         $gray  = '#5a7068';
 
@@ -551,23 +567,32 @@ class VoucherGenerator {
         }
 
         // ── Recomendaciones ────────────────────────────────────────────────
-        $recs = $is_en
-            ? array(
-                'Comfortable clothes and swimsuit',
-                'Biodegradable sunscreen (required)',
-                'Water and light snacks',
-                'Photo ID',
-                'Camera in waterproof bag',
-                'Arrive 10 min before departure',
-              )
-            : array(
-                'Ropa c&oacute;moda y traje de ba&ntilde;o',
-                'Protector solar biodegradable (obligatorio)',
-                'Agua y snacks ligeros',
-                'Documento de identidad',
-                'C&aacute;mara en bolsa impermeable',
-                'Llega 10 min antes a tu hora de salida',
-              );
+        $recs_raw_b = get_option( $is_en ? 'amir_voucher_recs_en' : 'amir_voucher_recs_es', '' );
+        if ( $recs_raw_b ) {
+            $recs_plain = array_filter( array_map( 'trim', explode( "\n", $recs_raw_b ) ) );
+            $recs = array();
+            foreach ( $recs_plain as $r ) {
+                $recs[] = esc_html( $r );
+            }
+        } else {
+            $recs = $is_en
+                ? array(
+                    'Comfortable clothes and swimsuit',
+                    'Biodegradable sunscreen (required)',
+                    'Water and light snacks',
+                    'Photo ID',
+                    'Camera in waterproof bag',
+                    'Arrive 10 min before departure',
+                  )
+                : array(
+                    'Ropa c&oacute;moda y traje de ba&ntilde;o',
+                    'Protector solar biodegradable (obligatorio)',
+                    'Agua y snacks ligeros',
+                    'Documento de identidad',
+                    'C&aacute;mara en bolsa impermeable',
+                    'Llega 10 min antes a tu hora de salida',
+                  );
+        }
         $recs_html = '';
         foreach ( $recs as $rec ) {
             $recs_html .= '<li style="font-size:9pt;padding:2px 0;color:#3d3d3a;">'
@@ -596,8 +621,8 @@ class VoucherGenerator {
 
         // ── Logo ───────────────────────────────────────────────────────────
         $logo_html = $logo_uri
-            ? '<img src="' . $logo_uri . '" height="36" alt="Amir Adventours" /><br/>'
-            : '<b style="font-size:14pt;color:' . $green . ';">AMIR ADVENTOURS</b><br/>';
+            ? '<img src="' . $logo_uri . '" height="36" alt="' . esc_attr($company_name) . '" /><br/>'
+            : '<b style="font-size:14pt;color:' . $green . ';">' . esc_html(strtoupper($company_name)) . '</b><br/>';
 
         // ── QR ────────────────────────────────────────────────────────────
         $qr_html = $qr_uri
@@ -615,9 +640,12 @@ class VoucherGenerator {
         $bring_label     = $is_en ? 'Remember to bring'  : 'Recuerda llevar';
         $policy_label    = $is_en ? 'Cancellation policy': 'Pol&iacute;tica de cancelaci&oacute;n';
         $wa_label        = $is_en ? 'Questions? Message us anytime.' : '&iquest;Dudas? Escr&iacute;benos cuando quieras.';
-        $experience_label = $is_en
-            ? 'Experiences in Bacalar &middot; Quintana Roo, Mexico'
-            : 'Experiencias en Bacalar &middot; Quintana Roo, M&eacute;xico';
+        $tagline_opt_v    = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
+        $experience_label = $tagline_opt_v
+            ? esc_html( $tagline_opt_v )
+            : ( $is_en
+                ? 'Experiences in Bacalar &middot; Quintana Roo, Mexico'
+                : 'Experiencias en Bacalar &middot; Quintana Roo, M&eacute;xico' );
 
         $html  = '<html><head><meta charset="UTF-8"></head>';
         $html .= '<body style="font-family:Helvetica,Arial,sans-serif;color:#1a2e24;font-size:10pt;margin:0;padding:0;">';
@@ -691,7 +719,7 @@ class VoucherGenerator {
                . ' style="border-top:2px solid ' . $green . ';padding-top:8px;margin-top:4px;">'
                . '<tr>'
                . '<td valign="middle">'
-               . '<b style="font-size:9pt;">Amir Adventours Bacalar</b><br/>'
+               . '<b style="font-size:9pt;">' . esc_html($company_name) . '</b><br/>'
                . '<span style="font-size:8pt;color:' . $gray . ';">' . esc_url( $site ) . '</span>'
                . '</td>'
                . '<td align="right" valign="middle">'

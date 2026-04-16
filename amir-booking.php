@@ -1,20 +1,21 @@
 <?php
 /**
- * Plugin Name:  Amir Booking
+ * Plugin Name:  Tour Booking
  * Plugin URI:   https://amiradventours.com
- * Description:  Sistema de reservas y gestión de tours para Amir Adventours Bacalar. Sin WooCommerce.
- * Version:      1.0.23
+ * Description:  Sistema de reservas y gestión de tours para operadoras. Sin WooCommerce. Multisite ready.
+ * Version:      1.0.27
  * Author:       Amir Adventours
  * Text Domain:  amir-booking
  * Domain Path:  /languages
  * Requires PHP: 7.4
  * Requires WP:  6.0
+ * Network:      true
  */
 
 defined( 'ABSPATH' ) || exit;
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-define( 'AMIR_VERSION',     '1.0.23' );
+define( 'AMIR_VERSION',     '1.0.27' );
 define( 'AMIR_PLUGIN_FILE', __FILE__ );
 define( 'AMIR_PLUGIN_DIR',  plugin_dir_path( __FILE__ ) );
 define( 'AMIR_PLUGIN_URL',  plugin_dir_url( __FILE__ ) );
@@ -47,9 +48,16 @@ spl_autoload_register( function ( string $class ): void {
 } );
 
 // ── Activación ────────────────────────────────────────────────────────────────
-register_activation_hook(   __FILE__, [ 'AmirBooking\\Core\\Installer', 'activate'   ] );
-register_deactivation_hook( __FILE__, [ 'AmirBooking\\Core\\Installer', 'deactivate' ] );
-register_uninstall_hook(    __FILE__, [ 'AmirBooking\\Core\\Installer', 'uninstall'  ] );
+// $network_wide = true cuando se activa desde Network Admin para toda la red.
+register_activation_hook( __FILE__, function ( $network_wide ) {
+    AmirBooking\Core\Installer::activate( (bool) $network_wide );
+} );
+
+register_deactivation_hook( __FILE__, function ( $network_wide ) {
+    AmirBooking\Core\Installer::deactivate( (bool) $network_wide );
+} );
+
+register_uninstall_hook( __FILE__, array( 'AmirBooking\\Core\\Installer', 'uninstall' ) );
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 add_action( 'plugins_loaded', function (): void {

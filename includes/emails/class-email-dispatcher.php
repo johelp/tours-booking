@@ -174,10 +174,15 @@ abstract class BaseEmail {
     // ── HTML wrapper ──────────────────────────────────────────────────────
 
     protected function wrap_template( string $content ): string {
-        $logo    = AMIR_PLUGIN_URL . 'assets/images/logo-email.png';
-        $site    = get_site_url();
-        $wa      = get_option( 'amir_wa_phone', '5219831649541' );
-        $year    = date( 'Y' );
+        $logo_url     = get_option( 'amir_brand_logo_url', '' );
+        $logo         = $logo_url ?: ( AMIR_PLUGIN_URL . 'assets/images/logo-email.png' );
+        $color        = get_option( 'amir_brand_color', '#1D9E75' );
+        $color_dark   = $this->darken_color( $color );
+        $color_light  = $this->lighten_color( $color );
+        $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
+        $site         = get_site_url();
+        $wa           = get_option( 'amir_wa_phone', '5219831649541' );
+        $year         = date( 'Y' );
 
         $footer_links = $this->lang === 'en'
             ? '<a href="' . $site . '/en/">Tours</a> &nbsp;·&nbsp; <a href="https://wa.me/' . $wa . '">WhatsApp</a>'
@@ -191,25 +196,25 @@ abstract class BaseEmail {
   <style>
     body { margin:0; padding:0; background:#f0f9f5; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#1a2e24; }
     .wrap { max-width:560px; margin:0 auto; }
-    .header { background:#1D9E75; padding:24px 32px; text-align:center; }
+    .header { background:' . esc_attr($color) . '; padding:24px 32px; text-align:center; }
     .header img { height:48px; }
     .body { background:#ffffff; padding:32px 32px 24px; }
-    .footer { background:#e1f5ee; padding:20px 32px; text-align:center; font-size:12px; color:#5a7068; }
-    .footer a { color:#0F6E56; text-decoration:none; }
+    .footer { background:' . esc_attr($color_light) . '; padding:20px 32px; text-align:center; font-size:12px; color:#5a7068; }
+    .footer a { color:' . esc_attr($color_dark) . '; text-decoration:none; }
     h1 { font-size:22px; font-weight:800; margin:0 0 8px; }
     p  { font-size:15px; line-height:1.6; color:#3d3d3a; margin:0 0 14px; }
-    .ref-box { background:#e1f5ee; border-radius:10px; padding:16px 20px; text-align:center; margin:20px 0; }
-    .ref-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#0F6E56; }
-    .ref-value { font-size:28px; font-weight:800; color:#0F6E56; letter-spacing:2px; margin-top:4px; }
+    .ref-box { background:' . esc_attr($color_light) . '; border-radius:10px; padding:16px 20px; text-align:center; margin:20px 0; }
+    .ref-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:' . esc_attr($color_dark) . '; }
+    .ref-value { font-size:28px; font-weight:800; color:' . esc_attr($color_dark) . '; letter-spacing:2px; margin-top:4px; }
     .info-table { width:100%; border-collapse:collapse; margin:16px 0; }
-    .info-table td { padding:10px 0; border-bottom:1px solid #e1f5ee; font-size:14px; vertical-align:top; }
+    .info-table td { padding:10px 0; border-bottom:1px solid ' . esc_attr($color_light) . '; font-size:14px; vertical-align:top; }
     .info-table td:first-child { color:#5a7068; width:40%; padding-right:12px; }
     .info-table td:last-child { font-weight:600; }
-    .btn { display:inline-block; padding:13px 28px; background:#1D9E75; color:#ffffff !important; border-radius:8px; text-decoration:none; font-size:15px; font-weight:700; margin:16px 0 8px; }
-    .btn-outline { background:transparent; color:#1D9E75 !important; border:2px solid #1D9E75; }
+    .btn { display:inline-block; padding:13px 28px; background:' . esc_attr($color) . '; color:#ffffff !important; border-radius:8px; text-decoration:none; font-size:15px; font-weight:700; margin:16px 0 8px; }
+    .btn-outline { background:transparent; color:' . esc_attr($color) . ' !important; border:2px solid ' . esc_attr($color) . '; }
     .policy-box { background:#fffbeb; border-left:4px solid #BA7517; padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0; }
     .policy-box p { font-size:13px; color:#78350f; margin:3px 0; }
-    .divider { border:none; border-top:1px solid #e1f5ee; margin:20px 0; }
+    .divider { border:none; border-top:1px solid ' . esc_attr($color_light) . '; margin:20px 0; }
     @media (max-width:600px) {
       .body { padding:24px 20px 20px; }
       h1 { font-size:20px; }
@@ -219,15 +224,64 @@ abstract class BaseEmail {
 <body>
 <div class="wrap">
   <div class="header">
-    <img src="' . $logo . '" alt="Amir Adventours Bacalar" />
+    <img src="' . esc_url($logo) . '" alt="' . esc_attr($company_name) . '" style="height:48px;max-width:200px;" />
   </div>
   <div class="body">' . $content . '</div>
   <div class="footer">
     ' . $footer_links . '<br><br>
-    &copy; ' . $year . ' Amir Adventours Bacalar &nbsp;·&nbsp; Bacalar, Quintana Roo, México
+    &copy; ' . $year . ' ' . esc_html($company_name) . ' &nbsp;·&nbsp; Bacalar, Quintana Roo, M&eacute;xico
   </div>
 </div>
 </body></html>';
+    }
+
+    /**
+     * Oscurece un color hex ~20% para textos sobre fondos claros.
+     */
+    private function darken_color( string $hex, float $factor = 0.7 ): string {
+        $hex = ltrim( $hex, '#' );
+        if ( strlen($hex) !== 6 ) return $hex;
+        $r = (int) ( hexdec( substr($hex,0,2) ) * $factor );
+        $g = (int) ( hexdec( substr($hex,2,2) ) * $factor );
+        $b = (int) ( hexdec( substr($hex,4,2) ) * $factor );
+        return sprintf( '#%02x%02x%02x', max(0,$r), max(0,$g), max(0,$b) );
+    }
+
+    /**
+     * Aclara un color hex para fondos (~90% blanco).
+     */
+    private function lighten_color( string $hex, float $factor = 0.15 ): string {
+        $hex = ltrim( $hex, '#' );
+        if ( strlen($hex) !== 6 ) return '#e1f5ee';
+        $r = hexdec( substr($hex,0,2) );
+        $g = hexdec( substr($hex,2,2) );
+        $b = hexdec( substr($hex,4,2) );
+        $r = (int) ( $r + ( 255 - $r ) * ( 1 - $factor ) );
+        $g = (int) ( $g + ( 255 - $g ) * ( 1 - $factor ) );
+        $b = (int) ( $b + ( 255 - $b ) * ( 1 - $factor ) );
+        return sprintf( '#%02x%02x%02x', min(255,$r), min(255,$g), min(255,$b) );
+    }
+
+    // ── Recomendaciones desde opciones ───────────────────────────────────
+
+    /**
+     * Devuelve el bloque HTML de recomendaciones leído desde las opciones del plugin.
+     * Si la opción está vacía usa el array de $defaults.
+     */
+    protected function recs_html( string $option_es, string $option_en, array $defaults_es, array $defaults_en ): string {
+        $raw  = get_option( $this->lang === 'en' ? $option_en : $option_es, '' );
+        $items = $raw
+            ? array_filter( array_map( 'trim', explode( "\n", $raw ) ) )
+            : ( $this->lang === 'en' ? $defaults_en : $defaults_es );
+
+        $style = 'font-size:14px;color:#3d3d3a;line-height:1.8;padding-left:20px;';
+        $title = $this->lang === 'en' ? '📋 Recommendations' : '📋 Recomendaciones';
+        $lis   = '';
+        foreach ( $items as $item ) {
+            $lis .= '<li>' . esc_html( $item ) . '</li>';
+        }
+        return '<hr class="divider"><p><strong>' . $title . '</strong></p>'
+             . '<ul style="' . $style . '">' . $lis . '</ul>';
     }
 
     // ── Helpers compartidos ───────────────────────────────────────────────
@@ -376,8 +430,11 @@ class ConfirmationEmail extends BaseEmail {
           <div class="ref-value">' . esc_html($b->booking_ref) . '</div>
         </div>';
 
-        $recs_es = '<hr class="divider"><p><strong>📋 Recomendaciones</strong></p><ul style="font-size:14px;color:#3d3d3a;line-height:1.8;padding-left:20px;"><li>Llega 10 minutos antes al punto de encuentro.</li><li>Usa ropa cómoda y protector solar biodegradable.</li><li>Trae agua y snacks ligeros.</li><li>Lleva tu documento de identidad.</li></ul>';
-        $recs_en = '<hr class="divider"><p><strong>📋 Recommendations</strong></p><ul style="font-size:14px;color:#3d3d3a;line-height:1.8;padding-left:20px;"><li>Arrive 10 minutes before departure.</li><li>Wear comfortable clothes and biodegradable sunscreen.</li><li>Bring water and light snacks.</li><li>Carry a photo ID.</li></ul>';
+        $recs_block = $this->recs_html(
+            'amir_email_recs_es', 'amir_email_recs_en',
+            [ 'Llega 10 minutos antes al punto de encuentro.', 'Usa ropa cómoda y protector solar biodegradable.', 'Trae agua y snacks ligeros.', 'Lleva tu documento de identidad.' ],
+            [ 'Arrive 10 minutes before departure.', 'Wear comfortable clothes and biodegradable sunscreen.', 'Bring water and light snacks.', 'Carry a photo ID.' ]
+        );
 
         $policy_es = '<div class="policy-box"><p><strong>Política de cancelación:</strong></p><p>✓ 7+ días antes: reembolso completo</p><p>▸ 3–6 días antes: reembolso del 50%</p><p>✕ Menos de 3 días: sin reembolso</p></div>';
         $policy_en = '<div class="policy-box"><p><strong>Cancellation policy:</strong></p><p>✓ 7+ days before: full refund</p><p>▸ 3–6 days before: 50% refund</p><p>✕ Less than 3 days: no refund</p></div>';
@@ -410,7 +467,7 @@ class ConfirmationEmail extends BaseEmail {
             . $ref_box
             . $this->booking_info_table()
             . $custom_note
-            . ( $this->lang === 'en' ? $recs_en : $recs_es )
+            . $recs_block
             . ( $this->lang === 'en' ? $policy_en : $policy_es )
             . $actions;
     }
@@ -434,14 +491,17 @@ class ReminderEmail extends BaseEmail {
             ? '<h1>Your adventure is tomorrow! ⛵</h1><p>Hi <strong>' . esc_html($b->customer_name) . '</strong>,<br>Just a quick reminder about your booking for tomorrow:</p>'
             : '<h1>¡Tu aventura es mañana! ⛵</h1><p>Hola <strong>' . esc_html($b->customer_name) . '</strong>,<br>Un recordatorio de tu reserva para mañana:</p>';
 
-        $recs_es = '<hr class="divider"><p><strong>📋 Recuerda llevar:</strong></p><ul style="font-size:14px;color:#3d3d3a;line-height:1.8;padding-left:20px;"><li>Ropa cómoda y traje de baño</li><li>Protector solar biodegradable (obligatorio en la laguna)</li><li>Agua y snacks ligeros</li><li>Documento de identidad</li><li>Cámara o celular en bolsa impermeable</li></ul>';
-        $recs_en = '<hr class="divider"><p><strong>📋 Remember to bring:</strong></p><ul style="font-size:14px;color:#3d3d3a;line-height:1.8;padding-left:20px;"><li>Comfortable clothes and swimsuit</li><li>Biodegradable sunscreen (required on the lagoon)</li><li>Water and light snacks</li><li>Photo ID</li><li>Camera or phone in a waterproof bag</li></ul>';
+        $recs_block = $this->recs_html(
+            'amir_email_recs_es', 'amir_email_recs_en',
+            [ 'Ropa cómoda y traje de baño', 'Protector solar biodegradable (obligatorio en la laguna)', 'Agua y snacks ligeros', 'Documento de identidad', 'Cámara o celular en bolsa impermeable' ],
+            [ 'Comfortable clothes and swimsuit', 'Biodegradable sunscreen (required on the lagoon)', 'Water and light snacks', 'Photo ID', 'Camera or phone in a waterproof bag' ]
+        );
 
         $footer_wa = '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a></p>';
 
         return $intro
             . $this->booking_info_table()
-            . ( $this->lang === 'en' ? $recs_en : $recs_es )
+            . $recs_block
             . $footer_wa;
     }
 }

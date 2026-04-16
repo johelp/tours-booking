@@ -6,6 +6,11 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Gestiona la instalación, actualización y desinstalación
  * de las tablas de base de datos del plugin.
+ *
+ * Multisite: cada site tiene sus propias tablas (wp_N_amir_*).
+ * $wpdb->prefix ya incluye el blog ID cuando se llama desde el contexto
+ * correcto o después de switch_to_blog(). No se necesita lógica extra
+ * en create_tables() — el prefijo se resuelve automáticamente.
  */
 class Installer {
 
@@ -21,36 +26,128 @@ class Installer {
     ];
 
     // ── Activación ────────────────────────────────────────────────────────
-    public static function activate(): void {
-        self::create_tables();
-        self::insert_default_data();
-        self::schedule_cron_jobs();
-        \AmirBooking\Core\TourManagerRole::register();   // Crear el rol
 
-        update_option( 'amir_db_version', AMIR_DB_VERSION );
-        update_option( 'amir_installed_at', current_time( 'mysql' ) );
+    /**
+     * Hook de activación. WordPress pasa $network_wide = true cuando
+     * el plugin se activa desde el Network Admin para toda la red.
+     */
+    public static function activate( bool $network_wide = false ): void {
+        if ( is_multisite() && $network_wide ) {
+            self::network_activate();
+        } else {
+            self::activate_for_blog( get_current_blog_id() );
+        }
 
-        // Flush rewrite rules para los endpoints
+        // El rol se registra una sola vez (es de red en Multisite)
+        TourManagerRole::register();
         flush_rewrite_rules();
     }
 
+    /**
+     * Activa el plugin en todos los sites existentes de la red.
+     * Se llama solo cuando el Super Admin activa desde Network Admin.
+     */
+    public static function network_activate(): void {
+        $sites = get_sites( array( 'number' => 0, 'fields' => 'ids' ) );
+        foreach ( $sites as $blog_id ) {
+            switch_to_blog( (int) $blog_id );
+            self::activate_for_blog( (int) $blog_id );
+            restore_current_blog();
+        }
+    }
+
+    /**
+     * Crea tablas y datos iniciales para un site específico.
+     * Reutilizado en activación individual, de red y en alta de nuevo site.
+     */
+    public static function activate_for_blog( int $blog_id ): void {
+        if ( is_multisite() ) {
+            switch_to_blog( $blog_id );
+        }
+
+        self::create_tables();
+        self::insert_default_data();
+        self::schedule_cron_jobs();
+
+        update_option( 'amir_db_version',   AMIR_DB_VERSION );
+        update_option( 'amir_installed_at', current_time( 'mysql' ) );
+
+        if ( is_multisite() ) {
+            restore_current_blog();
+        }
+    }
+
+    // ── Hook: nuevo site añadido a la red ─────────────────────────────────
+
+    /**
+     * WP 5.1+ usa la acción wp_initialize_site.
+     * Versiones anteriores usan wpmu_new_blog.
+     * Plugin.php registra ambas para compatibilidad.
+     */
+    public static function on_new_site( $new_site ): void {
+        // $new_site puede ser un objeto WP_Site (WP 5.1+)
+        $blog_id = is_object( $new_site ) ? (int) $new_site->blog_id : (int) $new_site;
+
+        if ( ! is_plugin_active_for_network( plugin_basename( AMIR_PLUGIN_FILE ) ) ) {
+            return; // El plugin no está activado en red — no hacer nada
+        }
+
+        self::activate_for_blog( $blog_id );
+    }
+
+    /**
+     * Fallback para WordPress < 5.1 (acción wpmu_new_blog).
+     */
+    public static function on_wpmu_new_blog( int $blog_id ): void {
+        self::on_new_site( $blog_id );
+    }
+
     // ── Desactivación ─────────────────────────────────────────────────────
-    public static function deactivate(): void {
-        self::unschedule_cron_jobs();
+
+    public static function deactivate( bool $network_wide = false ): void {
+        if ( is_multisite() && $network_wide ) {
+            $sites = get_sites( array( 'number' => 0, 'fields' => 'ids' ) );
+            foreach ( $sites as $blog_id ) {
+                switch_to_blog( (int) $blog_id );
+                self::unschedule_cron_jobs();
+                restore_current_blog();
+            }
+        } else {
+            self::unschedule_cron_jobs();
+        }
         flush_rewrite_rules();
     }
 
     // ── Desinstalación ────────────────────────────────────────────────────
+
     public static function uninstall(): void {
-        // Solo eliminar tablas si el admin lo confirmó en settings
+        if ( is_multisite() ) {
+            $sites = get_sites( array( 'number' => 0, 'fields' => 'ids' ) );
+            foreach ( $sites as $blog_id ) {
+                switch_to_blog( (int) $blog_id );
+                self::uninstall_for_blog();
+                restore_current_blog();
+            }
+            // Opciones de red
+            delete_site_option( 'amir_license_key' );
+            delete_site_option( 'amir_license_plan' );
+        } else {
+            self::uninstall_for_blog();
+        }
+
+        TourManagerRole::remove();
+    }
+
+    private static function uninstall_for_blog(): void {
         if ( get_option( 'amir_delete_data_on_uninstall', false ) ) {
             self::drop_tables();
         }
-        \AmirBooking\Core\TourManagerRole::remove();
         self::delete_options();
     }
 
     // ── Creación de tablas ────────────────────────────────────────────────
+    // $wpdb->prefix se resuelve automáticamente al contexto del blog actual.
+
     private static function create_tables(): void {
         global $wpdb;
 
@@ -238,41 +335,37 @@ class Installer {
     }
 
     // ── Datos por defecto ─────────────────────────────────────────────────
+
     private static function insert_default_data(): void {
-        // Solo inserta si no existen datos previos (re-activación segura)
         global $wpdb;
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}amir_tours" );
         if ( $count > 0 ) {
-            // Always ensure the verify page exists even on re-activation
             self::create_verify_page();
             return;
         }
 
-        // Configuración por defecto
-        add_option( 'amir_currency',            'MXN' );
-        add_option( 'amir_usd_rate_mode',        'auto' );   // auto | manual
-        add_option( 'amir_usd_rate_manual',      '17.00' );
-        add_option( 'amir_stripe_mode',          'test' );   // test | live
-        add_option( 'amir_pending_expire_mins',  '15' );
-        add_option( 'amir_review_delay_days',    '1' );
-        add_option( 'amir_admin_email',          get_option( 'admin_email' ) );
+        add_option( 'amir_currency',             'MXN' );
+        add_option( 'amir_usd_rate_mode',         'auto' );
+        add_option( 'amir_usd_rate_manual',       '17.00' );
+        add_option( 'amir_stripe_mode',           'test' );
+        add_option( 'amir_pending_expire_mins',   '15' );
+        add_option( 'amir_review_delay_days',     '1' );
+        add_option( 'amir_admin_email',           get_option( 'admin_email' ) );
         add_option( 'amir_delete_data_on_uninstall', '0' );
 
         self::create_verify_page();
     }
 
     /**
-     * Crea la página /verificar-reserva/ con el shortcode [amir_verify_booking]
-     * si no existe ya. Seguro de llamar en cada activación.
+     * Crea la página /verificar-reserva/ con el shortcode [amir_verify_booking].
+     * Seguro de llamar en cada activación — no duplica si ya existe.
      */
     private static function create_verify_page(): void {
-        // Check if already exists (by slug or saved option)
         $existing_id = (int) get_option( 'amir_verify_page_id', 0 );
         if ( $existing_id && get_post( $existing_id ) ) {
             return;
         }
 
-        // Search by slug in case option was lost
         $existing = get_posts( array(
             'name'           => 'verificar-reserva',
             'post_type'      => 'page',
@@ -300,12 +393,12 @@ class Installer {
     }
 
     // ── Cron jobs ─────────────────────────────────────────────────────────
+
     private static function schedule_cron_jobs(): void {
         if ( ! wp_next_scheduled( 'amir_hourly_tasks' ) ) {
             wp_schedule_event( time(), 'hourly', 'amir_hourly_tasks' );
         }
         if ( ! wp_next_scheduled( 'amir_daily_tasks' ) ) {
-            // Ejecutar a las 7 AM hora del servidor
             $next_7am = strtotime( 'today 07:00:00' );
             if ( $next_7am < time() ) {
                 $next_7am = strtotime( 'tomorrow 07:00:00' );
@@ -320,44 +413,74 @@ class Installer {
     }
 
     // ── Eliminar tablas ───────────────────────────────────────────────────
+
     private static function drop_tables(): void {
         global $wpdb;
-        // Invertir el orden para respetar dependencias
         foreach ( array_reverse( self::TABLES ) as $table ) {
             $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}amir_{$table}" );
         }
     }
 
     private static function delete_options(): void {
-        $options = [
+        $options = array(
             'amir_db_version', 'amir_installed_at', 'amir_currency',
             'amir_usd_rate_mode', 'amir_usd_rate_manual', 'amir_stripe_mode',
             'amir_stripe_pk_test', 'amir_stripe_sk_test',
             'amir_stripe_pk_live', 'amir_stripe_sk_live',
             'amir_stripe_webhook_secret', 'amir_pending_expire_mins',
             'amir_review_delay_days', 'amir_admin_email',
-            'amir_delete_data_on_uninstall',
-        ];
+            'amir_delete_data_on_uninstall', 'amir_verify_page_id',
+            'amir_brand_logo_id', 'amir_brand_logo_url', 'amir_brand_color',
+            'amir_company_name', 'amir_company_tagline_es', 'amir_company_tagline_en',
+            'amir_email_recs_es', 'amir_email_recs_en',
+            'amir_voucher_recs_es', 'amir_voucher_recs_en',
+            'amir_license_plan', 'amir_license_key',
+        );
         foreach ( $options as $option ) {
             delete_option( $option );
         }
     }
 
     // ── Actualización de DB ───────────────────────────────────────────────
+
+    /**
+     * Ejecuta migraciones de schema si la versión instalada es anterior.
+     * En Multisite, cada site tiene su propia amir_db_version.
+     */
     public static function maybe_update(): void {
         global $wpdb;
         $installed = get_option( 'amir_db_version', '0.0.0' );
-        if ( version_compare( $installed, AMIR_DB_VERSION, '<' ) ) {
-            // 1.1.0: custom_email_note column + booking_source manual
-            $cols = $wpdb->get_col("DESCRIBE {$wpdb->prefix}amir_bookings");
-            if (!in_array('custom_email_note', $cols)) {
-                $wpdb->query("ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN custom_email_note TEXT AFTER internal_notes");
-            }
-            $wpdb->query("ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN booking_source ENUM('direct','tripadvisor','getyourguide','partner','manual') NOT NULL DEFAULT 'direct'");
+        if ( version_compare( $installed, AMIR_DB_VERSION, '>=' ) ) {
+            return;
+        }
 
-            self::create_tables();
-            self::create_verify_page();
-            update_option( 'amir_db_version', AMIR_DB_VERSION );
+        // 1.1.0: custom_email_note column + booking_source manual
+        $cols = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'custom_email_note', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN custom_email_note TEXT AFTER internal_notes" );
+        }
+        $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN booking_source ENUM('direct','tripadvisor','getyourguide','partner','manual') NOT NULL DEFAULT 'direct'" );
+
+        self::create_tables();
+        self::create_verify_page();
+        update_option( 'amir_db_version', AMIR_DB_VERSION );
+    }
+
+    /**
+     * Ejecuta maybe_update() en todos los sites de la red.
+     * Se llama desde el Network Admin cuando se detecta una versión nueva.
+     */
+    public static function network_maybe_update(): void {
+        if ( ! is_multisite() ) {
+            self::maybe_update();
+            return;
+        }
+
+        $sites = get_sites( array( 'number' => 0, 'fields' => 'ids' ) );
+        foreach ( $sites as $blog_id ) {
+            switch_to_blog( (int) $blog_id );
+            self::maybe_update();
+            restore_current_blog();
         }
     }
 }
