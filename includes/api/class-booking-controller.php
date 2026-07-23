@@ -618,7 +618,7 @@ class BookingController {
 
         $currency     = strtolower( get_option( 'amir_currency', 'MXN' ) );
         $amount_cents = (int) round( $booking_result->total_mxn * 100 );
-        $company      = get_option( 'amir_company_name', 'Tour Booking' );
+        $company      = get_option( 'amir_company_name', 'TourFlow' );
 
         $response = wp_remote_post( 'https://api.stripe.com/v1/payment_intents', [
             'headers' => [

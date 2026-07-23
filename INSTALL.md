@@ -1,4 +1,4 @@
-# Tour Booking (Amir Booking) — Guía de instalación y despliegue
+# TourFlow (Amir Booking) — Guía de instalación y despliegue
 
 ## Requisitos del servidor
 
@@ -32,7 +32,7 @@ composer install --no-dev --optimize-autoloader
 
 ### 3. Activar en WordPress
 
-WordPress Admin → Plugins → **Tour Booking** → Activar
+WordPress Admin → Plugins → **TourFlow** → Activar
 
 Al activar se crean automáticamente:
 - 7 tablas en la base de datos (`wp_amir_*`)
@@ -45,7 +45,7 @@ Al activar se crean automáticamente:
 
 ### 1. Stripe
 
-1. Ir a **Tour Booking → Configuración**
+1. Ir a **TourFlow → Configuración**
 2. Pegar las claves de Stripe (test y live)
 3. Configurar el **Webhook** en el dashboard de Stripe:
    - URL: `https://tudominio.com/wp-json/amir/v1/bookings/stripe-webhook`
@@ -57,7 +57,7 @@ Al activar se crean automáticamente:
 
 ### 2. Crear el primer tour
 
-1. **Tour Booking → Tours (editar) → Nuevo tour**
+1. **TourFlow → Tours (editar) → Nuevo tour**
 2. Completar:
    - Título (español) + Nombre EN
    - Imagen destacada (foto principal)

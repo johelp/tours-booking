@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:  Tour Booking
+ * Plugin Name:  TourFlow
  * Plugin URI:   https://amiradventours.com
  * Description:  Sistema de reservas y gestión de tours para operadoras. Sin WooCommerce. Multisite ready.
  * Version:      1.1.0

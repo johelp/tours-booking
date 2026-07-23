@@ -1,4 +1,4 @@
-# Tour Booking — Plugin WordPress
+# TourFlow — Plugin WordPress
 
 Sistema de reservas y gestión de tours para operadoras turísticas. Sin WooCommerce. Multisite-ready.
 

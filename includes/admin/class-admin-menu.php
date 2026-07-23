@@ -36,13 +36,13 @@ class AdminMenu {
 
     /**
      * Nombre de marca del plugin — configurable desde Network Admin.
-     * Default: 'Tour Booking' (genérico, sin referencia a "Amir").
+     * Default: 'TourFlow' (genérico, sin referencia a "Amir").
      */
     private function brand_name(): string {
         $name = is_multisite()
             ? get_site_option( 'amir_brand_name', '' )
             : get_option( 'amir_brand_name', '' );
-        return $name ?: 'Tour Booking';
+        return $name ?: 'TourFlow';
     }
 
     public function add_menus(): void {

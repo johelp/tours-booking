@@ -24,7 +24,7 @@ class NetworkAdmin {
 
     private function brand_name(): string {
         $name = get_site_option( 'amir_brand_name', '' );
-        return $name ?: 'Tour Booking';
+        return $name ?: 'TourFlow';
     }
 
     public function add_network_menu(): void {
@@ -241,9 +241,9 @@ class NetworkAdmin {
                 <th scope="row"><?php esc_html_e( 'Nombre de marca', 'amir-booking' ); ?></th>
                 <td>
                   <input type="text" name="amir_brand_name" value="<?php echo esc_attr( $brand ); ?>"
-                         class="regular-text" placeholder="Tour Booking">
+                         class="regular-text" placeholder="TourFlow">
                   <p class="description">
-                    <?php esc_html_e( 'Nombre que aparece en el menú de administración de cada site. Default: Tour Booking.', 'amir-booking' ); ?>
+                    <?php esc_html_e( 'Nombre que aparece en el menú de administración de cada site. Default: TourFlow.', 'amir-booking' ); ?>
                   </p>
                 </td>
               </tr>
