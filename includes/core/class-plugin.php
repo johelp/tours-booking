@@ -43,6 +43,7 @@ final class Plugin {
             ( new \AmirBooking\Api\AvailabilityController() )->register_routes();
             ( new \AmirBooking\Api\BookingController() )->register_routes();
             ( new \AmirBooking\Api\PricesController() )->register_routes();
+            ( new \AmirBooking\Api\NotificationsController() )->register_routes();
         } );
 
         // ── Admin (site-level) ────────────────────────────────────────────

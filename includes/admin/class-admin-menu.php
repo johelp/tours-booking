@@ -133,11 +133,13 @@ class AdminMenu {
             return;
         }
 
+        $is_settings_page = strpos( $hook, 'amir-settings' ) !== false;
+
         // Media library: necesaria para el selector de logo en Settings.
         // Debe cargarse aquí (admin_enqueue_scripts) y NO dentro del callback
         // de la página — ese se ejecuta después del <head> y los scripts
         // de wp.media quedarían fuera del contexto correcto.
-        if ( strpos( $hook, 'amir-settings' ) !== false ) {
+        if ( $is_settings_page ) {
             wp_enqueue_media();
         }
 
@@ -147,6 +149,18 @@ class AdminMenu {
             [],
             AMIR_VERSION
         );
+
+        // Configuración es una página 100% PHP (sin React) — su único JS es
+        // el selector de color y el uploader de logo, ambos inline en
+        // class-settings-page.php. El bundle admin.js está pensado para las
+        // demás pantallas del admin (Dashboard, Reservas, etc.) y, al no
+        // encontrar lo que espera en el DOM de Configuración, interfiere con
+        // el envío nativo del formulario de guardado. No se carga acá hasta
+        // que exista el código fuente (react-src) para investigar y corregir
+        // esa interacción de raíz.
+        if ( $is_settings_page ) {
+            return;
+        }
 
         wp_enqueue_script(
             'amir-admin',
