@@ -168,6 +168,7 @@ Motor evalúa → En junio: regla 2 (prioridad 20) gana → PERMITE
 3. Activar el plugin en WP Admin → Plugins
 4. Las tablas se crean automáticamente al activar (o se migran solas si ya existían de una versión anterior)
 5. Los assets de `assets/js/*.js` ya vienen compilados en el repo; el código fuente de React aún no está versionado (ver nota más arriba)
+6. Tests unitarios (lógica de dominio, sin base de datos real): `composer install && vendor/bin/phpunit`. CI corre esto mismo en cada push/PR (`.github/workflows/ci.yml`).
 
 ## Variables de entorno / Opciones de WordPress
 
