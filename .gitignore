@@ -1,0 +1,11 @@
+# Dependencias — se instalan en el build/despliegue con `composer install`
+/vendor/
+/node_modules/
+
+# Artefactos de SO / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# Configuración local de Claude Code
+.claude/settings.local.json

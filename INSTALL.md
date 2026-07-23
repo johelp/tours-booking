@@ -136,14 +136,25 @@ WordPress detecta automáticamente los templates en el tema y los usa en lugar d
 
 ## Despliegue en cPanel (producción)
 
+### vendor/ ya no viaja en el repositorio
+
+Desde esta versión, `vendor/` está en `.gitignore` — no se versiona en git. Antes de empaquetar el ZIP de despliegue hay que generarlo localmente:
+
+```bash
+composer install --no-dev --optimize-autoloader
+```
+
+La mayoría de hostings compartidos (cPanel) no dan acceso a Composer por SSH, así que el flujo correcto es: correr `composer install` en tu máquina, y **sí incluir** la carpeta `vendor/` ya generada dentro del ZIP que subes (el `.gitignore` solo aplica al repositorio, no al artefacto de despliegue).
+
 ### Subir archivos
 
 ```bash
-# Desde local, empaquetar solo lo necesario
+# Desde local, con vendor/ ya generado por composer install
 zip -r amir-booking-prod.zip amir-booking/ \
   --exclude "*/node_modules/*" \
   --exclude "*/react-src/src/*" \
   --exclude "*/.git/*" \
+  --exclude "*/dev-notes/*" \
   --exclude "*/tests/*"
 ```
 
