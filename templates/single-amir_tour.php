@@ -244,8 +244,12 @@ while ( have_posts() ) :
   </div><!-- body -->
 </div><!-- single-tour -->
 
+<?php
+$brand_color      = esc_attr( get_option( 'amir_brand_color', '#1D9E75' ) );
+$brand_color_dark = esc_attr( get_option( 'amir_brand_color_dark', '#0F6E56' ) );
+?>
 <style>
-.amir-single-tour { --teal:#1D9E75; --teal-dark:#0F6E56; --teal-light:#e1f5ee; }
+.amir-single-tour { --teal:<?php echo $brand_color; ?>; --teal-dark:<?php echo $brand_color_dark; ?>; --teal-light:#e1f5ee; }
 .amir-single-tour__hero { background:#1a2e24 center/cover no-repeat; min-height:340px; display:flex; align-items:flex-end; }
 .amir-single-tour__hero-overlay { width:100%; background:linear-gradient(to top,rgba(0,0,0,.65) 0%,transparent 100%); padding:32px 24px 28px; }
 .amir-single-tour__hero-content { max-width:760px; margin:0 auto; }
@@ -295,6 +299,85 @@ while ( have_posts() ) :
   .amir-single-tour__booking-col { order:-1; }
 }
 </style>
+
+<?php
+// ── Tours sugeridos ──────────────────────────────────────────────────────
+wp_enqueue_style( 'amir-tour-cards' );
+
+$suggested = new WP_Query( [
+    'post_type'      => 'amir_tour',
+    'post_status'    => 'publish',
+    'posts_per_page' => 3,
+    'post__not_in'   => [ $post_id ],
+    'meta_key'       => '_amir_sort_order',
+    'orderby'        => 'meta_value_num',
+    'order'          => 'ASC',
+] );
+
+if ( $suggested->have_posts() ) :
+?>
+<section class="amir-suggested">
+  <div class="amir-suggested__inner">
+    <h2 class="amir-suggested__title">
+      <?php echo $is_en ? 'You might also like' : 'También te puede interesar'; ?>
+    </h2>
+    <div class="amir-suggested__scroll">
+      <?php while ( $suggested->have_posts() ) : $suggested->the_post(); ?>
+        <?php
+        $s_pid     = get_the_ID();
+        $s_db_id   = (int) get_post_meta( $s_pid, '_amir_tour_db_id', true );
+        $s_name_en = get_post_meta( $s_pid, '_amir_name_en', true );
+        $s_title   = $is_en ? ( $s_name_en ?: get_the_title() ) : get_the_title();
+        $s_cover   = get_the_post_thumbnail_url( $s_pid, 'medium_large' );
+        $s_link    = get_permalink();
+        $s_dur     = (int) get_post_meta( $s_pid, '_amir_duration_minutes', true );
+        $s_dur_fmt = $s_dur >= 60 ? round( $s_dur / 60, 1 ) . 'h' : $s_dur . 'min';
+        $s_price   = 0;
+        if ( $s_db_id ) {
+            global $wpdb;
+            $s_price = (float) $wpdb->get_var( $wpdb->prepare(
+                "SELECT MIN(price_mxn) FROM {$wpdb->prefix}amir_prices WHERE tour_id=%d AND price_mxn>0",
+                $s_db_id
+            ) );
+        }
+        ?>
+        <article class="amir-tour-card amir-suggested__card">
+          <div class="amir-tour-card__img-wrap">
+            <?php if ( $s_cover ) : ?>
+              <a href="<?php echo esc_url( $s_link ); ?>">
+                <img src="<?php echo esc_url( $s_cover ); ?>"
+                     alt="<?php echo esc_attr( $s_title ); ?>"
+                     class="amir-tour-card__img" loading="lazy" />
+              </a>
+            <?php endif; ?>
+            <?php if ( $s_dur ) : ?>
+              <span class="amir-tour-card__duration-badge">⏱ <?php echo esc_html( $s_dur_fmt ); ?></span>
+            <?php endif; ?>
+            <?php if ( $s_price > 0 ) : ?>
+              <div class="amir-tour-card__price-badge">
+                <span class="amir-tour-card__price-badge-label"><?php echo $is_en ? 'From' : 'Desde'; ?></span>
+                <span class="amir-tour-card__price-badge-value">$<?php echo number_format( $s_price, 0, '.', ',' ); ?></span>
+                <span class="amir-tour-card__price-badge-cur"> MXN</span>
+              </div>
+            <?php endif; ?>
+          </div>
+          <div class="amir-tour-card__body">
+            <h3 class="amir-tour-card__title">
+              <a href="<?php echo esc_url( $s_link ); ?>"><?php echo esc_html( $s_title ); ?></a>
+            </h3>
+            <p class="amir-tour-card__excerpt">
+              <?php echo wp_trim_words( get_the_excerpt(), 14, '…' ); ?>
+            </p>
+            <a href="<?php echo esc_url( $s_link ); ?>" class="amir-tour-card__cta">
+              <?php echo $is_en ? 'Book now' : 'Reservar ahora'; ?>
+            </a>
+          </div>
+        </article>
+      <?php endwhile; wp_reset_postdata(); ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
 
 <?php endwhile; ?>
 

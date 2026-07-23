@@ -133,6 +133,129 @@ class SettingsPage {
             </div>
           </div>
 
+          <!-- ── Identidad de marca ── -->
+          <div class="ab-settings-section">
+            <h3>🎨 Identidad de marca</h3>
+
+            <!-- Logo -->
+            <div class="ab-field">
+              <label>Logo (cabecera del email y voucher)</label>
+              <?php
+              $logo_url = get_option('amir_brand_logo_url', '');
+              $logo_id  = (int) get_option('amir_brand_logo_id', 0);
+              ?>
+              <div style="display:flex;align-items:center;gap:14px;margin-top:6px;">
+                <div id="amir-logo-preview" style="width:120px;height:48px;border:1px solid #c3d9d0;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f9fafb;">
+                  <?php if ($logo_url): ?>
+                    <img src="<?php echo esc_url($logo_url); ?>" style="max-width:118px;max-height:46px;object-fit:contain;" />
+                  <?php else: ?>
+                    <span style="font-size:11px;color:#5a7068;">Sin logo</span>
+                  <?php endif; ?>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <button type="button" id="amir-logo-upload-btn" class="button">
+                    📁 Seleccionar imagen
+                  </button>
+                  <?php if ($logo_url): ?>
+                  <button type="button" id="amir-logo-remove-btn" class="button" style="color:#e24b4a;border-color:#fecaca;">
+                    ✕ Eliminar logo
+                  </button>
+                  <?php endif; ?>
+                </div>
+              </div>
+              <input type="hidden" name="amir_brand_logo_id"  id="amir-logo-id"  value="<?php echo esc_attr($logo_id); ?>" />
+              <input type="hidden" name="amir_brand_logo_url" id="amir-logo-url" value="<?php echo esc_attr($logo_url); ?>" />
+              <p class="ab-hint">Recomendado: PNG o SVG con fondo transparente, altura mínima 100px. Se usa en el header del email y el voucher PDF.</p>
+            </div>
+
+            <!-- Color y nombre -->
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Color principal</label>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <input type="color" name="amir_brand_color" id="amir-brand-color"
+                         value="<?php echo esc_attr(get_option('amir_brand_color','#1D9E75')); ?>"
+                         style="width:48px;height:36px;border:1px solid #c3d9d0;border-radius:6px;padding:2px;cursor:pointer;" />
+                  <input type="text" name="amir_brand_color_hex" id="amir-brand-color-hex"
+                         value="<?php echo esc_attr(get_option('amir_brand_color','#1D9E75')); ?>"
+                         style="width:90px;font-family:monospace;" placeholder="#1D9E75" />
+                </div>
+                <p class="ab-hint">Color del header del email y acentos del voucher PDF.</p>
+              </div>
+              <div class="ab-field">
+                <label>Nombre de la empresa</label>
+                <input type="text" name="amir_company_name"
+                       value="<?php echo esc_attr(get_option('amir_company_name','Amir Adventours Bacalar')); ?>"
+                       placeholder="Amir Adventours Bacalar" />
+                <p class="ab-hint">Aparece en el pie del email y del voucher.</p>
+              </div>
+            </div>
+
+            <!-- Eslogan -->
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Eslogan (Español)</label>
+                <input type="text" name="amir_company_tagline_es"
+                       value="<?php echo esc_attr(get_option('amir_company_tagline_es','Experiencias en Bacalar · Quintana Roo, México')); ?>"
+                       placeholder="Experiencias en Bacalar…" />
+              </div>
+              <div class="ab-field">
+                <label>Tagline (English)</label>
+                <input type="text" name="amir_company_tagline_en"
+                       value="<?php echo esc_attr(get_option('amir_company_tagline_en','Experiences in Bacalar · Quintana Roo, Mexico')); ?>"
+                       placeholder="Experiences in Bacalar…" />
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Contenido del email ── -->
+          <div class="ab-settings-section">
+            <h3>📧 Contenido del email de confirmación</h3>
+            <p style="font-size:12px;color:#5a7068;margin:0 0 14px;">Una recomendación por línea. Se muestran como lista en el email de confirmación.</p>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Recomendaciones (Español)</label>
+                <textarea name="amir_email_recs_es" rows="7" style="<?php echo $this->input_style_ta(); ?>"
+                          placeholder="Llega 10 minutos antes al punto de encuentro.&#10;Usa ropa cómoda y protector solar biodegradable.&#10;Trae agua y snacks ligeros.&#10;Lleva tu documento de identidad."><?php
+                  echo esc_textarea(get_option('amir_email_recs_es',
+                    "Llega 10 minutos antes al punto de encuentro.\nUsa ropa cómoda y protector solar biodegradable.\nTrae agua y snacks ligeros.\nLleva tu documento de identidad."));
+                ?></textarea>
+              </div>
+              <div class="ab-field">
+                <label>Recommendations (English)</label>
+                <textarea name="amir_email_recs_en" rows="7" style="<?php echo $this->input_style_ta(); ?>"
+                          placeholder="Arrive 10 minutes before departure.&#10;Wear comfortable clothes and biodegradable sunscreen.&#10;Bring water and light snacks.&#10;Carry a photo ID."><?php
+                  echo esc_textarea(get_option('amir_email_recs_en',
+                    "Arrive 10 minutes before departure.\nWear comfortable clothes and biodegradable sunscreen.\nBring water and light snacks.\nCarry a photo ID."));
+                ?></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Contenido del voucher PDF ── -->
+          <div class="ab-settings-section">
+            <h3>📄 Contenido del voucher PDF</h3>
+            <p style="font-size:12px;color:#5a7068;margin:0 0 14px;">Una recomendación por línea. Se muestran en la sección "Recuerda llevar" del PDF.</p>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Recomendaciones voucher (Español)</label>
+                <textarea name="amir_voucher_recs_es" rows="7" style="<?php echo $this->input_style_ta(); ?>"
+                          placeholder="Ropa cómoda y traje de baño&#10;Protector solar biodegradable (obligatorio)&#10;Agua y snacks ligeros"><?php
+                  echo esc_textarea(get_option('amir_voucher_recs_es',
+                    "Ropa cómoda y traje de baño\nProtector solar biodegradable (obligatorio)\nAgua y snacks ligeros\nDocumento de identidad\nCámara en bolsa impermeable\nLlega 10 min antes a tu hora de salida"));
+                ?></textarea>
+              </div>
+              <div class="ab-field">
+                <label>Voucher recommendations (English)</label>
+                <textarea name="amir_voucher_recs_en" rows="7" style="<?php echo $this->input_style_ta(); ?>"
+                          placeholder="Comfortable clothes and swimsuit&#10;Biodegradable sunscreen (required)&#10;Water and light snacks"><?php
+                  echo esc_textarea(get_option('amir_voucher_recs_en',
+                    "Comfortable clothes and swimsuit\nBiodegradable sunscreen (required)\nWater and light snacks\nPhoto ID\nCamera in waterproof bag\nArrive 10 min before departure"));
+                ?></textarea>
+              </div>
+            </div>
+          </div>
+
           <!-- Peligro -->
           <div class="ab-settings-section" style="border-color:#fecaca;">
             <h3 style="color:#e24b4a;">⚠ Zona de peligro</h3>
@@ -176,7 +299,80 @@ class SettingsPage {
           <button type="submit" class="button button-primary" style="padding:10px 28px;font-size:14px;">Guardar configuración</button>
         </form>
         </div>
+
+        <script>
+        (function(){
+            // ── Color picker sync ──────────────────────────────────────────
+            var colorInput = document.getElementById('amir-brand-color');
+            var hexInput   = document.getElementById('amir-brand-color-hex');
+            if ( colorInput && hexInput ) {
+                colorInput.addEventListener('input', function(){ hexInput.value = this.value; });
+                hexInput.addEventListener('input', function(){
+                    var v = this.value.trim();
+                    if ( /^#[0-9A-Fa-f]{6}$/.test(v) ) { colorInput.value = v; }
+                });
+            }
+
+            // ── Logo media upload ─────────────────────────────────────────
+            // Inicializar después de que todos los scripts del footer estén cargados
+            // (wp.media se inyecta en el footer, este inline-script corre antes).
+            window.addEventListener('load', function() {
+                var uploadBtn  = document.getElementById('amir-logo-upload-btn');
+                var removeBtn  = document.getElementById('amir-logo-remove-btn');
+                var logoId     = document.getElementById('amir-logo-id');
+                var logoUrl    = document.getElementById('amir-logo-url');
+                var preview    = document.getElementById('amir-logo-preview');
+                var mediaFrame;
+
+                if ( uploadBtn ) {
+                    uploadBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+
+                        if ( typeof wp === 'undefined' || ! wp.media ) {
+                            alert('El Media Library de WordPress no está disponible. Asegúrate de que wp_enqueue_media() esté activo.');
+                            return;
+                        }
+
+                        if ( mediaFrame ) { mediaFrame.open(); return; }
+
+                        mediaFrame = wp.media({
+                            title:    'Seleccionar logo',
+                            button:   { text: 'Usar como logo' },
+                            multiple: false,
+                            library:  { type: 'image' }
+                        });
+
+                        mediaFrame.on('select', function() {
+                            var attachment = mediaFrame.state().get('selection').first().toJSON();
+                            var url = attachment.sizes && attachment.sizes.medium
+                                ? attachment.sizes.medium.url : attachment.url;
+                            logoId.value  = attachment.id;
+                            logoUrl.value = attachment.url;
+                            preview.innerHTML = '<img src="' + url + '" style="max-width:118px;max-height:46px;object-fit:contain;" />';
+                            if ( removeBtn ) { removeBtn.style.display = ''; }
+                        });
+
+                        mediaFrame.open();
+                    });
+                }
+
+                if ( removeBtn ) {
+                    removeBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        logoId.value  = '0';
+                        logoUrl.value = '';
+                        preview.innerHTML = '<span style="font-size:11px;color:#5a7068;">Sin logo</span>';
+                        removeBtn.style.display = 'none';
+                    });
+                }
+            });
+        })();
+        </script>
         <?php
+    }
+
+    private function input_style_ta(): string {
+        return 'width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:8px 11px;font-size:13px;box-sizing:border-box;resize:vertical;';
     }
 
     private function sync_all_tours(): int {
@@ -250,11 +446,29 @@ class SettingsPage {
             'amir_usd_rate_manual'         => 'floatval',
             'amir_google_review_url'       => 'esc_url_raw',
             'amir_tripadvisor_review_url'  => 'esc_url_raw',
+            // Brand & content
+            'amir_brand_logo_id'           => 'absint',
+            'amir_brand_logo_url'          => 'esc_url_raw',
+            'amir_company_name'            => 'sanitize_text_field',
+            'amir_company_tagline_es'      => 'sanitize_text_field',
+            'amir_company_tagline_en'      => 'sanitize_text_field',
+            'amir_email_recs_es'           => 'sanitize_textarea_field',
+            'amir_email_recs_en'           => 'sanitize_textarea_field',
+            'amir_voucher_recs_es'         => 'sanitize_textarea_field',
+            'amir_voucher_recs_en'         => 'sanitize_textarea_field',
         ];
 
-        foreach ($options as $key=>$sanitizer) {
+        foreach ($options as $key => $sanitizer) {
             if (isset($_POST[$key])) {
                 update_option($key, call_user_func($sanitizer, $_POST[$key]));
+            }
+        }
+
+        // Brand color: validate hex format
+        if ( isset($_POST['amir_brand_color_hex']) ) {
+            $color = sanitize_text_field($_POST['amir_brand_color_hex']);
+            if ( preg_match('/^#[0-9A-Fa-f]{6}$/', $color) ) {
+                update_option('amir_brand_color', $color);
             }
         }
 
@@ -263,5 +477,9 @@ class SettingsPage {
 
         // Invalidar caché de tipo de cambio si cambió el modo
         delete_transient('amir_usd_mxn_rate');
+    }
+
+    private function input_style(): string {
+        return 'border:1px solid #c3d9d0;border-radius:6px;padding:8px 11px;font-size:13px;';
     }
 }

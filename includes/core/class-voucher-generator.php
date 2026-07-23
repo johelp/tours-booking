@@ -168,7 +168,7 @@ class VoucherGenerator {
         $pdf->AddPage();
 
         // QR ya embebido como data URI dentro del HTML; no se usa $pdf->Image() por separado
-        $html = $this->build_voucher_html($booking, for_pdf: true);
+        $html = $this->build_voucher_html($booking, true);
         $pdf->writeHTML($html, true, false, true, false, '');
 
         $pdf->Output($filepath, 'F');
@@ -224,13 +224,22 @@ class VoucherGenerator {
      * Diseñado para imprimirse bien en A4.
      */
     private function get_full_html_document( object $b ): string {
-        $qr_path   = $this->generate_qr((int)$b->id, $b->booking_ref);
-        $qr_src    = $qr_path ? $this->path_to_data_uri($qr_path) : '';
-        $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
-        $logo_src  = file_exists($logo_path) ? $this->path_to_data_uri($logo_path) : '';
+        $qr_path      = $this->generate_qr((int)$b->id, $b->booking_ref);
+        $qr_src       = $qr_path ? $this->path_to_data_uri($qr_path) : '';
+        $logo_url_opt = get_option( 'amir_brand_logo_url', '' );
+        if ( $logo_url_opt ) {
+            $logo_src = $logo_url_opt; // use URL directly for HTML voucher
+        } else {
+            $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
+            $logo_src  = file_exists($logo_path) ? $this->path_to_data_uri($logo_path) : '';
+        }
+        $brand_color  = get_option( 'amir_brand_color', '#1D9E75' );
+        $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
 
-        $lang       = $b->lang ?? 'es';
+        $lang       = isset($b->lang) ? $b->lang : 'es';
         $is_en      = $lang === 'en';
+        $tagline_opt = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
+        $tagline     = $tagline_opt ?: ( $is_en ? 'Experiences in Bacalar · Quintana Roo, Mexico' : 'Experiencias en Bacalar · Quintana Roo, México' );
         $months     = $is_en
             ? ['January','February','March','April','May','June','July','August','September','October','November','December']
             : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -268,20 +277,20 @@ class VoucherGenerator {
   body { font-family:Arial,Helvetica,sans-serif; color:#1a2e24; font-size:13px; line-height:1.5; background:#fff; }
   .page { max-width:595px; margin:0 auto; padding:30px 32px; }
 
-  .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:16px; border-bottom:3px solid #1D9E75; margin-bottom:20px; }
-  .header-left h1 { font-size:22px; font-weight:800; color:#1D9E75; }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:16px; border-bottom:3px solid <?php echo esc_attr($brand_color); ?>; margin-bottom:20px; }
+  .header-left h1 { font-size:22px; font-weight:800; color:<?php echo esc_attr($brand_color); ?>; }
   .header-left p  { font-size:11px; color:#5a7068; }
   .qr-block { text-align:right; }
   .qr-block img { width:80px; height:80px; border:1px solid #e1f5ee; padding:4px; border-radius:4px; }
   .qr-block .qr-label { font-size:9px; color:#5a7068; margin-top:3px; }
 
-  .ref-box { background:#1D9E75; color:#fff; border-radius:8px; padding:14px 18px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; }
+  .ref-box { background:<?php echo esc_attr($brand_color); ?>; color:#fff; border-radius:8px; padding:14px 18px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; }
   .ref-box .ref-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; opacity:.85; }
   .ref-box .ref-value { font-size:24px; font-weight:800; letter-spacing:2px; }
   .ref-box .ref-date  { font-size:12px; opacity:.85; text-align:right; }
 
   .section { margin-bottom:18px; }
-  .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#1D9E75; border-bottom:1px solid #e1f5ee; padding-bottom:5px; margin-bottom:10px; }
+  .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:<?php echo esc_attr($brand_color); ?>; border-bottom:1px solid #e1f5ee; padding-bottom:5px; margin-bottom:10px; }
   .info-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #f5f5f5; font-size:12px; }
   .info-row:last-child { border-bottom:none; }
   .info-row .label { color:#5a7068; }
@@ -289,14 +298,14 @@ class VoucherGenerator {
 
   .recs-list { list-style:none; }
   .recs-list li { padding:4px 0; font-size:12px; color:#3d3d3a; }
-  .recs-list li::before { content:"✓ "; color:#1D9E75; font-weight:700; }
+  .recs-list li::before { content:"✓ "; color:<?php echo esc_attr($brand_color); ?>; font-weight:700; }
 
   .policy-box { background:#fffbeb; border-left:3px solid #BA7517; padding:10px 14px; border-radius:0 6px 6px 0; }
   .policy-box p { font-size:11px; color:#78350f; padding:2px 0; }
 
-  .footer { border-top:2px solid #1D9E75; margin-top:24px; padding-top:14px; display:flex; justify-content:space-between; align-items:center; }
+  .footer { border-top:2px solid <?php echo esc_attr($brand_color); ?>; margin-top:24px; padding-top:14px; display:flex; justify-content:space-between; align-items:center; }
   .footer p { font-size:10px; color:#5a7068; }
-  .footer .wa { font-size:11px; font-weight:700; color:#1D9E75; }
+  .footer .wa { font-size:11px; font-weight:700; color:<?php echo esc_attr($brand_color); ?>; }
 
   .status-ok { display:inline-block; background:#e1f5ee; color:#0F6E56; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; }
 
@@ -310,9 +319,9 @@ class VoucherGenerator {
 </head>
 <body>
 <!-- Barra de impresión (no se imprime) -->
-<div class="no-print" style="background:#1D9E75;color:#fff;text-align:center;padding:10px 16px;font-family:Arial,sans-serif;font-size:13px;position:sticky;top:0;z-index:99;">
+<div class="no-print" style="background:<?php echo esc_attr($brand_color); ?>;color:#fff;text-align:center;padding:10px 16px;font-family:Arial,sans-serif;font-size:13px;position:sticky;top:0;z-index:99;">
   📄 <?php echo $is_en ? 'To save as PDF, click' : 'Para guardar como PDF, haz clic en'; ?>
-  <button onclick="window.print()" style="background:#fff;color:#1D9E75;border:none;border-radius:5px;padding:5px 14px;font-weight:700;cursor:pointer;margin:0 8px;">
+  <button onclick="window.print()" style="background:#fff;color:<?php echo esc_attr($brand_color); ?>;border:none;border-radius:5px;padding:5px 14px;font-weight:700;cursor:pointer;margin:0 8px;">
     <?php echo $is_en ? '🖨 Print / Save PDF' : '🖨 Imprimir / Guardar PDF'; ?>
   </button>
   <?php echo $is_en ? 'and select "Save as PDF"' : 'y selecciona "Guardar como PDF"'; ?>
@@ -323,11 +332,11 @@ class VoucherGenerator {
   <div class="header">
     <div class="header-left">
       <?php if ($logo_src) : ?>
-        <img src="<?php echo $logo_src; ?>" alt="Amir Adventours" style="height:40px;margin-bottom:6px;" />
+        <img src="<?php echo esc_attr($logo_src); ?>" alt="<?php echo esc_attr($company_name); ?>" style="height:40px;margin-bottom:6px;" />
       <?php else : ?>
-        <h1>AMIR ADVENTOURS</h1>
+        <h1><?php echo esc_html($company_name); ?></h1>
       <?php endif; ?>
-      <p><?php echo $is_en ? 'Experiences in Bacalar · Quintana Roo, Mexico' : 'Experiencias en Bacalar · Quintana Roo, México'; ?></p>
+      <p><?php echo esc_html($tagline); ?></p>
       <span class="status-ok">✓ <?php echo $is_en ? 'CONFIRMED BOOKING' : 'RESERVA CONFIRMADA'; ?></span>
     </div>
     <div class="qr-block">
@@ -357,14 +366,14 @@ class VoucherGenerator {
     <div class="info-row"><span class="label"><?php echo $is_en ? 'Date' : 'Fecha'; ?></span><span class="value"><?php echo $date_fmt; ?></span></div>
     <div class="info-row"><span class="label"><?php echo $is_en ? 'Departure' : 'Hora de salida'; ?></span><span class="value"><?php echo $fmtTime($b->time_start??'00:00'); ?></span></div>
     <div class="info-row"><span class="label"><?php echo $is_en ? 'People' : 'Personas'; ?></span><span class="value"><?php echo esc_html($pax_str); ?></span></div>
-    <div class="info-row"><span class="label"><?php echo $is_en ? 'Total paid' : 'Total pagado'; ?></span><span class="value" style="font-size:14px;color:#1D9E75;">$<?php echo number_format($b->total_mxn,2); ?> MXN</span></div>
+    <div class="info-row"><span class="label"><?php echo $is_en ? 'Total paid' : 'Total pagado'; ?></span><span class="value" style="font-size:14px;color:<?php echo esc_attr($brand_color); ?>;">$<?php echo number_format($b->total_mxn,2); ?> MXN</span></div>
   </div>
 
   <!-- Punto de encuentro -->
   <div class="section">
     <div class="section-title"><?php echo $is_en ? 'Meeting point' : 'Punto de encuentro'; ?></div>
     <p style="font-size:12px;color:#3d3d3a;margin-bottom:6px;"><?php echo esc_html($meeting ?? ''); ?></p>
-    <p style="font-size:11px;color:#1D9E75;">📍 <a href="<?php echo esc_url($maps_url); ?>" style="color:#1D9E75;"><?php echo $is_en ? 'Open in Google Maps' : 'Ver en Google Maps'; ?> → <?php echo $maps_url; ?></a></p>
+    <p style="font-size:11px;color:<?php echo esc_attr($brand_color); ?>;">📍 <a href="<?php echo esc_url($maps_url); ?>" style="color:<?php echo esc_attr($brand_color); ?>;"><?php echo $is_en ? 'Open in Google Maps' : 'Ver en Google Maps'; ?> → <?php echo $maps_url; ?></a></p>
   </div>
 
   <!-- Datos del pasajero -->
@@ -381,21 +390,18 @@ class VoucherGenerator {
   <div class="section">
     <div class="section-title"><?php echo $is_en ? 'Remember to bring' : 'Recuerda llevar'; ?></div>
     <ul class="recs-list">
-      <?php if ($is_en) : ?>
-        <li>Comfortable clothes and swimsuit</li>
-        <li>Biodegradable sunscreen (required on the lagoon)</li>
-        <li>Water and light snacks</li>
-        <li>Photo ID</li>
-        <li>Camera or phone in a waterproof bag</li>
-        <li>Arrive 10 minutes before departure</li>
-      <?php else : ?>
-        <li>Ropa cómoda y traje de baño</li>
-        <li>Protector solar biodegradable (obligatorio en la laguna)</li>
-        <li>Agua y snacks ligeros</li>
-        <li>Documento de identidad</li>
-        <li>Cámara o celular en bolsa impermeable</li>
-        <li>Llega 10 minutos antes a tu hora de salida</li>
-      <?php endif; ?>
+      <?php
+      $recs_raw_v = get_option( $is_en ? 'amir_voucher_recs_en' : 'amir_voucher_recs_es', '' );
+      $recs_items_v = $recs_raw_v
+          ? array_filter( array_map( 'trim', explode( "\n", $recs_raw_v ) ) )
+          : ( $is_en
+              ? array( 'Comfortable clothes and swimsuit', 'Biodegradable sunscreen (required on the lagoon)', 'Water and light snacks', 'Photo ID', 'Camera or phone in a waterproof bag', 'Arrive 10 minutes before departure' )
+              : array( 'Ropa cómoda y traje de baño', 'Protector solar biodegradable (obligatorio en la laguna)', 'Agua y snacks ligeros', 'Documento de identidad', 'Cámara o celular en bolsa impermeable', 'Llega 10 minutos antes a tu hora de salida' )
+            );
+      foreach ( $recs_items_v as $rec_item ) {
+          echo '<li>' . esc_html( $rec_item ) . '</li>';
+      }
+      ?>
     </ul>
   </div>
 
@@ -413,7 +419,7 @@ class VoucherGenerator {
   <!-- Footer -->
   <div class="footer">
     <div>
-      <p><strong>Amir Adventours Bacalar</strong></p>
+      <p><strong><?php echo esc_html($company_name); ?></strong></p>
       <p><?php echo $site; ?></p>
     </div>
     <div>
@@ -465,193 +471,265 @@ class VoucherGenerator {
 
     /**
      * HTML optimizado para TCPDF: tablas en lugar de flexbox, sin barra de impresión.
-     * TCPDF no soporta display:flex ni position:sticky — solo layout de tabla funciona.
-     * El QR se embebe como data URI para que TCPDF lo renderice en la misma pasada.
+     * TCPDF no soporta display:flex — solo layout de tabla.
+     * Construido con concatenación de strings (sin ob_start, sin arrow functions).
      */
     private function build_voucher_html( object $b, bool $for_pdf = false ): string {
-        $lang   = $b->lang ?? 'es';
-        $is_en  = $lang === 'en';
+        $lang   = $b->lang ? $b->lang : 'es';
+        $is_en  = ( $lang === 'en' );
         $months = $is_en
-            ? ['January','February','March','April','May','June','July','August','September','October','November','December']
-            : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-        [$y,$m,$d] = explode('-', $b->tour_date);
-        $date_fmt  = (int)$d . ' ' . $months[(int)$m-1] . ' ' . $y;
+            ? array('January','February','March','April','May','June','July','August','September','October','November','December')
+            : array('Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre');
 
-        $fmtTime = function(string $t): string {
-            [$h,$mi] = explode(':', $t);
-            $h = (int)$h;
-            return ($h > 12 ? $h - 12 : ($h ?: 12)) . ':' . $mi . ($h >= 12 ? ' PM' : ' AM');
-        };
+        $date_parts = explode('-', $b->tour_date);
+        $date_fmt   = (int)$date_parts[2] . ' ' . $months[ (int)$date_parts[1] - 1 ] . ' ' . $date_parts[0];
 
-        $pax_parts = [];
-        if ($b->adults)   $pax_parts[] = $b->adults   . ' ' . ($is_en ? 'adults'   : 'adultos');
-        if ($b->children) $pax_parts[] = $b->children . ' ' . ($is_en ? 'children' : 'niños');
-        if ($b->babies)   $pax_parts[] = $b->babies   . ' ' . ($is_en ? 'babies'   : 'bebés');
+        $time_raw = isset($b->time_start) ? $b->time_start : '00:00';
+        $t_parts  = explode(':', $time_raw);
+        $t_h      = (int)$t_parts[0];
+        $t_disp   = ( $t_h > 12 ? $t_h - 12 : ( $t_h ? $t_h : 12 ) ) . ':' . $t_parts[1] . ( $t_h >= 12 ? ' PM' : ' AM' );
+
+        $pax_parts = array();
+        if ( $b->adults )   { $pax_parts[] = $b->adults   . ' ' . ( $is_en ? 'adults'   : 'adultos' ); }
+        if ( $b->children ) { $pax_parts[] = $b->children . ' ' . ( $is_en ? 'children' : 'ni&ntilde;os' ); }
+        if ( $b->babies )   { $pax_parts[] = $b->babies   . ' ' . ( $is_en ? 'babies'   : 'beb&eacute;s' ); }
         $pax_str = implode(', ', $pax_parts);
 
-        $meeting  = $is_en ? ($b->meeting_point_en ?: $b->meeting_point_es) : $b->meeting_point_es;
+        $meeting  = $is_en
+            ? ( isset($b->meeting_point_en) && $b->meeting_point_en ? $b->meeting_point_en : $b->meeting_point_es )
+            : $b->meeting_point_es;
         $maps_url = $b->meeting_lat
-            ? "https://maps.google.com/?q={$b->meeting_lat},{$b->meeting_lng}"
+            ? 'https://maps.google.com/?q=' . $b->meeting_lat . ',' . $b->meeting_lng
             : 'https://maps.google.com/?q=Bacalar,Quintana+Roo,Mexico';
-        $wa   = get_option('amir_wa_phone', '5219831649541');
+
+        $wa   = get_option( 'amir_wa_phone', '5219831649541' );
         $site = get_site_url();
 
-        // Logo y QR como data URIs (TCPDF necesita rutas locales o data URIs)
-        $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
-        $logo_uri  = file_exists($logo_path) ? $this->path_to_data_uri($logo_path) : '';
-        $qr_path   = $this->generate_qr((int)$b->id, $b->booking_ref);
-        $qr_uri    = $qr_path ? $this->path_to_data_uri($qr_path) : '';
-
-        $green  = '#1D9E75';
-        $amber  = '#BA7517';
-        $gray   = '#5a7068';
-        $lgray  = '#f5f9f7';
-
-        // Filas de info del tour
-        $rows_tour = [
-            [$is_en ? 'Tour'       : 'Tour',           esc_html($b->tour_name)],
-            [$is_en ? 'Date'       : 'Fecha',           $date_fmt],
-            [$is_en ? 'Departure'  : 'Hora de salida',  $fmtTime($b->time_start ?? '00:00')],
-            [$is_en ? 'People'     : 'Personas',         esc_html($pax_str)],
-            [$is_en ? 'Total paid' : 'Total pagado',     '<b style="color:'.$green.';font-size:13pt;">$' . number_format($b->total_mxn,2) . ' MXN</b>'],
-        ];
-        $rows_pax = [
-            [$is_en ? 'Name'      : 'Nombre',  esc_html($b->customer_name)],
-            ['Email',                            esc_html($b->customer_email)],
-        ];
-        if ($b->customer_phone) {
-            $rows_pax[] = ['WhatsApp', esc_html($b->customer_phone)];
+        $logo_url_opt = get_option( 'amir_brand_logo_url', '' );
+        if ( $logo_url_opt ) {
+            // For TCPDF inline we need a data URI; fetch remote logo
+            $logo_body = wp_remote_retrieve_body( wp_remote_get( $logo_url_opt, array( 'timeout' => 8 ) ) );
+            $logo_uri  = ( $logo_body && strlen($logo_body) > 100 )
+                ? ( 'data:image/png;base64,' . base64_encode( $logo_body ) )
+                : '';
+        } else {
+            $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
+            $logo_uri  = file_exists( $logo_path ) ? $this->path_to_data_uri( $logo_path ) : '';
         }
+        $qr_path   = $this->generate_qr( (int)$b->id, $b->booking_ref );
+        $qr_uri    = $qr_path ? $this->path_to_data_uri( $qr_path ) : '';
 
-        $info_row_html = function(array $rows): string {
+        $green        = get_option( 'amir_brand_color', '#1D9E75' );
+        $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
+        $amber = '#BA7517';
+        $gray  = '#5a7068';
+
+        // ── Helper: fila de info (tabla zebra) ────────────────────────────
+        $info_rows = function( array $rows ) {
             $out = '';
-            foreach ($rows as $i => [$label, $value]) {
-                $bg = ($i % 2 === 0) ? '#ffffff' : '#f5f9f7';
-                $out .= '<tr style="background:'.$bg.';">'
-                      . '<td style="padding:5px 8px;color:#5a7068;font-size:9pt;width:40%;">'.$label.'</td>'
-                      . '<td style="padding:5px 8px;font-weight:bold;font-size:9pt;text-align:right;">'.$value.'</td>'
+            $i   = 0;
+            foreach ( $rows as $row ) {
+                $bg   = ( $i % 2 === 0 ) ? '#ffffff' : '#f5f9f7';
+                $out .= '<tr style="background:' . $bg . ';">'
+                      . '<td style="padding:5px 8px;color:#5a7068;font-size:9pt;width:40%;">' . $row[0] . '</td>'
+                      . '<td style="padding:5px 8px;font-weight:bold;font-size:9pt;text-align:right;">' . $row[1] . '</td>'
                       . '</tr>';
+                $i++;
             }
             return $out;
         };
 
-        $recs = $is_en
-            ? ['Comfortable clothes and swimsuit','Biodegradable sunscreen (required)','Water and light snacks','Photo ID','Camera in waterproof bag','Arrive 10 min before departure']
-            : ['Ropa cómoda y traje de baño','Protector solar biodegradable (obligatorio)','Agua y snacks ligeros','Documento de identidad','Cámara en bolsa impermeable','Llega 10 min antes a tu hora de salida'];
+        // ── Helper: título de sección ──────────────────────────────────────
+        $sec = function( $title ) use ( $green ) {
+            return '<div style="font-size:8pt;font-weight:bold;text-transform:uppercase;'
+                 . 'letter-spacing:0.5px;color:' . $green . ';border-bottom:1px solid #c8ead9;'
+                 . 'padding-bottom:3px;margin-bottom:6px;">' . $title . '</div>';
+        };
 
-        $recs_html = implode('', array_map(fn($r) => '<li style="font-size:9pt;padding:2px 0;color:#3d3d3a;"><span style="color:'.$green.';font-weight:bold;">&#10003;</span> '.$r.'</li>', $recs));
+        // ── Datos de tour ──────────────────────────────────────────────────
+        $tour_rows = array(
+            array( $is_en ? 'Tour'      : 'Tour',          esc_html( $b->tour_name ) ),
+            array( $is_en ? 'Date'      : 'Fecha',         $date_fmt ),
+            array( $is_en ? 'Departure' : 'Hora de salida',$t_disp ),
+            array( $is_en ? 'People'    : 'Personas',       esc_html( $pax_str ) ),
+            array(
+                $is_en ? 'Total paid' : 'Total pagado',
+                '<b style="color:' . $green . ';font-size:13pt;">$' . number_format( (float)$b->total_mxn, 2 ) . ' MXN</b>'
+            ),
+        );
 
+        $pax_rows = array(
+            array( $is_en ? 'Name' : 'Nombre', esc_html( $b->customer_name ) ),
+            array( 'Email',                      esc_html( $b->customer_email ) ),
+        );
+        if ( $b->customer_phone ) {
+            $pax_rows[] = array( 'WhatsApp', esc_html( $b->customer_phone ) );
+        }
+
+        // ── Recomendaciones ────────────────────────────────────────────────
+        $recs_raw_b = get_option( $is_en ? 'amir_voucher_recs_en' : 'amir_voucher_recs_es', '' );
+        if ( $recs_raw_b ) {
+            $recs_plain = array_filter( array_map( 'trim', explode( "\n", $recs_raw_b ) ) );
+            $recs = array();
+            foreach ( $recs_plain as $r ) {
+                $recs[] = esc_html( $r );
+            }
+        } else {
+            $recs = $is_en
+                ? array(
+                    'Comfortable clothes and swimsuit',
+                    'Biodegradable sunscreen (required)',
+                    'Water and light snacks',
+                    'Photo ID',
+                    'Camera in waterproof bag',
+                    'Arrive 10 min before departure',
+                  )
+                : array(
+                    'Ropa c&oacute;moda y traje de ba&ntilde;o',
+                    'Protector solar biodegradable (obligatorio)',
+                    'Agua y snacks ligeros',
+                    'Documento de identidad',
+                    'C&aacute;mara en bolsa impermeable',
+                    'Llega 10 min antes a tu hora de salida',
+                  );
+        }
+        $recs_html = '';
+        foreach ( $recs as $rec ) {
+            $recs_html .= '<li style="font-size:9pt;padding:2px 0;color:#3d3d3a;">'
+                        . '<span style="color:' . $green . ';font-weight:bold;">&#10003;</span> ' . $rec
+                        . '</li>';
+        }
+
+        // ── Política de cancelación ────────────────────────────────────────
         $pol = $is_en
-            ? ['7+ days before: <b>full refund</b>', '3–6 days before: <b>50% refund</b>', 'Less than 3 days: <b>no refund</b>', '<i>Weather/minimum passengers: full refund.</i>']
-            : ['7+ días antes: <b>reembolso completo</b>', '3–6 días antes: <b>reembolso del 50%</b>', 'Menos de 3 días: <b>sin reembolso</b>', '<i>Por clima o mínimo de pasajeros: reembolso completo.</i>'];
-        $pol_html = implode('', array_map(fn($p) => '<div style="font-size:8.5pt;color:#78350f;padding:2px 0;">'.$p.'</div>', $pol));
+            ? array(
+                '7+ days before: <b>full refund</b>',
+                '3-6 days before: <b>50% refund</b>',
+                'Less than 3 days: <b>no refund</b>',
+                '<i>Weather/minimum passengers: full refund.</i>',
+              )
+            : array(
+                '7+ d&iacute;as antes: <b>reembolso completo</b>',
+                '3-6 d&iacute;as antes: <b>reembolso del 50%</b>',
+                'Menos de 3 d&iacute;as: <b>sin reembolso</b>',
+                '<i>Por clima o m&iacute;nimo de pasajeros: reembolso completo.</i>',
+              );
+        $pol_html = '';
+        foreach ( $pol as $p ) {
+            $pol_html .= '<div style="font-size:8.5pt;color:#78350f;padding:2px 0;">' . $p . '</div>';
+        }
 
-        $section_title = fn(string $t): string
-            => '<div style="font-size:8pt;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;color:'.$green.';border-bottom:1px solid #c8ead9;padding-bottom:3px;margin-bottom:6px;">'.$t.'</div>';
+        // ── Logo ───────────────────────────────────────────────────────────
+        $logo_html = $logo_uri
+            ? '<img src="' . $logo_uri . '" height="36" alt="' . esc_attr($company_name) . '" /><br/>'
+            : '<b style="font-size:14pt;color:' . $green . ';">' . esc_html(strtoupper($company_name)) . '</b><br/>';
 
-        ob_start(); ?>
-<html>
-<head><meta charset="UTF-8"></head>
-<body style="font-family:Helvetica,Arial,sans-serif;color:#1a2e24;font-size:10pt;margin:0;padding:0;">
+        // ── QR ────────────────────────────────────────────────────────────
+        $qr_html = $qr_uri
+            ? '<img src="' . $qr_uri . '" width="72" height="72" alt="QR" style="border:1px solid #c8ead9;padding:3px;" /><br/>'
+              . '<span style="font-size:7.5pt;color:' . $gray . ';">'
+              . ( $is_en ? 'Scan to verify' : 'Escanea para verificar' )
+              . '</span>'
+            : '';
 
-<!-- ═══ HEADER ═══ -->
-<table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:3px solid <?php echo $green; ?>;margin-bottom:10px;padding-bottom:8px;">
-<tr>
-  <td width="70%" valign="middle">
-    <?php if ($logo_uri): ?><img src="<?php echo $logo_uri; ?>" height="36" alt="Amir Adventours" /><br/><?php else: ?><b style="font-size:14pt;color:<?php echo $green; ?>;">AMIR ADVENTOURS</b><br/><?php endif; ?>
-    <span style="font-size:8pt;color:<?php echo $gray; ?>;"><?php echo $is_en ? 'Experiences in Bacalar · Quintana Roo, Mexico' : 'Experiencias en Bacalar · Quintana Roo, México'; ?></span><br/>
-    <span style="background:#e1f5ee;color:#0F6E56;font-size:8pt;font-weight:bold;padding:1px 6px;border-radius:4px;">&#10003; <?php echo $is_en ? 'CONFIRMED BOOKING' : 'RESERVA CONFIRMADA'; ?></span>
-  </td>
-  <td width="30%" align="right" valign="top">
-    <?php if ($qr_uri): ?>
-    <img src="<?php echo $qr_uri; ?>" width="72" height="72" alt="QR" style="border:1px solid #c8ead9;padding:3px;" /><br/>
-    <span style="font-size:7.5pt;color:<?php echo $gray; ?>;"><?php echo $is_en ? 'Scan to verify' : 'Escanea para verificar'; ?></span>
-    <?php endif; ?>
-  </td>
-</tr>
-</table>
+        $confirmed_label = $is_en ? 'CONFIRMED BOOKING' : 'RESERVA CONFIRMADA';
+        $booked_label    = $is_en ? 'Booking reference'  : 'N&uacute;mero de reserva';
+        $booked_on       = $is_en ? 'Booked on'          : 'Reservado el';
+        $loc_label       = $is_en ? 'Meeting point'      : 'Punto de encuentro';
+        $passenger_label = $is_en ? 'Passenger'          : 'Pasajero';
+        $bring_label     = $is_en ? 'Remember to bring'  : 'Recuerda llevar';
+        $policy_label    = $is_en ? 'Cancellation policy': 'Pol&iacute;tica de cancelaci&oacute;n';
+        $wa_label        = $is_en ? 'Questions? Message us anytime.' : '&iquest;Dudas? Escr&iacute;benos cuando quieras.';
+        $tagline_opt_v    = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
+        $experience_label = $tagline_opt_v
+            ? esc_html( $tagline_opt_v )
+            : ( $is_en
+                ? 'Experiences in Bacalar &middot; Quintana Roo, Mexico'
+                : 'Experiencias en Bacalar &middot; Quintana Roo, M&eacute;xico' );
 
-<!-- ═══ REFERENCIA ═══ -->
-<table width="100%" cellpadding="0" cellspacing="0" style="background:<?php echo $green; ?>;border-radius:6px;margin-bottom:10px;">
-<tr>
-  <td style="padding:10px 14px;" valign="middle">
-    <div style="font-size:7.5pt;font-weight:bold;color:rgba(255,255,255,0.8);text-transform:uppercase;letter-spacing:0.5px;"><?php echo $is_en ? 'Booking reference' : 'Número de reserva'; ?></div>
-    <div style="font-size:20pt;font-weight:bold;color:#ffffff;letter-spacing:2px;"><?php echo esc_html($b->booking_ref); ?></div>
-  </td>
-  <td style="padding:10px 14px;text-align:right;" valign="middle">
-    <div style="font-size:8pt;color:rgba(255,255,255,0.85);"><?php echo $is_en ? 'Booked on' : 'Reservado el'; ?></div>
-    <div style="font-size:10pt;font-weight:bold;color:#ffffff;"><?php echo date('d/m/Y', strtotime($b->created_at)); ?></div>
-  </td>
-</tr>
-</table>
+        $html  = '<html><head><meta charset="UTF-8"></head>';
+        $html .= '<body style="font-family:Helvetica,Arial,sans-serif;color:#1a2e24;font-size:10pt;margin:0;padding:0;">';
 
-<!-- ═══ DOS COLUMNAS: tour info + pasajero ═══ -->
-<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
-<tr valign="top">
+        // Header
+        $html .= '<table width="100%" cellpadding="0" cellspacing="0"'
+               . ' style="border-bottom:3px solid ' . $green . ';margin-bottom:10px;padding-bottom:8px;">'
+               . '<tr>'
+               . '<td width="70%" valign="middle">'
+               . $logo_html
+               . '<span style="font-size:8pt;color:' . $gray . ';">' . $experience_label . '</span><br/>'
+               . '<span style="background:#e1f5ee;color:#0F6E56;font-size:8pt;font-weight:bold;padding:1px 6px;">'
+               . '&#10003; ' . $confirmed_label . '</span>'
+               . '</td>'
+               . '<td width="30%" align="right" valign="top">' . $qr_html . '</td>'
+               . '</tr></table>';
 
-  <!-- Columna izquierda: Tour -->
-  <td width="49%" style="padding-right:8px;">
-    <?php echo $section_title($is_en ? 'Tour details' : 'Detalle del tour'); ?>
-    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e1f5ee;border-radius:4px;">
-    <?php echo $info_row_html($rows_tour); ?>
-    </table>
-  </td>
+        // Referencia
+        $html .= '<table width="100%" cellpadding="0" cellspacing="0"'
+               . ' style="background:' . $green . ';margin-bottom:10px;">'
+               . '<tr>'
+               . '<td style="padding:10px 14px;" valign="middle">'
+               . '<div style="font-size:7.5pt;font-weight:bold;color:#fff;text-transform:uppercase;">' . $booked_label . '</div>'
+               . '<div style="font-size:20pt;font-weight:bold;color:#fff;letter-spacing:2px;">' . esc_html( $b->booking_ref ) . '</div>'
+               . '</td>'
+               . '<td style="padding:10px 14px;text-align:right;" valign="middle">'
+               . '<div style="font-size:8pt;color:#fff;">' . $booked_on . '</div>'
+               . '<div style="font-size:10pt;font-weight:bold;color:#fff;">' . date( 'd/m/Y', strtotime( $b->created_at ) ) . '</div>'
+               . '</td>'
+               . '</tr></table>';
 
-  <td width="2%"></td>
+        // Columnas: tour + pasajero
+        $html .= '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">'
+               . '<tr valign="top">'
+               . '<td width="49%" style="padding-right:8px;">'
+               . $sec( $is_en ? 'Tour details' : 'Detalle del tour' )
+               . '<table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e1f5ee;">'
+               . $info_rows( $tour_rows )
+               . '</table>'
+               . '</td>'
+               . '<td width="2%"></td>'
+               . '<td width="49%">'
+               . $sec( $passenger_label )
+               . '<table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e1f5ee;margin-bottom:8px;">'
+               . $info_rows( $pax_rows )
+               . '</table>'
+               . $sec( $loc_label )
+               . '<div style="font-size:9pt;color:#3d3d3a;margin-bottom:3px;">' . esc_html( $meeting ? $meeting : '' ) . '</div>'
+               . '<div style="font-size:8.5pt;color:' . $green . ';">&#128205; ' . esc_url( $maps_url ) . '</div>'
+               . '</td>'
+               . '</tr></table>';
 
-  <!-- Columna derecha: Pasajero + Punto de encuentro -->
-  <td width="49%">
-    <?php echo $section_title($is_en ? 'Passenger' : 'Pasajero'); ?>
-    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e1f5ee;border-radius:4px;margin-bottom:8px;">
-    <?php echo $info_row_html($rows_pax); ?>
-    </table>
+        // Columnas: recomendaciones + política
+        $html .= '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">'
+               . '<tr valign="top">'
+               . '<td width="49%" style="padding-right:8px;">'
+               . $sec( $bring_label )
+               . '<ul style="margin:0;padding-left:0;list-style:none;">' . $recs_html . '</ul>'
+               . '</td>'
+               . '<td width="2%"></td>'
+               . '<td width="49%">'
+               . $sec( $policy_label )
+               . '<div style="background:#fffbeb;border-left:3px solid ' . $amber . ';padding:8px 10px;">'
+               . $pol_html
+               . '</div>'
+               . '</td>'
+               . '</tr></table>';
 
-    <?php echo $section_title($is_en ? 'Meeting point' : 'Punto de encuentro'); ?>
-    <div style="font-size:9pt;color:#3d3d3a;margin-bottom:3px;"><?php echo esc_html($meeting ?? ''); ?></div>
-    <div style="font-size:8.5pt;color:<?php echo $green; ?>;">&#128205; <?php echo $maps_url; ?></div>
-  </td>
+        // Footer
+        $html .= '<table width="100%" cellpadding="0" cellspacing="0"'
+               . ' style="border-top:2px solid ' . $green . ';padding-top:8px;margin-top:4px;">'
+               . '<tr>'
+               . '<td valign="middle">'
+               . '<b style="font-size:9pt;">' . esc_html($company_name) . '</b><br/>'
+               . '<span style="font-size:8pt;color:' . $gray . ';">' . esc_url( $site ) . '</span>'
+               . '</td>'
+               . '<td align="right" valign="middle">'
+               . '<b style="font-size:9pt;color:' . $green . ';">WhatsApp: +' . esc_html( $wa ) . '</b><br/>'
+               . '<span style="font-size:8pt;color:' . $gray . ';">' . $wa_label . '</span>'
+               . '</td>'
+               . '</tr></table>';
 
-</tr>
-</table>
+        $html .= '</body></html>';
 
-<!-- ═══ DOS COLUMNAS: recomendaciones + política ═══ -->
-<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
-<tr valign="top">
-
-  <td width="49%" style="padding-right:8px;">
-    <?php echo $section_title($is_en ? 'Remember to bring' : 'Recuerda llevar'); ?>
-    <ul style="margin:0;padding-left:0;list-style:none;"><?php echo $recs_html; ?></ul>
-  </td>
-
-  <td width="2%"></td>
-
-  <td width="49%">
-    <?php echo $section_title($is_en ? 'Cancellation policy' : 'Política de cancelación'); ?>
-    <div style="background:#fffbeb;border-left:3px solid <?php echo $amber; ?>;padding:8px 10px;">
-    <?php echo $pol_html; ?>
-    </div>
-  </td>
-
-</tr>
-</table>
-
-<!-- ═══ FOOTER ═══ -->
-<table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid <?php echo $green; ?>;padding-top:8px;margin-top:4px;">
-<tr>
-  <td valign="middle">
-    <b style="font-size:9pt;">Amir Adventours Bacalar</b><br/>
-    <span style="font-size:8pt;color:<?php echo $gray; ?>;"><?php echo $site; ?></span>
-  </td>
-  <td align="right" valign="middle">
-    <b style="font-size:9pt;color:<?php echo $green; ?>;">WhatsApp: +<?php echo esc_html($wa); ?></b><br/>
-    <span style="font-size:8pt;color:<?php echo $gray; ?>;"><?php echo $is_en ? 'Questions? Message us anytime.' : '¿Dudas? Escríbenos cuando quieras.'; ?></span>
-  </td>
-</tr>
-</table>
-
-</body>
-</html>
-        <?php
-        return ob_get_clean();
+        return $html;
     }
 }

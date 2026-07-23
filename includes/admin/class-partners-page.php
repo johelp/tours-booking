@@ -277,6 +277,12 @@ class PartnersPage {
             global $wpdb;
             $token = $wpdb->get_var($wpdb->prepare("SELECT tracking_token FROM {$wpdb->prefix}amir_partners WHERE id=%d",$partner_id));
             if ($token) {
+                // Borrar archivos cacheados para forzar regeneración con api.qrserver.com
+                $upload_dir = wp_upload_dir();
+                $qr_dir     = $upload_dir['basedir'] . '/amir-booking/partners/';
+                foreach ( glob( $qr_dir . 'partner-' . $partner_id . '-*.png' ) as $old_file ) {
+                    @unlink( $old_file );
+                }
                 \AmirBooking\Partners\PartnerTracker::generate_partner_qr($partner_id, $token, 0);
                 set_transient('amir_partner_message','QR regenerado.',30);
             }

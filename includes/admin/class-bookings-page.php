@@ -28,6 +28,11 @@ class BookingsPage {
             // stream_pdf termina con exit
         }
 
+        if ( $action === 'new' ) {
+            $this->render_new_booking_form();
+            return;
+        }
+
         if ( $action === 'view' && ! empty($_GET['id']) ) {
             $this->render_detail( (int)$_GET['id'] );
         } else {
@@ -53,9 +58,17 @@ class BookingsPage {
         <?php $this->admin_styles(); ?>
         <h1 style="display:flex;align-items:center;justify-content:space-between;">
           <span>📋 Reservas <span style="font-size:14px;font-weight:400;color:#5a7068;">(<?php echo $total; ?> total)</span></span>
-          <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=export'.$this->filter_query_string($filters)); ?>"
-             class="button">⬇ Exportar CSV</a>
+          <div style="display:flex;gap:8px;">
+            <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=new'); ?>"
+               class="button button-primary">+ Nueva reserva</a>
+            <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=export'.$this->filter_query_string($filters)); ?>"
+               class="button">⬇ Exportar CSV</a>
+          </div>
         </h1>
+
+        <?php if ( ! empty( $_GET['created'] ) ) : ?>
+          <div class="notice notice-success is-dismissible"><p>Reserva creada correctamente.</p></div>
+        <?php endif; ?>
 
         <!-- Filtros -->
         <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:20px;background:#f8fdfb;padding:14px 16px;border-radius:10px;border:1px solid #e1f5ee;">
@@ -701,6 +714,243 @@ class BookingsPage {
         .ab-detail-row > span:first-child { color:#5a7068; flex-shrink:0; min-width:90px; }
         .ab-wa-btn { display:inline-flex; align-items:center; gap:4px; background:#25D366; color:#fff !important; border:none; border-radius:5px; padding:4px 8px; font-size:11px; font-weight:700; text-decoration:none; }
         </style>';
+    }
+
+    // ── Formulario de reserva manual ─────────────────────────────────────────
+
+    private function render_new_booking_form(): void {
+        // Procesar envío del formulario
+        $error   = '';
+        $success = '';
+        if ( 'POST' === $_SERVER['REQUEST_METHOD'] && ! empty( $_POST['amir_manual_nonce'] ) ) {
+            if ( ! wp_verify_nonce( $_POST['amir_manual_nonce'], 'amir_create_manual_booking' ) ) {
+                $error = 'Nonce inválido. Recarga la página e inténtalo de nuevo.';
+            } elseif ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
+                $error = 'No tienes permisos para crear reservas.';
+            } else {
+                $manager = new \AmirBooking\Core\BookingManager();
+                $result  = $manager->create_manual( $_POST );
+                if ( $result->success ) {
+                    wp_redirect( admin_url(
+                        'admin.php?page=amir-bookings-list&action=view&id=' . $result->booking_id . '&created=1'
+                    ) );
+                    exit;
+                } else {
+                    $error = $result->error;
+                }
+            }
+        }
+
+        $tours = $this->get_tours_for_filter();
+        global $wpdb;
+        $partners = $wpdb->get_results( "SELECT id, name FROM {$wpdb->prefix}amir_partners WHERE active=1 ORDER BY name ASC" );
+        ?>
+        <div class="wrap ab-admin-wrap">
+        <?php $this->admin_styles(); ?>
+        <h1 style="display:flex;align-items:center;gap:12px;">
+          <a href="<?php echo admin_url('admin.php?page=amir-bookings-list'); ?>"
+             style="text-decoration:none;color:#5a7068;font-size:20px;">←</a>
+          Nueva reserva manual
+        </h1>
+
+        <?php if ( $error ) : ?>
+          <div class="notice notice-error"><p><?php echo esc_html( $error ); ?></p></div>
+        <?php endif; ?>
+
+        <form method="post" style="max-width:700px;">
+          <?php wp_nonce_field( 'amir_create_manual_booking', 'amir_manual_nonce' ); ?>
+
+          <!-- ── Tour y fecha ── -->
+          <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
+            <h3 style="margin:0 0 14px;color:#1D9E75;">Tour y fecha</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Tour *</label>
+                <select name="tour_id" required onchange="amirLoadSchedules(this.value)"
+                        style="<?php echo $this->input_style(); ?> width:100%;">
+                  <option value="">— Selecciona un tour —</option>
+                  <?php foreach ( $tours as $t ) : ?>
+                    <option value="<?php echo $t->id; ?>"><?php echo esc_html( $t->name_es ); ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Horario</label>
+                <select name="schedule_id" id="amir-schedule-select"
+                        style="<?php echo $this->input_style(); ?> width:100%;">
+                  <option value="0">— Sin horario específico —</option>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Fecha *</label>
+                <input type="date" name="date" required min="<?php echo date('Y-m-d'); ?>"
+                       style="<?php echo $this->input_style(); ?> width:100%;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Idioma</label>
+                <select name="lang" style="<?php echo $this->input_style(); ?> width:100%;">
+                  <option value="es">Español</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Pasajeros ── -->
+          <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
+            <h3 style="margin:0 0 14px;color:#1D9E75;">Pasajeros</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Adultos *</label>
+                <input type="number" name="adults" value="1" min="1" max="50"
+                       style="<?php echo $this->input_style(); ?> width:100%;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Niños</label>
+                <input type="number" name="children" value="0" min="0" max="50"
+                       style="<?php echo $this->input_style(); ?> width:100%;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Bebés</label>
+                <input type="number" name="babies" value="0" min="0" max="20"
+                       style="<?php echo $this->input_style(); ?> width:100%;" />
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Datos del cliente ── -->
+          <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
+            <h3 style="margin:0 0 14px;color:#1D9E75;">Datos del cliente</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Nombre completo *</label>
+                <input type="text" name="customer_name" required placeholder="Ana García"
+                       style="<?php echo $this->input_style(); ?> width:100%;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Email *</label>
+                <input type="email" name="customer_email" required placeholder="ana@ejemplo.com"
+                       style="<?php echo $this->input_style(); ?> width:100%;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">WhatsApp / Teléfono</label>
+                <input type="text" name="customer_phone" placeholder="+52 983 123 4567"
+                       style="<?php echo $this->input_style(); ?> width:100%;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Partner (opcional)</label>
+                <select name="partner_id" style="<?php echo $this->input_style(); ?> width:100%;">
+                  <option value="">— Sin partner —</option>
+                  <?php foreach ( $partners as $p ) : ?>
+                    <option value="<?php echo $p->id; ?>"><?php echo esc_html( $p->name ); ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Precio y pago ── -->
+          <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
+            <h3 style="margin:0 0 14px;color:#1D9E75;">Precio y pago</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">
+                  Total MXN
+                  <span style="font-weight:400;color:#5a7068;">(0 = calcular automático)</span>
+                </label>
+                <input type="number" name="total_mxn" value="0" min="0" step="0.01"
+                       style="<?php echo $this->input_style(); ?> width:100%;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Método de pago</label>
+                <select name="payment_method_note" style="<?php echo $this->input_style(); ?> width:100%;">
+                  <option value="Efectivo">Efectivo</option>
+                  <option value="Transferencia">Transferencia</option>
+                  <option value="Tarjeta (presencial)">Tarjeta (presencial)</option>
+                  <option value="WhatsApp / Coordinado">WhatsApp / Coordinado</option>
+                  <option value="Cortesía">Cortesía</option>
+                  <option value="Agencia">Agencia</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Notas y correo ── -->
+          <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
+            <h3 style="margin:0 0 14px;color:#1D9E75;">Correo y notas</h3>
+
+            <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">
+              Nota personalizada en el correo
+              <span style="font-weight:400;color:#5a7068;">(aparece en el email del cliente, opcional)</span>
+            </label>
+            <textarea name="custom_email_note" rows="3" placeholder="Ej: Su guía le espera con un cartel verde en el muelle principal. Traiga efectivo para propinas."
+                      style="<?php echo $this->input_style(); ?> width:100%;resize:vertical;"></textarea>
+
+            <div style="margin-top:14px;">
+              <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">
+                Solicitudes especiales del cliente
+              </label>
+              <textarea name="special_requests" rows="2"
+                        placeholder="Silla de ruedas, alergia alimentaria, cumpleaños, etc."
+                        style="<?php echo $this->input_style(); ?> width:100%;resize:vertical;"></textarea>
+            </div>
+
+            <div style="margin-top:14px;">
+              <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">
+                Notas internas
+                <span style="font-weight:400;color:#5a7068;">(solo visibles en el panel, no se envían al cliente)</span>
+              </label>
+              <textarea name="internal_notes" rows="2"
+                        placeholder="Reserva gestionada por teléfono el 10/04. Pagó en efectivo."
+                        style="<?php echo $this->input_style(); ?> width:100%;resize:vertical;"></textarea>
+            </div>
+
+            <div style="margin-top:18px;padding:12px 16px;background:#f8fdfb;border-radius:8px;border:1px solid #e1f5ee;">
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;">
+                <input type="checkbox" name="send_email" value="1" checked
+                       style="width:16px;height:16px;accent-color:#1D9E75;" />
+                <span>
+                  <strong>Enviar correo de confirmación al cliente</strong>
+                  <span style="display:block;font-size:12px;color:#5a7068;margin-top:1px;">
+                    Incluye referencia, detalles del tour, PDF del voucher y la nota personalizada.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:12px;align-items:center;">
+            <button type="submit" class="button button-primary" style="font-size:14px;height:38px;padding:0 20px;">
+              Crear reserva confirmada
+            </button>
+            <a href="<?php echo admin_url('admin.php?page=amir-bookings-list'); ?>" class="button">
+              Cancelar
+            </a>
+          </div>
+        </form>
+        </div>
+
+        <script>
+        function amirLoadSchedules(tourId) {
+            var sel = document.getElementById('amir-schedule-select');
+            sel.innerHTML = '<option value="0">— Sin horario específico —</option>';
+            if (!tourId) return;
+            fetch(amirAdminData.apiUrl + 'tours/' + tourId + '/schedules', {
+                headers: { 'X-WP-Nonce': amirAdminData.nonce }
+            })
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                (data.schedules || data || []).forEach(function(s){
+                    var opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = (s.label_es || s.time_start || 'Horario ' + s.id);
+                    sel.appendChild(opt);
+                });
+            })
+            .catch(function(){});
+        }
+        </script>
+        <?php
     }
 
     // ── Descarga de voucher PDF desde el admin ────────────────────────────

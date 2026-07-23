@@ -45,15 +45,29 @@ final class Plugin {
             ( new \AmirBooking\Api\PricesController() )->register_routes();
         } );
 
-        // ── Admin ─────────────────────────────────────────────────────────
+        // ── Admin (site-level) ────────────────────────────────────────────
         if ( is_admin() ) {
             ( new \AmirBooking\Admin\AdminMenu() )->register();
             ( new \AmirBooking\Admin\NotificationBadge() )->register();
         }
 
+        // ── Network Admin (solo en Multisite, solo para Super Admin) ──────
+        if ( is_multisite() && is_network_admin() ) {
+            ( new \AmirBooking\Admin\NetworkAdmin() )->register();
+        }
+
+        // ── Hooks de Multisite: nuevo site → crear tablas ─────────────────
+        if ( is_multisite() ) {
+            // WP 5.1+
+            add_action( 'wp_initialize_site', [ Installer::class, 'on_new_site'      ], 10, 1 );
+            // Fallback WP < 5.1
+            add_action( 'wpmu_new_blog',      [ Installer::class, 'on_wpmu_new_blog' ], 10, 1 );
+        }
+
         // ── Shortcodes ────────────────────────────────────────────────────
-        add_shortcode( 'amir_booking',   [ Shortcodes::class, 'booking_widget' ] );
-        add_shortcode( 'amir_tour_list', [ Shortcodes::class, 'tour_list'      ] );
+        add_shortcode( 'amir_booking',        [ Shortcodes::class, 'booking_widget' ] );
+        add_shortcode( 'amir_tour_list',      [ Shortcodes::class, 'tour_list'      ] );
+        add_shortcode( 'amir_verify_booking', [ Shortcodes::class, 'verify_booking' ] );
 
         // ── Cron jobs ─────────────────────────────────────────────────────
         ( new CronManager() )->register();

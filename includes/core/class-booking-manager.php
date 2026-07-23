@@ -61,12 +61,12 @@ class BookingManager {
 
         // Calcular precio
         $quote = $this->pricing->quote(
-            tour_id:     (int) $data['tour_id'],
-            schedule_id: (int) $data['schedule_id'],
-            date:        $data['date'],
-            adults:      (int) $data['adults'],
-            children:    (int) $data['children'],
-            babies:      (int) $data['babies'],
+            (int) $data['tour_id'],
+            (int) $data['schedule_id'],
+            $data['date'],
+            (int) $data['adults'],
+            (int) $data['children'],
+            (int) $data['babies']
         );
 
         if ( ! $quote->is_valid() ) {
@@ -149,13 +149,139 @@ class BookingManager {
             delete_transient( "amir_avail_{$data['tour_id']}_{$date_parts[0]}_{$date_parts[1]}" );
         }
 
-        return new BookingResult(
-            success:     true,
-            booking_id:  $booking_id,
-            booking_ref: $booking_ref,
-            total_mxn:   $quote->total_mxn,
-            quote:       $quote,
+        return new BookingResult( true, $booking_id, $booking_ref, $quote->total_mxn, $quote );
+    }
+
+    // ── Crear reserva manual (confirmada directamente) ────────────────────
+
+    /**
+     * Crea una reserva manual directamente como 'confirmed' (sin pago online).
+     * Usada desde el panel de administración para reservas por teléfono, WhatsApp, etc.
+     */
+    public function create_manual( array $data ): BookingResult {
+        global $wpdb;
+
+        $tour_id     = (int) ( $data['tour_id'] ?? 0 );
+        $schedule_id = (int) ( $data['schedule_id'] ?? 0 );
+        $date        = sanitize_text_field( $data['date'] ?? '' );
+        $adults      = max( 1, (int) ( $data['adults'] ?? 1 ) );
+        $children    = max( 0, (int) ( $data['children'] ?? 0 ) );
+        $babies      = max( 0, (int) ( $data['babies'] ?? 0 ) );
+        $total_mxn   = (float) ( $data['total_mxn'] ?? 0 );
+
+        if ( ! $tour_id || ! $date || ! strtotime( $date ) ) {
+            return BookingResult::error( 'Tour y fecha son obligatorios.' );
+        }
+        if ( empty( $data['customer_name'] ) || empty( $data['customer_email'] ) ) {
+            return BookingResult::error( 'Nombre y email del cliente son obligatorios.' );
+        }
+        if ( ! is_email( $data['customer_email'] ) ) {
+            return BookingResult::error( 'Email del cliente no válido.' );
+        }
+
+        $pax = $adults + $children + $babies;
+
+        // Bloquear fila y verificar capacidad dentro de una transacción
+        $wpdb->query( 'START TRANSACTION' );
+
+        $booked_pax = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COALESCE(SUM(adults + children + babies), 0)
+             FROM {$wpdb->prefix}amir_bookings
+             WHERE tour_id = %d AND schedule_id = %d AND tour_date = %s
+               AND status IN ('pending','confirmed')
+             FOR UPDATE",
+            $tour_id, $schedule_id, $date
+        ) );
+
+        $avail = $this->availability->check( $tour_id, $date, $schedule_id );
+        if ( $pax > $avail->slots_remaining ) {
+            $wpdb->query( 'ROLLBACK' );
+            return BookingResult::error(
+                sprintf( 'Solo quedan %d cupos disponibles para esa fecha.', $avail->slots_remaining )
+            );
+        }
+
+        // Calcular precio automático si no se especifica
+        if ( $total_mxn <= 0 ) {
+            $quote     = $this->pricing->quote( $tour_id, $schedule_id, $date, $adults, $children, $babies );
+            $total_mxn = $quote->is_valid() ? $quote->total_mxn : 0.0;
+        }
+
+        $booking_ref = $this->generate_ref();
+        $partner_id  = ! empty( $data['partner_id'] ) ? (int) $data['partner_id'] : null;
+        $now         = current_time( 'mysql' );
+
+        $inserted = $wpdb->insert(
+            $wpdb->prefix . 'amir_bookings',
+            array(
+                'booking_ref'       => $booking_ref,
+                'tour_id'           => $tour_id,
+                'schedule_id'       => $schedule_id,
+                'partner_id'        => $partner_id,
+                'tour_date'         => $date,
+                'status'            => 'confirmed',
+                'booking_source'    => 'manual',
+                'lang'              => in_array( $data['lang'] ?? '', array('es','en'), true ) ? $data['lang'] : 'es',
+                'customer_name'     => sanitize_text_field( $data['customer_name'] ),
+                'customer_email'    => sanitize_email( $data['customer_email'] ),
+                'customer_phone'    => sanitize_text_field( $data['customer_phone'] ?? '' ),
+                'adults'            => $adults,
+                'children'          => $children,
+                'babies'            => $babies,
+                'total_mxn'         => $total_mxn,
+                'special_requests'  => sanitize_textarea_field( $data['special_requests'] ?? '' ),
+                'internal_notes'    => sanitize_textarea_field(
+                    ( ! empty( $data['payment_method_note'] ) ? 'Pago: ' . $data['payment_method_note'] . "\n" : '' )
+                    . ( $data['internal_notes'] ?? '' )
+                ),
+                'custom_email_note' => sanitize_textarea_field( $data['custom_email_note'] ?? '' ),
+                'confirmed_at'      => $now,
+            ),
+            array( '%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%s','%s','%s','%s' )
         );
+
+        if ( ! $inserted ) {
+            $wpdb->query( 'ROLLBACK' );
+            return BookingResult::error( 'Error de base de datos al crear la reserva.' );
+        }
+
+        $booking_id = (int) $wpdb->insert_id;
+        $wpdb->query( 'COMMIT' );
+
+        // Invalidar caché de disponibilidad
+        $date_parts = explode( '-', $date );
+        if ( count( $date_parts ) === 3 ) {
+            delete_transient( "amir_avail_{$tour_id}_{$date_parts[0]}_{$date_parts[1]}" );
+        }
+
+        // Generar PDF y QR en shutdown (no bloquea la respuesta)
+        add_action( 'shutdown', function() use ( $booking_id ) {
+            try {
+                $gen  = new VoucherGenerator();
+                $bk   = $this->get_booking( $booking_id );
+                $path = $gen->generate( $booking_id );
+                $qr   = $bk ? $gen->generate_qr( $booking_id, $bk->booking_ref ) : '';
+                if ( $path || $qr ) {
+                    global $wpdb;
+                    $wpdb->update(
+                        $wpdb->prefix . 'amir_bookings',
+                        array( 'pdf_voucher_path' => $path, 'qr_code_path' => $qr ),
+                        array( 'id' => $booking_id ),
+                        array( '%s', '%s' ),
+                        array( '%d' )
+                    );
+                }
+            } catch ( \Throwable $e ) {
+                error_log( 'Amir manual booking PDF error: ' . $e->getMessage() );
+            }
+        } );
+
+        // Enviar email de confirmación si se solicitó
+        if ( ! empty( $data['send_email'] ) ) {
+            do_action( 'amir_booking_confirmed', $booking_id );
+        }
+
+        return new BookingResult( true, $booking_id, $booking_ref, $total_mxn );
     }
 
     // ── Confirmar reserva post-pago ───────────────────────────────────────
@@ -194,7 +320,8 @@ class BookingManager {
             try {
                 $gen  = new VoucherGenerator();
                 $path = $gen->generate( $booking_id );
-                $qr   = $gen->generate_qr( $booking_id, $this->get_booking($booking_id)?->booking_ref ?? '' );
+                $bk   = $this->get_booking( $booking_id );
+                $qr   = $bk ? $gen->generate_qr( $booking_id, $bk->booking_ref ) : '';
 
                 if ( $path || $qr ) {
                     global $wpdb;
@@ -267,13 +394,7 @@ class BookingManager {
 
         do_action( 'amir_booking_cancelled', $booking_id, $reason_type );
 
-        return new BookingResult(
-            success:     true,
-            booking_id:  $booking_id,
-            booking_ref: $booking->booking_ref,
-            total_mxn:   $refund['refund_mxn'],
-            message:     $refund['message'],
-        );
+        return new BookingResult( true, $booking_id, $booking->booking_ref, (float)$refund['refund_mxn'], null, '', $refund['message'] );
     }
 
     // ── Política de reembolso ─────────────────────────────────────────────

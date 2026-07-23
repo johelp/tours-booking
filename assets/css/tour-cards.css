@@ -59,6 +59,43 @@
   border-radius: 20px;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  z-index: 1;
+}
+
+/* Badge de precio sobre la imagen (esquina inferior derecha) */
+.amir-tour-card__price-badge {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(29, 158, 117, .92);
+  color: #fff;
+  border-radius: 8px;
+  padding: 5px 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1;
+}
+
+.amir-tour-card__price-badge-label {
+  font-size: 9px;
+  font-weight: 600;
+  opacity: .85;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.amir-tour-card__price-badge-value {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.amir-tour-card__price-badge-cur {
+  font-size: 10px;
+  opacity: .8;
 }
 
 /* Cuerpo */
@@ -193,7 +230,79 @@
   transform: scale(.98);
 }
 
+/* ── Layout lista (layout="list") ───────────────────────────────────────── */
+.amir-tours-grid--list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.amir-tour-card--list {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.amir-tour-card--list .amir-tour-card__img-wrap {
+  width: 220px;
+  flex-shrink: 0;
+  aspect-ratio: auto;
+}
+
+.amir-tour-card--list .amir-tour-card__img {
+  height: 100%;
+  object-fit: cover;
+}
+
+.amir-tour-card--list .amir-tour-card__body {
+  padding: 20px 22px;
+}
+
+.amir-tour-card--list .amir-tour-card__cta {
+  display: inline-block;
+  width: auto;
+  padding: 10px 20px;
+}
+
+/* ── Sección "Tours Sugeridos" en single tour ───────────────────────────── */
+.amir-suggested {
+  background: #f8fdfb;
+  border-top: 1px solid #e1f5ee;
+  padding: 40px 0 50px;
+  margin-top: 8px;
+}
+
+.amir-suggested__inner {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.amir-suggested__title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #1a2e24;
+  margin: 0 0 24px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e1f5ee;
+}
+
+.amir-suggested__scroll {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+
+.amir-suggested__card {
+  min-width: 0;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .amir-suggested__scroll {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 600px) {
   .amir-tours-grid {
     grid-template-columns: 1fr;
@@ -202,5 +311,17 @@
 
   .amir-tour-card__price-value {
     font-size: 20px;
+  }
+
+  .amir-tour-card--list {
+    flex-direction: column;
+  }
+
+  .amir-tour-card--list .amir-tour-card__img-wrap {
+    width: 100%;
+  }
+
+  .amir-suggested__scroll {
+    grid-template-columns: 1fr;
   }
 }

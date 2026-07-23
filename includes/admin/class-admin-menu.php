@@ -34,17 +34,29 @@ class AdminMenu {
         exit;
     }
 
+    /**
+     * Nombre de marca del plugin — configurable desde Network Admin.
+     * Default: 'Tour Booking' (genérico, sin referencia a "Amir").
+     */
+    private function brand_name(): string {
+        $name = is_multisite()
+            ? get_site_option( 'amir_brand_name', '' )
+            : get_option( 'amir_brand_name', '' );
+        return $name ?: 'Tour Booking';
+    }
+
     public function add_menus(): void {
         $unread = $this->get_unread_count();
         $badge  = $unread > 0 ? " <span class='amir-badge'>{$unread}</span>" : '';
+        $brand  = $this->brand_name();
 
         // Capacidad base: manage_options para admins, manage_amir_booking para Tour Managers
         $cap = current_user_can( 'manage_options' ) ? 'manage_options' : 'manage_amir_booking';
 
         // Menú principal
         add_menu_page(
-            __( 'Amir Booking', 'amir-booking' ),
-            __( 'Amir Booking', 'amir-booking' ) . $badge,
+            $brand,
+            $brand . $badge,
             $cap,
             'amir-booking',
             [ $this, 'page_dashboard' ],
@@ -119,6 +131,14 @@ class AdminMenu {
         // Solo en páginas del plugin
         if ( strpos( $hook, 'amir' ) === false ) {
             return;
+        }
+
+        // Media library: necesaria para el selector de logo en Settings.
+        // Debe cargarse aquí (admin_enqueue_scripts) y NO dentro del callback
+        // de la página — ese se ejecuta después del <head> y los scripts
+        // de wp.media quedarían fuera del contexto correcto.
+        if ( strpos( $hook, 'amir-settings' ) !== false ) {
+            wp_enqueue_media();
         }
 
         wp_enqueue_style(

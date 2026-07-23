@@ -93,12 +93,7 @@ class PricingEngine {
             ];
         }
 
-        return new PriceQuote(
-            total_mxn:    round( $total, 2 ),
-            usd_reference: $this->convert_to_usd( $total ),
-            breakdown:    $breakdown,
-            model:        'percapita',
-        );
+        return new PriceQuote( round( $total, 2 ), $this->convert_to_usd( $total ), $breakdown, 'percapita' );
     }
 
     // ── Modelo grupo (precio fijo por rango de personas) ──────────────────
@@ -134,16 +129,16 @@ class PricingEngine {
         $total = (float) $matched->price_mxn;
 
         return new PriceQuote(
-            total_mxn:    round( $total, 2 ),
-            usd_reference: $this->convert_to_usd( $total ),
-            breakdown:    [ [
+            round( $total, 2 ),
+            $this->convert_to_usd( $total ),
+            [ [
                 'type'      => 'group',
                 'qty'       => $total_pax,
                 'group_min' => (int) $matched->group_min,
                 'group_max' => (int) $matched->group_max,
                 'total_mxn' => round( $total, 2 ),
             ] ],
-            model: 'group',
+            'group'
         );
     }
 

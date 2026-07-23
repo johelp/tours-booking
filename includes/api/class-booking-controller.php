@@ -287,12 +287,12 @@ class BookingController {
         $pricing = new \AmirBooking\Core\PricingEngine();
 
         $quote = $pricing->quote(
-            tour_id:     (int) $request->get_param( 'tour_id' ),
-            schedule_id: (int) $request->get_param( 'schedule_id' ),
-            date:        $request->get_param( 'date' ),
-            adults:      (int) $request->get_param( 'adults' ),
-            children:    (int) ( $request->get_param( 'children' ) ?? 0 ),
-            babies:      (int) ( $request->get_param( 'babies' ) ?? 0 ),
+            (int) $request->get_param( 'tour_id' ),
+            (int) $request->get_param( 'schedule_id' ),
+            $request->get_param( 'date' ),
+            (int) $request->get_param( 'adults' ),
+            (int) ( $request->get_param( 'children' ) ?? 0 ),
+            (int) ( $request->get_param( 'babies' ) ?? 0 )
         );
 
         if ( ! $quote->is_valid() ) {
@@ -398,7 +398,10 @@ class BookingController {
 
         if ( $sk ) {
             $response = wp_remote_get( "https://api.stripe.com/v1/payment_intents/{$pi_id}", [
-                'headers' => [ 'Authorization' => 'Bearer ' . $sk ],
+                'headers' => [
+                    'Authorization'  => 'Bearer ' . $sk,
+                    'Stripe-Version' => '2024-06-20',
+                ],
                 'timeout' => 10,
             ] );
 
@@ -554,7 +557,7 @@ class BookingController {
 
     // ── Stripe PaymentIntent ──────────────────────────────────────────────
 
-    private function create_stripe_payment_intent( \AmirBooking\Core\BookingResult $booking_result ): array|\WP_Error {
+    private function create_stripe_payment_intent( \AmirBooking\Core\BookingResult $booking_result ) {
         $mode   = get_option( 'amir_stripe_mode', 'test' );
         $sk_key = get_option( "amir_stripe_sk_{$mode}", '' );
 
@@ -562,17 +565,21 @@ class BookingController {
             return new \WP_Error( 'no_stripe_key', 'Stripe no configurado' );
         }
 
+        $currency     = strtolower( get_option( 'amir_currency', 'MXN' ) );
         $amount_cents = (int) round( $booking_result->total_mxn * 100 );
+        $company      = get_option( 'amir_company_name', 'Tour Booking' );
 
         $response = wp_remote_post( 'https://api.stripe.com/v1/payment_intents', [
             'headers' => [
-                'Authorization' => 'Bearer ' . $sk_key,
-                'Content-Type'  => 'application/x-www-form-urlencoded',
+                'Authorization'  => 'Bearer ' . $sk_key,
+                'Content-Type'   => 'application/x-www-form-urlencoded',
+                'Stripe-Version' => '2024-06-20',
             ],
             'body' => [
-                'amount'   => $amount_cents,
-                'currency' => 'mxn',
-                'metadata' => [
+                'amount'      => $amount_cents,
+                'currency'    => $currency,
+                'description' => $company . ' — ' . $booking_result->booking_ref,
+                'metadata'    => [
                     'booking_ref' => $booking_result->booking_ref,
                     'booking_id'  => $booking_result->booking_id,
                 ],

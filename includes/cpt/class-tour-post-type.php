@@ -823,7 +823,8 @@ class TourPostType {
     }
 
     public function title_placeholder( string $title ): string {
-        if ( get_current_screen()?->post_type === self::POST_TYPE ) {
+        $screen = get_current_screen();
+        if ( $screen && $screen->post_type === self::POST_TYPE ) {
             return __( 'Nombre del tour (ES)', 'amir-booking' );
         }
         return $title;

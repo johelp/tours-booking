@@ -65,9 +65,20 @@ get_header();
                 <img src="<?php echo esc_url($cover); ?>" alt="<?php echo esc_attr($title); ?>"
                      class="amir-tour-card__img" loading="lazy" />
               </a>
+            <?php else : ?>
+              <a href="<?php echo esc_url($link); ?>" style="display:block">
+                <div style="width:100%;aspect-ratio:16/9;background:linear-gradient(135deg,#c8eedf,#9FE1CB);display:flex;align-items:center;justify-content:center;font-size:36px;">⛵</div>
+              </a>
             <?php endif; ?>
             <?php if ($duration) : ?>
               <span class="amir-tour-card__duration-badge">⏱ <?php echo esc_html($dur_fmt); ?></span>
+            <?php endif; ?>
+            <?php if ($price_from > 0) : ?>
+              <div class="amir-tour-card__price-badge">
+                <span class="amir-tour-card__price-badge-label"><?php echo $is_en?'From':'Desde'; ?></span>
+                <span class="amir-tour-card__price-badge-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
+                <span class="amir-tour-card__price-badge-cur"> MXN</span>
+              </div>
             <?php endif; ?>
           </div>
 
@@ -89,14 +100,6 @@ get_header();
               <?php endif; ?>
             </div>
 
-            <?php if ($price_from > 0) : ?>
-            <div class="amir-tour-card__price">
-              <span class="amir-tour-card__price-from"><?php echo $is_en?'From':'Desde'; ?></span>
-              <span class="amir-tour-card__price-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
-              <span class="amir-tour-card__price-currency">MXN</span>
-            </div>
-            <?php endif; ?>
-
             <a href="<?php echo esc_url($link); ?>" class="amir-tour-card__cta">
               <?php echo $is_en ? 'Book now' : 'Reservar ahora'; ?>
             </a>
@@ -106,11 +109,16 @@ get_header();
   </div>
 </div>
 
+<?php $brand_color = esc_attr( get_option( 'amir_brand_color', '#1D9E75' ) ); ?>
 <style>
 .amir-archive-tours { max-width:1200px; margin:0 auto; padding:40px 20px 60px; }
 .amir-archive-tours__header { text-align:center; margin-bottom:40px; }
 .amir-archive-tours__header h1 { font-size:clamp(26px,4vw,38px); font-weight:800; color:#1a2e24; margin-bottom:10px; }
 .amir-archive-tours__header p  { font-size:16px; color:#5a7068; max-width:560px; margin:0 auto; }
+.amir-tour-card__cta { background:<?php echo $brand_color; ?>; }
+.amir-tour-card__cta:hover { background:<?php echo $brand_color; ?>; filter:brightness(.88); }
+.amir-tour-card__price-badge { background:<?php echo $brand_color; ?>cc; }
+.amir-tour-card__title a:hover { color:<?php echo $brand_color; ?>; }
 </style>
 
 <?php get_footer(); ?>

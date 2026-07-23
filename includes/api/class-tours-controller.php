@@ -57,6 +57,7 @@ class ToursController {
         $rows = $wpdb->get_results(
             "SELECT id, slug, price_model, sort_order,
                     name_es, name_en,
+                    description_es, description_en,
                     duration_minutes, min_age, max_capacity,
                     gallery_images, languages
              FROM {$wpdb->prefix}amir_tours
@@ -70,6 +71,7 @@ class ToursController {
             $rows = $wpdb->get_results(
                 "SELECT id, slug, price_model, sort_order,
                         name_es, name_en,
+                        description_es, description_en,
                         duration_minutes, min_age, max_capacity,
                         gallery_images, languages
                  FROM {$wpdb->prefix}amir_tours
@@ -241,16 +243,19 @@ class ToursController {
     }
 
     private function format_tour_summary( object $r, string $lang ): array {
-        $gallery = json_decode( $r->gallery_images ?: '[]', true );
+        $gallery    = json_decode( $r->gallery_images ?: '[]', true );
+        $desc_raw   = $lang === 'en' ? ( $r->description_en ?: $r->description_es ) : $r->description_es;
+        $short_desc = mb_substr( wp_strip_all_tags( $desc_raw ?: '' ), 0, 120 );
         return [
-            'id'               => (int) $r->id,
-            'slug'             => $r->slug,
-            'price_model'      => $r->price_model,
-            'name'             => $lang === 'en' ? $r->name_en : $r->name_es,
-            'duration_minutes' => (int) $r->duration_minutes,
-            'min_age'          => (int) $r->min_age,
-            'cover_image'      => $gallery[0] ?? '',
-            'languages'        => json_decode( $r->languages ?: '[]', true ),
+            'id'                => (int) $r->id,
+            'slug'              => $r->slug,
+            'price_model'       => $r->price_model,
+            'name'              => $lang === 'en' ? $r->name_en : $r->name_es,
+            'short_description' => $short_desc,
+            'duration_minutes'  => (int) $r->duration_minutes,
+            'min_age'           => (int) $r->min_age,
+            'cover_image'       => $gallery[0] ?? '',
+            'languages'         => json_decode( $r->languages ?: '[]', true ),
         ];
     }
 
