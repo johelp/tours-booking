@@ -71,6 +71,7 @@ class AdminMenu {
             [ 'amir-availability',   __( 'Disponibilidad', 'amir-booking' ), [ $this, 'page_availability'] ],
             [ 'amir-partners',       __( 'Partners',       'amir-booking' ), [ $this, 'page_partners'    ] ],
             [ 'amir-reports',        __( 'Reportes',       'amir-booking' ), [ $this, 'page_reports'     ] ],
+            [ 'amir-payment-log',    __( 'Log de pagos',   'amir-booking' ), [ $this, 'page_payment_log' ] ],
             [ 'amir-settings',       __( 'Configuración',  'amir-booking' ), [ $this, 'page_settings'    ] ],
         ];
 
@@ -120,6 +121,9 @@ class AdminMenu {
     }
     public function page_reports(): void {
         ( new \AmirBooking\Admin\ReportsPage() )->render();
+    }
+    public function page_payment_log(): void {
+        ( new \AmirBooking\Admin\PaymentLogPage() )->render();
     }
     public function page_settings(): void {
         ( new \AmirBooking\Admin\SettingsPage() )->render();

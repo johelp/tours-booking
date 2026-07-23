@@ -85,6 +85,44 @@ final class Plugin {
         // ── Partners ──────────────────────────────────────────────────────
         ( new \AmirBooking\Partners\PartnerTracker() )->register();
 
+        // ── Reembolsos ────────────────────────────────────────────────────
+        // BookingManager::cancel() dispara esta acción cuando la política de
+        // cancelación indica reembolso, pero hasta ahora nadie la escuchaba
+        // — el monto quedaba calculado en la base sin avisarle nunca a la
+        // pasarela. Se resuelve acá contra el gateway con el que se cobró
+        // esa reserva específica (no necesariamente el gateway "default").
+        add_action( 'amir_process_stripe_refund', function ( int $booking_id, float $refund_mxn ) {
+            global $wpdb;
+            $booking = $wpdb->get_row( $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}amir_bookings WHERE id = %d", $booking_id
+            ) );
+            if ( ! $booking ) {
+                return;
+            }
+
+            $gateway          = \AmirBooking\Payments\PaymentGatewayFactory::for_booking( $booking );
+            $charge_reference = $booking->gateway_charge_id ?: $booking->stripe_charge_id;
+
+            if ( ! $gateway || ! $gateway->is_configured() || empty( $charge_reference ) ) {
+                \AmirBooking\Payments\PaymentEventLogger::log(
+                    $booking_id,
+                    $booking->payment_gateway ?: 'stripe',
+                    'refund_skipped',
+                    'Sin charge de referencia o pasarela no configurada — reembolsar manualmente'
+                );
+                return;
+            }
+
+            $success = $gateway->refund( $charge_reference, $refund_mxn );
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                $booking_id,
+                $gateway->id(),
+                $success ? 'refund_succeeded' : 'refund_failed',
+                '',
+                [ 'amount_mxn' => $refund_mxn, 'charge_reference' => $charge_reference ]
+            );
+        }, 10, 2 );
+
         // ── Actualización de DB cuando la versión del esquema cambia ──────
         if ( get_option( 'amir_db_version', '0' ) !== AMIR_DB_VERSION ) {
             Installer::maybe_update();

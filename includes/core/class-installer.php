@@ -23,6 +23,7 @@ class Installer {
         'partners',
         'bookings',
         'notifications',
+        'payment_events',
     ];
 
     // ── Activación ────────────────────────────────────────────────────────
@@ -295,6 +296,9 @@ class Installer {
             exchange_rate            DECIMAL(8,4),
             stripe_payment_intent    VARCHAR(255) DEFAULT '',
             stripe_charge_id         VARCHAR(255) DEFAULT '',
+            payment_gateway          VARCHAR(20) DEFAULT 'stripe',
+            gateway_reference        VARCHAR(255) DEFAULT '',
+            gateway_charge_id        VARCHAR(255) DEFAULT '',
             cancellation_policy_pct  TINYINT UNSIGNED NOT NULL DEFAULT 0,
             refund_amount_mxn        DECIMAL(10,2) DEFAULT 0.00,
             qr_code_path             VARCHAR(500) DEFAULT '',
@@ -317,6 +321,26 @@ class Installer {
             KEY status (status),
             KEY customer_email (customer_email),
             KEY stripe_payment_intent (stripe_payment_intent),
+            KEY gateway_reference (gateway_reference),
+            KEY created_at (created_at)
+        ) $charset;" );
+
+        // ── amir_payment_events ───────────────────────────────────────────
+        // Log de cada intento de pago: creado, exitoso, rechazado, reembolso.
+        // No sustituye el dashboard de la pasarela — es para responder rápido
+        // "¿por qué se rechazó esta reserva?" sin salir de WordPress.
+        dbDelta( "CREATE TABLE {$wpdb->prefix}amir_payment_events (
+            id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            booking_id   INT UNSIGNED NOT NULL,
+            gateway      VARCHAR(20) NOT NULL DEFAULT '',
+            event_type   VARCHAR(30) NOT NULL DEFAULT '',
+            message      VARCHAR(500) DEFAULT '',
+            raw_payload  LONGTEXT,
+            created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY booking_id (booking_id),
+            KEY gateway (gateway),
+            KEY event_type (event_type),
             KEY created_at (created_at)
         ) $charset;" );
 
@@ -470,6 +494,20 @@ class Installer {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD UNIQUE KEY access_token (access_token)" );
         }
         self::backfill_access_tokens();
+
+        // 1.3.0: columnas genéricas de pasarela de pago (payment_gateway,
+        // gateway_reference, gateway_charge_id) para no seguir acoplado a
+        // Stripe cuando se sume Mercado Pago. Las reservas existentes
+        // quedan con payment_gateway='stripe' (su único gateway posible
+        // hasta ahora) y se rellenan desde las columnas viejas.
+        if ( ! in_array( 'payment_gateway', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN payment_gateway VARCHAR(20) DEFAULT 'stripe' AFTER stripe_charge_id" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN gateway_reference VARCHAR(255) DEFAULT '' AFTER payment_gateway" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN gateway_charge_id VARCHAR(255) DEFAULT '' AFTER gateway_reference" );
+            $wpdb->query( "UPDATE {$wpdb->prefix}amir_bookings SET payment_gateway = 'stripe' WHERE payment_gateway IS NULL OR payment_gateway = ''" );
+            $wpdb->query( "UPDATE {$wpdb->prefix}amir_bookings SET gateway_reference = stripe_payment_intent WHERE (gateway_reference = '' OR gateway_reference IS NULL) AND stripe_payment_intent <> ''" );
+            $wpdb->query( "UPDATE {$wpdb->prefix}amir_bookings SET gateway_charge_id = stripe_charge_id WHERE (gateway_charge_id = '' OR gateway_charge_id IS NULL) AND stripe_charge_id <> ''" );
+        }
 
         self::create_tables();
         self::create_verify_page();

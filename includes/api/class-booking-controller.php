@@ -125,34 +125,48 @@ class BookingController {
             );
         }
 
-        // Crear Stripe PaymentIntent
-        $pi = $this->create_stripe_payment_intent( $result );
-        if ( is_wp_error( $pi ) ) {
-            // Limpiar la reserva pending si Stripe falla
+        // Iniciar el cobro con la pasarela activa (hoy solo Stripe;
+        // Mercado Pago se suma implementando la misma interfaz)
+        $gateway  = \AmirBooking\Payments\PaymentGatewayFactory::default_gateway();
+        $payment  = $gateway->create_payment( $result );
+
+        if ( ! $payment->success ) {
+            // Limpiar la reserva pending si la pasarela falla
             $this->cleanup_failed_booking( $result->booking_id );
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                $result->booking_id, $gateway->id(), 'creation_failed', $payment->error
+            );
             return new \WP_REST_Response(
                 [ 'success' => false, 'error' => 'Error al inicializar el pago. Intenta de nuevo.' ],
                 500
             );
         }
 
-        // Guardar el payment_intent en la reserva
+        // Guardar la referencia de pago en la reserva
         global $wpdb;
         $wpdb->update(
             "{$wpdb->prefix}amir_bookings",
-            [ 'stripe_payment_intent' => $pi['id'] ],
+            [
+                'stripe_payment_intent' => $payment->reference, // compatibilidad hacia atrás
+                'payment_gateway'       => $gateway->id(),
+                'gateway_reference'     => $payment->reference,
+            ],
             [ 'id' => $result->booking_id ],
-            [ '%s' ],
+            [ '%s', '%s', '%s' ],
             [ '%d' ]
         );
 
-        return new \WP_REST_Response( [
-            'success'        => true,
-            'booking_ref'    => $result->booking_ref,
-            'booking_id'     => $result->booking_id,
-            'total_mxn'      => $result->total_mxn,
-            'client_secret'  => $pi['client_secret'],  // Para Stripe.js en el frontend
-        ], 201 );
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            $result->booking_id, $gateway->id(), 'created', '', [ 'reference' => $payment->reference ]
+        );
+
+        return new \WP_REST_Response( array_merge( [
+            'success'     => true,
+            'booking_ref' => $result->booking_ref,
+            'booking_id'  => $result->booking_id,
+            'total_mxn'   => $result->total_mxn,
+            'gateway'     => $gateway->id(),
+        ], $payment->client_payload ), 201 ); // client_secret (Stripe) u otro campo según la pasarela
     }
 
     // ── GET /bookings/{ref} ───────────────────────────────────────────────
@@ -429,36 +443,29 @@ class BookingController {
             ], 200 );
         }
 
-        // Verificar el PaymentIntent directamente con Stripe
-        $mode    = get_option( 'amir_stripe_mode', 'test' );
-        $sk      = get_option( "amir_stripe_sk_{$mode}", '' );
+        // Verificar el pago directamente contra la pasarela — nunca
+        // confiar en que el cliente diga "ya pagué".
+        $gateway = \AmirBooking\Payments\PaymentGatewayFactory::for_booking( $booking );
 
-        if ( $sk ) {
-            $response = wp_remote_get( "https://api.stripe.com/v1/payment_intents/{$pi_id}", [
-                'headers' => [
-                    'Authorization'  => 'Bearer ' . $sk,
-                    'Stripe-Version' => '2024-06-20',
-                ],
-                'timeout' => 10,
-            ] );
+        if ( $gateway && $gateway->is_configured() ) {
+            $status = $gateway->fetch_payment_status( $pi_id );
 
-            if ( ! is_wp_error( $response ) ) {
-                $pi_data = json_decode( wp_remote_retrieve_body( $response ), true );
-
-                if ( ( $pi_data['status'] ?? '' ) !== 'succeeded' ) {
-                    return new \WP_REST_Response( [ 'error' => 'Pago no completado' ], 402 );
-                }
-
-                $charge_id = $pi_data['latest_charge'] ?? '';
-            } else {
+            if ( $status === null ) {
                 // No se puede verificar — no confirmar; el webhook es la ruta autoritativa
                 return new \WP_REST_Response( [
                     'error' => 'No se pudo verificar el pago. La confirmación llegará por email en breve.',
                 ], 503 );
             }
+
+            if ( $status->status !== \AmirBooking\Payments\PaymentStatusResult::SUCCEEDED ) {
+                \AmirBooking\Payments\PaymentEventLogger::log( $booking_id, $gateway->id(), 'confirm_check_not_succeeded', $status->status );
+                return new \WP_REST_Response( [ 'error' => 'Pago no completado' ], 402 );
+            }
+
+            $charge_id = $status->charge_reference;
         } else {
-            // Sin Secret Key configurada: nunca confirmar el pago sin
-            // verificarlo contra Stripe. Un olvido de configuración en
+            // Sin credenciales configuradas: nunca confirmar el pago sin
+            // verificarlo contra la pasarela. Un olvido de configuración en
             // producción no debe convertirse en "cualquiera confirma
             // cualquier reserva llamando este endpoint con datos inventados".
             // Solo se permite omitir la verificación con un override
@@ -468,7 +475,7 @@ class BookingController {
 
             if ( ! $dev_override ) {
                 return new \WP_REST_Response( [
-                    'error' => 'Stripe no está configurado. No se puede confirmar el pago.',
+                    'error' => 'La pasarela de pago no está configurada. No se puede confirmar el pago.',
                 ], 503 );
             }
 
@@ -478,12 +485,15 @@ class BookingController {
         // Confirmar la reserva
         $manager = new \AmirBooking\Core\BookingManager();
         $manager->confirm( $booking_id, $charge_id );
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            $booking_id, $gateway ? $gateway->id() : ( $booking->payment_gateway ?: 'stripe' ), 'succeeded', '', [ 'charge_reference' => $charge_id ]
+        );
 
-        // Actualizar el payment_intent_id si no estaba guardado
+        // Actualizar la referencia de pago si no estaba guardada
         if ( empty( $booking->stripe_payment_intent ) ) {
             $wpdb->update(
                 "{$wpdb->prefix}amir_bookings",
-                [ 'stripe_payment_intent' => $pi_id ],
+                [ 'stripe_payment_intent' => $pi_id, 'gateway_reference' => $pi_id, 'gateway_charge_id' => $charge_id ],
                 [ 'id' => $booking_id ]
             );
         }
@@ -542,143 +552,78 @@ class BookingController {
     }
 
     public function stripe_webhook( \WP_REST_Request $request ): \WP_REST_Response {
-        $payload    = $request->get_body();
-        $sig_header = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
-        $secret     = get_option( 'amir_stripe_webhook_secret', '' );
+        return $this->handle_gateway_webhook( new \AmirBooking\Payments\StripeGateway(), $request );
+    }
 
-        // Verificar firma del webhook
-        if ( ! $this->verify_stripe_signature( $payload, $sig_header, $secret ) ) {
+    /**
+     * Maneja el webhook de cualquier pasarela que implemente
+     * PaymentGatewayInterface. Cada pasarela tiene su propia ruta REST
+     * (ver register_routes()) pero comparten esta lógica: verificar firma,
+     * traducir a PaymentEvent, y actuar según el tipo — el controlador no
+     * conoce el formato específico de Stripe ni de Mercado Pago.
+     */
+    private function handle_gateway_webhook( \AmirBooking\Payments\PaymentGatewayInterface $gateway, \WP_REST_Request $request ): \WP_REST_Response {
+        $payload = $request->get_body();
+
+        // Se lee directo de $_SERVER (no de $request->get_headers()) para no
+        // depender de cómo WP_REST_Request normaliza los nombres de header.
+        $headers = [
+            'stripe-signature' => $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '',
+            'x-signature'      => $_SERVER['HTTP_X_SIGNATURE']      ?? '', // Mercado Pago
+            'x-request-id'     => $_SERVER['HTTP_X_REQUEST_ID']     ?? '', // Mercado Pago
+        ];
+
+        if ( ! $gateway->verify_webhook_signature( $payload, $headers ) ) {
             return new \WP_REST_Response( [ 'error' => 'Invalid signature' ], 400 );
         }
 
-        $event = json_decode( $payload, true );
+        $event = $gateway->parse_webhook_event( $payload );
+        if ( ! $event ) {
+            return new \WP_REST_Response( [ 'received' => true ], 200 ); // tipo de evento que no nos interesa
+        }
 
-        switch ( $event['type'] ?? '' ) {
+        global $wpdb;
+        $booking = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}amir_bookings WHERE gateway_reference = %s OR stripe_payment_intent = %s",
+            $event->gateway_reference, $event->gateway_reference
+        ) );
 
-            case 'payment_intent.succeeded':
-                $this->handle_payment_succeeded( $event['data']['object'] );
+        if ( ! $booking ) {
+            return new \WP_REST_Response( [ 'received' => true ], 200 );
+        }
+
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            (int) $booking->id, $gateway->id(), 'webhook_' . $event->type, $event->reason, $event->raw
+        );
+
+        switch ( $event->type ) {
+            case \AmirBooking\Payments\PaymentEvent::SUCCEEDED:
+                if ( $booking->status === 'pending' ) {
+                    ( new \AmirBooking\Core\BookingManager() )->confirm( (int) $booking->id, $event->charge_reference );
+                }
                 break;
 
-            case 'payment_intent.payment_failed':
-                $this->handle_payment_failed( $event['data']['object'] );
+            case \AmirBooking\Payments\PaymentEvent::FAILED:
+                if ( $booking->status === 'pending' ) {
+                    $wpdb->update(
+                        "{$wpdb->prefix}amir_bookings",
+                        [ 'status' => 'cancelled_client', 'internal_notes' => 'Pago fallido: ' . $event->reason ],
+                        [ 'id' => $booking->id ],
+                        [ '%s', '%s' ],
+                        [ '%d' ]
+                    );
+                }
                 break;
 
-            case 'charge.refunded':
-                // El reembolso ya fue procesado, solo log
-                do_action( 'amir_stripe_refund_completed', $event['data']['object'] );
+            case \AmirBooking\Payments\PaymentEvent::REFUNDED:
+                do_action( 'amir_stripe_refund_completed', $event->raw );
                 break;
         }
 
         return new \WP_REST_Response( [ 'received' => true ], 200 );
     }
 
-    // ── Handlers Stripe ───────────────────────────────────────────────────
-
-    private function handle_payment_succeeded( array $pi ): void {
-        global $wpdb;
-
-        $booking = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}amir_bookings
-                 WHERE stripe_payment_intent = %s AND status = 'pending'",
-                $pi['id']
-            )
-        );
-
-        if ( ! $booking ) {
-            return;
-        }
-
-        $charge_id = $pi['latest_charge'] ?? '';
-        $manager   = new \AmirBooking\Core\BookingManager();
-        $manager->confirm( (int) $booking->id, $charge_id );
-    }
-
-    private function handle_payment_failed( array $pi ): void {
-        global $wpdb;
-
-        $wpdb->update(
-            "{$wpdb->prefix}amir_bookings",
-            [ 'status' => 'cancelled_client', 'internal_notes' => 'Pago fallido en Stripe' ],
-            [ 'stripe_payment_intent' => $pi['id'], 'status' => 'pending' ],
-            [ '%s', '%s' ],
-            [ '%s', '%s' ]
-        );
-    }
-
-    // ── Stripe PaymentIntent ──────────────────────────────────────────────
-
-    private function create_stripe_payment_intent( \AmirBooking\Core\BookingResult $booking_result ) {
-        $mode   = get_option( 'amir_stripe_mode', 'test' );
-        $sk_key = get_option( "amir_stripe_sk_{$mode}", '' );
-
-        if ( empty( $sk_key ) ) {
-            return new \WP_Error( 'no_stripe_key', 'Stripe no configurado' );
-        }
-
-        $currency     = strtolower( get_option( 'amir_currency', 'MXN' ) );
-        $amount_cents = (int) round( $booking_result->total_mxn * 100 );
-        $company      = get_option( 'amir_company_name', 'TourFlow' );
-
-        $response = wp_remote_post( 'https://api.stripe.com/v1/payment_intents', [
-            'headers' => [
-                'Authorization'  => 'Bearer ' . $sk_key,
-                'Content-Type'   => 'application/x-www-form-urlencoded',
-                'Stripe-Version' => '2024-06-20',
-            ],
-            'body' => [
-                'amount'      => $amount_cents,
-                'currency'    => $currency,
-                'description' => $company . ' — ' . $booking_result->booking_ref,
-                'metadata'    => [
-                    'booking_ref' => $booking_result->booking_ref,
-                    'booking_id'  => $booking_result->booking_id,
-                ],
-                'automatic_payment_methods' => [ 'enabled' => 'true' ],
-            ],
-            'timeout' => 30,
-        ] );
-
-        if ( is_wp_error( $response ) ) {
-            return $response;
-        }
-
-        $body = json_decode( wp_remote_retrieve_body( $response ), true );
-
-        if ( isset( $body['error'] ) ) {
-            return new \WP_Error( 'stripe_error', $body['error']['message'] );
-        }
-
-        return $body;
-    }
-
     // ── Helpers ───────────────────────────────────────────────────────────
-
-    private function verify_stripe_signature( string $payload, string $sig_header, string $secret ): bool {
-        if ( empty( $secret ) || empty( $sig_header ) ) {
-            return false;
-        }
-
-        // Parsear t= y v1= del header
-        $parts = [];
-        foreach ( explode( ',', $sig_header ) as $pair ) {
-            [ $k, $v ] = explode( '=', $pair, 2 );
-            $parts[ $k ] = $v;
-        }
-
-        $timestamp = (int) ( $parts['t'] ?? 0 );
-        $signature = $parts['v1'] ?? '';
-
-        // Rechazar si el timestamp supera 300 s (previene replay attacks)
-        if ( $timestamp === 0 || abs( time() - $timestamp ) > 300 ) {
-            return false;
-        }
-
-        $signed_payload = "{$timestamp}.{$payload}";
-        $expected       = hash_hmac( 'sha256', $signed_payload, $secret );
-
-        return hash_equals( $expected, $signature );
-    }
 
     private function format_booking_public( object $booking ): array {
         return [
