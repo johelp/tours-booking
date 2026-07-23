@@ -102,7 +102,10 @@ class VoucherGenerator {
      * Retorna la ruta del archivo PNG.
      */
     public function generate_qr( int $booking_id, string $booking_ref ): string {
-        $verify_url = add_query_arg( 'ref', $booking_ref, get_site_url() . '/verificar-reserva/' );
+        $verify_url = add_query_arg(
+            [ 'ref' => $booking_ref, 'token' => $this->get_access_token( $booking_id ) ],
+            $this->verify_page_url()
+        );
         $qr_path    = $this->upload_dir . 'qr-' . sanitize_file_name($booking_ref) . '.png';
 
         if ( file_exists($qr_path) ) {
@@ -449,6 +452,35 @@ class VoucherGenerator {
              JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
              LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
              WHERE b.id = %d",
+            $booking_id
+        ) );
+    }
+
+    /**
+     * URL de la página pública de verificación de reserva.
+     * Usa la página real creada por el Installer (amir_verify_page_id) si
+     * existe, con fallback al slug fijo /verificar-reserva/ para instalaciones
+     * antiguas donde la opción todavía no se haya guardado.
+     */
+    private function verify_page_url(): string {
+        $page_id = (int) get_option( 'amir_verify_page_id', 0 );
+        if ( $page_id ) {
+            $url = get_permalink( $page_id );
+            if ( $url ) {
+                return $url;
+            }
+        }
+        return get_site_url() . '/verificar-reserva/';
+    }
+
+    /**
+     * access_token de la reserva, para autorizar la lectura pública del
+     * link de verificación sin depender solo del booking_ref (adivinable).
+     */
+    private function get_access_token( int $booking_id ): string {
+        global $wpdb;
+        return (string) $wpdb->get_var( $wpdb->prepare(
+            "SELECT access_token FROM {$wpdb->prefix}amir_bookings WHERE id = %d",
             $booking_id
         ) );
     }

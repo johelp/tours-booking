@@ -3,11 +3,11 @@
  * Plugin Name:  Tour Booking
  * Plugin URI:   https://amiradventours.com
  * Description:  Sistema de reservas y gestión de tours para operadoras. Sin WooCommerce. Multisite ready.
- * Version:      1.0.28
+ * Version:      1.1.0
  * Author:       Amir Adventours
  * Text Domain:  amir-booking
  * Domain Path:  /languages
- * Requires PHP: 7.4
+ * Requires PHP: 8.1
  * Requires WP:  6.0
  * Network:      true
  */
@@ -15,11 +15,11 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-define( 'AMIR_VERSION',     '1.0.28' );
+define( 'AMIR_VERSION',     '1.1.0' );
 define( 'AMIR_PLUGIN_FILE', __FILE__ );
 define( 'AMIR_PLUGIN_DIR',  plugin_dir_path( __FILE__ ) );
 define( 'AMIR_PLUGIN_URL',  plugin_dir_url( __FILE__ ) );
-define( 'AMIR_DB_VERSION',  '1.1.0' );
+define( 'AMIR_DB_VERSION',  '1.2.0' );
 
 // ── Composer autoloader (TCPDF, endroid/qr-code, etc.) ───────────────────────
 if ( file_exists( AMIR_PLUGIN_DIR . 'vendor/autoload.php' ) ) {

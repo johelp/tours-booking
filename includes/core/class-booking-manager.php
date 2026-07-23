@@ -77,8 +77,9 @@ class BookingManager {
         $partner_id     = $this->resolve_partner_id( $data['partner_token'] ?? '' );
         $booking_source = $this->resolve_source( $data['source'] ?? 'direct', $partner_id );
 
-        // Generar número de reserva único
-        $booking_ref = $this->generate_ref();
+        // Generar número de reserva único + token de acceso público
+        $booking_ref  = $this->generate_ref();
+        $access_token = self::generate_access_token();
 
         // ── Transacción con bloqueo para prevenir overbooking concurrente ──────
         $wpdb->query( 'START TRANSACTION' );
@@ -113,6 +114,7 @@ class BookingManager {
             "{$wpdb->prefix}amir_bookings",
             [
                 'booking_ref'     => $booking_ref,
+                'access_token'    => $access_token,
                 'tour_id'         => (int) $data['tour_id'],
                 'schedule_id'     => (int) $data['schedule_id'],
                 'partner_id'      => $partner_id,
@@ -132,7 +134,7 @@ class BookingManager {
                 'special_requests'=> sanitize_textarea_field( $data['special_requests'] ?? '' ),
                 'created_at'      => current_time( 'mysql' ),
             ],
-            [ '%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%f','%f','%s','%s' ]
+            [ '%s','%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%f','%f','%s','%s' ]
         );
 
         if ( ! $inserted ) {
@@ -207,14 +209,16 @@ class BookingManager {
             $total_mxn = $quote->is_valid() ? $quote->total_mxn : 0.0;
         }
 
-        $booking_ref = $this->generate_ref();
-        $partner_id  = ! empty( $data['partner_id'] ) ? (int) $data['partner_id'] : null;
-        $now         = current_time( 'mysql' );
+        $booking_ref  = $this->generate_ref();
+        $access_token = self::generate_access_token();
+        $partner_id   = ! empty( $data['partner_id'] ) ? (int) $data['partner_id'] : null;
+        $now          = current_time( 'mysql' );
 
         $inserted = $wpdb->insert(
             $wpdb->prefix . 'amir_bookings',
             array(
                 'booking_ref'       => $booking_ref,
+                'access_token'      => $access_token,
                 'tour_id'           => $tour_id,
                 'schedule_id'       => $schedule_id,
                 'partner_id'        => $partner_id,
@@ -237,7 +241,7 @@ class BookingManager {
                 'custom_email_note' => sanitize_textarea_field( $data['custom_email_note'] ?? '' ),
                 'confirmed_at'      => $now,
             ),
-            array( '%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%s','%s','%s','%s' )
+            array( '%s','%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%s','%s','%s','%s' )
         );
 
         if ( ! $inserted ) {
@@ -573,6 +577,40 @@ class BookingManager {
                 strtoupper( $ref )
             )
         );
+    }
+
+    /**
+     * Autoriza el acceso público a una reserva (endpoints REST, página de
+     * verificación, descarga de PDF) sin exponerla a cualquiera que adivine
+     * el booking_ref, que es secuencial (AMIR-2026-00001, -00002, …).
+     *
+     * Acepta DOS credenciales posibles, cualquiera de las dos autoriza:
+     *  - access_token: el valor largo y aleatorio que viaja en los links
+     *    de email/QR/PDF generados por el propio plugin (credencial fuerte).
+     *  - email: el correo del cliente, para mantener compatible el flujo
+     *    del widget de reservas mientras no reciba el token en su UI
+     *    (credencial débil — solo mientras se actualiza el frontend).
+     *
+     * Usa hash_equals() para evitar timing attacks al comparar el token.
+     */
+    public function authorize_public_access( object $booking, string $token = '', string $email = '' ): bool {
+        if ( $token !== '' && ! empty( $booking->access_token ) ) {
+            if ( hash_equals( (string) $booking->access_token, $token ) ) {
+                return true;
+            }
+        }
+        if ( $email !== '' && strtolower( $email ) === strtolower( (string) $booking->customer_email ) ) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Genera un access_token aleatorio de 32 bytes (64 caracteres hex).
+     * Suficiente entropía para que no sea practicable de adivinar por fuerza bruta.
+     */
+    public static function generate_access_token(): string {
+        return bin2hex( random_bytes( 32 ) );
     }
 
     private function generate_ref(): string {

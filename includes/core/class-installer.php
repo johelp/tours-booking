@@ -267,6 +267,7 @@ class Installer {
         dbDelta( "CREATE TABLE {$wpdb->prefix}amir_bookings (
             id                       INT UNSIGNED NOT NULL AUTO_INCREMENT,
             booking_ref              VARCHAR(20) NOT NULL,
+            access_token             VARCHAR(64) DEFAULT NULL,
             tour_id                  INT UNSIGNED NOT NULL,
             schedule_id              INT UNSIGNED NOT NULL,
             partner_id               INT UNSIGNED,
@@ -308,6 +309,7 @@ class Installer {
             updated_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY booking_ref (booking_ref),
+            UNIQUE KEY access_token (access_token),
             KEY tour_id (tour_id),
             KEY schedule_id (schedule_id),
             KEY partner_id (partner_id),
@@ -461,9 +463,38 @@ class Installer {
         }
         $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN booking_source ENUM('direct','tripadvisor','getyourguide','partner','manual') NOT NULL DEFAULT 'direct'" );
 
+        // 1.2.0: access_token — autoriza lectura pública de una reserva sin
+        // depender solo del booking_ref (secuencial y por tanto adivinable).
+        if ( ! in_array( 'access_token', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN access_token VARCHAR(64) DEFAULT NULL AFTER booking_ref" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD UNIQUE KEY access_token (access_token)" );
+        }
+        self::backfill_access_tokens();
+
         self::create_tables();
         self::create_verify_page();
         update_option( 'amir_db_version', AMIR_DB_VERSION );
+    }
+
+    /**
+     * Genera un access_token único para reservas creadas antes de la 1.2.0.
+     * Se hace en un loop en PHP (no en SQL) porque cada fila necesita un
+     * valor distinto — no es una migración masiva, corre una sola vez.
+     */
+    private static function backfill_access_tokens(): void {
+        global $wpdb;
+        $ids = $wpdb->get_col(
+            "SELECT id FROM {$wpdb->prefix}amir_bookings WHERE access_token IS NULL OR access_token = ''"
+        );
+        foreach ( $ids as $id ) {
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings",
+                [ 'access_token' => bin2hex( random_bytes( 32 ) ) ],
+                [ 'id' => (int) $id ],
+                [ '%s' ],
+                [ '%d' ]
+            );
+        }
     }
 
     /**

@@ -69,12 +69,21 @@ class Shortcodes {
     // ── Verificación de reserva ───────────────────────────────────────────
 
     public static function verify_booking( array $atts ): string {
-        $ref = strtoupper( sanitize_text_field( $_GET['ref'] ?? '' ) );
+        $ref   = strtoupper( sanitize_text_field( $_GET['ref'] ?? '' ) );
+        $token = sanitize_text_field( $_GET['token'] ?? '' );
+        $email = sanitize_email( $_GET['email'] ?? '' );
+
+        $lang  = self::detect_lang();
+        $is_en = $lang === 'en';
 
         if ( empty( $ref ) ) {
-            return '<div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #e1f5ee;text-align:center;">'
-                 . '<p style="color:#5a7068;font-size:15px;">Ingresa una referencia de reserva válida.</p>'
-                 . '</div>';
+            return self::verify_lookup_form( $is_en );
+        }
+
+        // Throttle por IP: máx. 20 intentos cada 10 minutos,
+        // para frenar fuerza bruta de email/token contra booking_ref secuenciales.
+        if ( RateLimiter::too_many_attempts( 'verify_' . RateLimiter::client_ip() ) ) {
+            return self::rate_limited_message( $is_en );
         }
 
         global $wpdb;
@@ -87,15 +96,20 @@ class Shortcodes {
             $ref
         ) );
 
-        $lang    = self::detect_lang();
-        $is_en   = $lang === 'en';
-
         if ( ! $b ) {
             return '<div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #fecaca;text-align:center;">'
                  . '<div style="font-size:40px;margin-bottom:12px;">❌</div>'
                  . '<p style="color:#dc2626;font-weight:600;font-size:16px;">' . ( $is_en ? 'Booking not found' : 'Reserva no encontrada' ) . '</p>'
                  . '<p style="color:#5a7068;font-size:13px;">REF: ' . esc_html( $ref ) . '</p>'
                  . '</div>';
+        }
+
+        // Autorización: el link de email/QR trae el token; si el visitante
+        // solo pegó el ref, se le pide el email del titular de la reserva.
+        // No exponer nombre/fecha/monto a quien no aporte ninguna credencial.
+        $manager = new \AmirBooking\Core\BookingManager();
+        if ( ! $manager->authorize_public_access( $b, $token, $email ) ) {
+            return self::verify_lookup_form( $is_en, $ref, $email !== '' );
         }
 
         $status_map = array(
@@ -171,6 +185,44 @@ class Shortcodes {
              . '<div style="background:#fff;padding:20px 24px 24px;">'
              . $rows
              . '</div>'
+             . '</div>';
+    }
+
+    /**
+     * Formulario de búsqueda por referencia + email.
+     * Se muestra cuando falta el ref, o cuando hay ref pero ninguna
+     * credencial (token del link, o email) autoriza ver los datos.
+     */
+    private static function verify_lookup_form( bool $is_en, string $ref = '', bool $denied = false ): string {
+        $title = $is_en ? 'Check your booking' : 'Consulta tu reserva';
+        $help  = $is_en
+            ? 'Enter your booking reference and the email you used to book.'
+            : 'Ingresa tu referencia de reserva y el email con el que reservaste.';
+        $error = $denied
+            ? '<p style="color:#dc2626;font-size:13px;margin:0 0 12px;">'
+              . ( $is_en ? 'We couldn\'t match that email with this booking.' : 'Ese email no coincide con esta reserva.' )
+              . '</p>'
+            : '';
+        $action = esc_url( remove_query_arg( array( 'ref', 'token', 'email' ) ) );
+
+        return '<div style="font-family:sans-serif;max-width:420px;margin:40px auto;padding:28px 24px;background:#fff;border-radius:12px;border:1px solid #e1f5ee;">'
+             . '<h2 style="font-size:17px;margin:0 0 6px;color:#1a2e24;">' . esc_html( $title ) . '</h2>'
+             . '<p style="color:#5a7068;font-size:13px;margin:0 0 16px;">' . esc_html( $help ) . '</p>'
+             . $error
+             . '<form method="get" action="' . $action . '" style="display:flex;flex-direction:column;gap:10px;">'
+             . '<input type="text" name="ref" value="' . esc_attr( $ref ) . '" placeholder="' . esc_attr( $is_en ? 'Booking reference (e.g. AMIR-2026-00001)' : 'Referencia (ej. AMIR-2026-00001)' ) . '" required style="padding:10px 12px;border:1px solid #c3d9d0;border-radius:8px;font-size:14px;">'
+             . '<input type="email" name="email" placeholder="' . esc_attr( $is_en ? 'Email used to book' : 'Email con el que reservaste' ) . '" required style="padding:10px 12px;border:1px solid #c3d9d0;border-radius:8px;font-size:14px;">'
+             . '<button type="submit" style="padding:10px 12px;background:#1D9E75;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;">' . esc_html( $is_en ? 'View booking' : 'Ver mi reserva' ) . '</button>'
+             . '</form>'
+             . '</div>';
+    }
+
+    private static function rate_limited_message( bool $is_en ): string {
+        $msg = $is_en
+            ? 'Too many attempts. Please try again in a few minutes.'
+            : 'Demasiados intentos. Intenta de nuevo en unos minutos.';
+        return '<div style="font-family:sans-serif;max-width:420px;margin:40px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #fecaca;text-align:center;">'
+             . '<p style="color:#dc2626;font-size:14px;margin:0;">' . esc_html( $msg ) . '</p>'
              . '</div>';
     }
 

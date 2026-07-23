@@ -1,4 +1,4 @@
-# Amir Booking — Guía de instalación y despliegue
+# Tour Booking (Amir Booking) — Guía de instalación y despliegue
 
 ## Requisitos del servidor
 
@@ -8,7 +8,8 @@
 | WordPress | 6.0    | 6.4+        |
 | MySQL     | 5.7    | 8.0+        |
 | Composer  | 2.x    | 2.x         |
-| Node.js   | 18+    | 20 LTS      |
+
+PHP 8.1 es un mínimo real, no aspiracional: `endroid/qr-code` (generación del QR del voucher) requiere `^8.1` como dependencia directa.
 
 ---
 
@@ -25,19 +26,13 @@ cd /path/to/wp-content/plugins/amir-booking
 composer install --no-dev --optimize-autoloader
 ```
 
-### 2. Compilar el widget React
+### 2. Widget React
 
-```bash
-cd react-src
-npm install
-npm run build
-# Genera: assets/js/booking-widget.js
-#          assets/css/booking-widget.css
-```
+`assets/js/booking-widget.js` y `assets/js/admin.js` ya vienen compilados en el repositorio. El código fuente (`react-src/`) todavía no está versionado — hasta que se recupere y se agregue al repo, cualquier cambio al widget requiere reconstruir esa carpeta desde cero o localizar el original.
 
 ### 3. Activar en WordPress
 
-WordPress Admin → Plugins → **Amir Booking** → Activar
+WordPress Admin → Plugins → **Tour Booking** → Activar
 
 Al activar se crean automáticamente:
 - 7 tablas en la base de datos (`wp_amir_*`)
@@ -50,7 +45,7 @@ Al activar se crean automáticamente:
 
 ### 1. Stripe
 
-1. Ir a **Amir Booking → Configuración**
+1. Ir a **Tour Booking → Configuración**
 2. Pegar las claves de Stripe (test y live)
 3. Configurar el **Webhook** en el dashboard de Stripe:
    - URL: `https://tudominio.com/wp-json/amir/v1/bookings/stripe-webhook`
@@ -62,7 +57,7 @@ Al activar se crean automáticamente:
 
 ### 2. Crear el primer tour
 
-1. **Amir Booking → Tours (editar) → Nuevo tour**
+1. **Tour Booking → Tours (editar) → Nuevo tour**
 2. Completar:
    - Título (español) + Nombre EN
    - Imagen destacada (foto principal)
@@ -204,109 +199,55 @@ chmod 755 wp-content/uploads/amir-booking/
 | `amir_google_review_url` | URL reseñas Google | — |
 | `amir_tripadvisor_review_url` | URL reseñas TripAdvisor | — |
 | `amir_delete_data_on_uninstall` | Borrar datos al desinstalar | `0` |
+| `amir_currency` | Moneda de cobro | `MXN` |
+| `amir_verify_page_id` | ID de la página `/verificar-reserva/` | — (autogenerado) |
+| `amir_brand_logo_url` / `amir_brand_color` / `amir_company_name` | Marca blanca para emails y voucher | — |
+| `amir_license_plan` / `amir_license_key` | Plan activo del `LicenseManager` | `pro` / `saas-managed` |
 
 ---
 
 ## Shortcodes disponibles
 
 ```
-[amir_booking tour_id="X"]           Widget de reserva para el tour X
-[amir_booking tour_id="X" lang="en"] Widget en inglés
-[amir_tour_list]                     Grilla de todos los tours activos
-[amir_tour_list lang="en"]           Grilla en inglés
+[amir_booking tour_id="X"]                Widget de reserva para el tour X
+[amir_booking tour_id="X" lang="en"]      Widget en inglés
+[amir_tour_list]                          Grilla de todos los tours activos
+[amir_tour_list lang="en" layout="list"]  Grilla o lista, en inglés
+[amir_verify_booking]                     Página de verificación pública (requiere ?ref= + ?token= o ?email=)
 ```
+
+La página `/verificar-reserva/` con `[amir_verify_booking]` se crea automáticamente en la activación (opción `amir_verify_page_id`).
 
 ---
 
 ## REST API endpoints
 
 ```
-GET  /wp-json/amir/v1/tours                   → Listado de tours
-GET  /wp-json/amir/v1/tours/{id}              → Detalle + horarios + precios
-GET  /wp-json/amir/v1/tours/{id}/schedules    → Horarios del tour
-GET  /wp-json/amir/v1/tours/{id}/prices       → Precios vigentes
+GET  /wp-json/amir/v1/tours                          → Listado de tours
+GET  /wp-json/amir/v1/tours/{id}                     → Detalle + horarios + precios
+GET  /wp-json/amir/v1/tours/{id}/schedules           → Horarios del tour
+GET  /wp-json/amir/v1/tours/{id}/prices              → Precios vigentes
 
 GET  /wp-json/amir/v1/availability/month?tour_id=X&year=Y&month=M
 GET  /wp-json/amir/v1/availability/day?tour_id=X&date=YYYY-MM-DD
 GET  /wp-json/amir/v1/prices?tour_id=X&date=YYYY-MM-DD
 
-POST /wp-json/amir/v1/bookings/quote          → Cotizar precio
-POST /wp-json/amir/v1/bookings                → Crear reserva + Stripe PI
-GET  /wp-json/amir/v1/bookings/{ref}          → Consultar reserva
-POST /wp-json/amir/v1/bookings/{ref}/request-cancel → Solicitar cancelación
-GET  /wp-json/amir/v1/bookings/by-payment/{pi_id}   → Buscar por PaymentIntent
-POST /wp-json/amir/v1/bookings/stripe-webhook        → Webhook Stripe
+POST /wp-json/amir/v1/bookings/quote                 → Cotizar precio
+POST /wp-json/amir/v1/bookings                       → Crear reserva + Stripe PI
+GET  /wp-json/amir/v1/bookings/{ref}?token=…|email=…  → Consultar reserva (requiere token o email)
+POST /wp-json/amir/v1/bookings/{ref}/cancel           → Cancelar (requiere token o email)
+POST /wp-json/amir/v1/bookings/{ref}/request-cancel   → Solicitar cancelación (requiere token o email)
+GET  /wp-json/amir/v1/bookings/{ref}/pdf?token=…|email=… → Descargar voucher PDF
+GET  /wp-json/amir/v1/bookings/by-payment/{pi_id}     → Buscar por PaymentIntent
+POST /wp-json/amir/v1/bookings/{id}/confirm-payment   → Confirmar pago (verificado contra Stripe)
+POST /wp-json/amir/v1/bookings/{id}/status            → Cambiar estado (requiere manage_options)
+POST /wp-json/amir/v1/bookings/stripe-webhook         → Webhook Stripe
 ```
+
+Todos los endpoints públicos que devuelven datos de un cliente aplican throttling básico por IP — ver la sección "Seguridad de acceso público a reservas" en README.md.
 
 ---
 
-## Módulos del plugin
+## Estructura del código
 
-```
-amir-booking/
-├── amir-booking.php                    Entry point, constantes, autoloader
-├── composer.json                       Dependencias PHP
-├── README.md                           Documentación técnica
-│
-├── includes/
-│   ├── core/
-│   │   ├── class-plugin.php            Singleton: orquesta todos los módulos
-│   │   ├── class-installer.php         Crea/actualiza tablas DB en activación
-│   │   ├── class-availability-engine.php  Motor de disponibilidad con prioridades
-│   │   ├── class-booking-manager.php   CRUD de reservas + política cancelación
-│   │   ├── class-pricing-engine.php    Precios percapita/grupo + tipo cambio USD
-│   │   ├── class-voucher-generator.php PDF del voucher + QR de verificación
-│   │   ├── class-cron-manager.php      Tareas programadas (recordatorios, reseñas)
-│   │   ├── class-tour-manager-role.php Rol WP con redirect al dashboard del plugin
-│   │   ├── class-template-loader.php   Carga templates del plugin si el tema no tiene
-│   │   ├── class-shortcodes.php        [amir_booking] y [amir_tour_list]
-│   │   ├── class-assets.php            Registro de CSS/JS
-│   │   └── class-i18n.php              Traducciones
-│   │
-│   ├── cpt/
-│   │   └── class-tour-post-type.php    CPT amir_tour + meta boxes + sync a DB
-│   │
-│   ├── elementor/
-│   │   └── class-elementor-integration.php  Widgets + Dynamic Tags + Loop compat.
-│   │
-│   ├── api/
-│   │   ├── class-tours-controller.php        GET tours
-│   │   ├── class-availability-controller.php GET disponibilidad
-│   │   ├── class-booking-controller.php      POST/GET reservas + Stripe webhook
-│   │   └── class-prices-controller.php       GET precios
-│   │
-│   ├── admin/
-│   │   ├── class-admin-menu.php              Menú WP Admin + badge notificaciones
-│   │   ├── class-dashboard-page.php          Dashboard operativo diario
-│   │   ├── class-bookings-page.php           Listado + detalle + acciones reservas
-│   │   ├── class-availability-page.php       Gestión visual de reglas disponibilidad
-│   │   └── class-partners-settings-pages.php Partners (CRUD+stats+QR) y Ajustes
-│   │
-│   ├── emails/
-│   │   └── class-email-dispatcher.php        Templates HTML bilingüe (4 tipos)
-│   │
-│   └── partners/
-│       └── class-partner-tracker.php         Cookie tracking + generación QR/URLs
-│
-├── react-src/
-│   ├── package.json
-│   ├── vite.config.js
-│   └── src/
-│       ├── booking-widget.jsx          Entry point (monta en todos los shortcodes)
-│       ├── BookingWidget.jsx           Flujo completo 7 pasos (848 líneas)
-│       ├── api.js                      Cliente REST API
-│       ├── i18n.js                     Traducciones ES/EN del widget
-│       └── styles/widget.css           CSS mobile-first del widget
-│
-├── assets/
-│   ├── css/
-│   │   ├── tour-cards.css              CSS para tarjetas Elementor y archive
-│   │   ├── booking-widget.css          (generado por Vite)
-│   │   └── admin.css                   (mínimo, styles inline en las páginas PHP)
-│   └── js/
-│       └── booking-widget.js           (generado por Vite)
-│
-└── templates/
-    ├── single-amir_tour.php            Página individual del tour
-    └── archive-amir_tour.php           Listado /tours/
-```
+Ver la sección "Estructura de archivos" en [README.md](README.md) — se documenta una sola vez para no quedar desalineada entre los dos archivos.

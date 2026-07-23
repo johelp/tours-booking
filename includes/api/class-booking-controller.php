@@ -61,14 +61,16 @@ class BookingController {
             'permission_callback' => '__return_true',
         ] );
 
-        // Descarga del voucher PDF por referencia de reserva (requiere email del cliente)
+        // Descarga del voucher PDF por referencia de reserva
+        // (requiere el access_token del link, o el email del cliente)
         register_rest_route( self::NAMESPACE, '/bookings/(?P<ref>[A-Z0-9\-]+)/pdf', [
             'methods'             => \WP_REST_Server::READABLE,
             'callback'            => [ $this, 'download_pdf' ],
             'permission_callback' => '__return_true',
             'args'                => [
                 'ref'   => [ 'required' => true,  'type' => 'string' ],
-                'email' => [ 'required' => true,  'type' => 'string', 'format' => 'email' ],
+                'token' => [ 'required' => false, 'type' => 'string' ],
+                'email' => [ 'required' => false, 'type' => 'string', 'format' => 'email' ],
             ],
         ] );
 
@@ -156,12 +158,25 @@ class BookingController {
     // ── GET /bookings/{ref} ───────────────────────────────────────────────
 
     public function get_booking( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'get_booking_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $ref     = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
         $manager = new \AmirBooking\Core\BookingManager();
         $booking = $manager->get_booking_by_ref( $ref );
 
         if ( ! $booking ) {
             return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
+        }
+
+        // El booking_ref es secuencial (AMIR-2026-00001, -00002…) y por lo
+        // tanto adivinable — no alcanza como credencial. Se exige el
+        // access_token del link de email/QR, o el email del cliente.
+        $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
+        $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Se requiere el token del link o el email de la reserva.' ], 403 );
         }
 
         return rest_ensure_response( $this->format_booking_public( $booking ) );
@@ -172,6 +187,10 @@ class BookingController {
     // El admin aprueba manualmente desde el panel
 
     public function request_cancellation( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'req_cancel_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $ref     = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
         $manager = new \AmirBooking\Core\BookingManager();
         $booking = $manager->get_booking_by_ref( $ref );
@@ -180,8 +199,9 @@ class BookingController {
             return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
         }
 
+        $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
         $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        if ( strtolower($email) !== strtolower($booking->customer_email) ) {
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
             return new \WP_REST_Response( [ 'error' => 'Datos incorrectos' ], 403 );
         }
 
@@ -231,6 +251,10 @@ class BookingController {
     // Usado por el widget post-pago para obtener el booking_ref
 
     public function get_booking_by_payment( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'by_payment_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $pi_id = sanitize_text_field( $request->get_param('pi_id') );
 
         global $wpdb;
@@ -254,6 +278,10 @@ class BookingController {
     // ── POST /bookings/{ref}/cancel ───────────────────────────────────────
 
     public function cancel_booking( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'cancel_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $ref     = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
         $manager = new \AmirBooking\Core\BookingManager();
         $booking = $manager->get_booking_by_ref( $ref );
@@ -262,9 +290,10 @@ class BookingController {
             return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
         }
 
-        // Verificar que el email coincide (seguridad básica para cancelación pública)
+        // Autorizar por access_token (link de email/QR) o por email del cliente
+        $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
         $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        if ( strtolower( $email ) !== strtolower( $booking->customer_email ) ) {
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
             return new \WP_REST_Response( [ 'error' => 'Datos incorrectos' ], 403 );
         }
 
@@ -309,6 +338,12 @@ class BookingController {
     public function download_pdf( \WP_REST_Request $request ): void {
         global $wpdb;
 
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'pdf_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            status_header( 429 );
+            echo 'Demasiados intentos. Intenta de nuevo en unos minutos.';
+            exit;
+        }
+
         $ref = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
 
         $booking = $wpdb->get_row( $wpdb->prepare(
@@ -322,9 +357,11 @@ class BookingController {
             exit;
         }
 
-        // Verificar email para proteger datos personales del cliente (PII)
-        $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        if ( empty( $email ) || strtolower( $email ) !== strtolower( $booking->customer_email ) ) {
+        // Autorizar por access_token (link de email/QR) o por email del cliente
+        $token   = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
+        $email   = sanitize_email( $request->get_param( 'email' ) ?? '' );
+        $manager = new \AmirBooking\Core\BookingManager();
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
             status_header( 403 );
             echo 'Acceso no autorizado.';
             exit;
@@ -420,7 +457,21 @@ class BookingController {
                 ], 503 );
             }
         } else {
-            // Sin SK configurada — modo desarrollo, aceptar
+            // Sin Secret Key configurada: nunca confirmar el pago sin
+            // verificarlo contra Stripe. Un olvido de configuración en
+            // producción no debe convertirse en "cualquiera confirma
+            // cualquier reserva llamando este endpoint con datos inventados".
+            // Solo se permite omitir la verificación con un override
+            // explícito para desarrollo local, nunca por ausencia de config.
+            $dev_override = defined( 'WP_DEBUG' ) && WP_DEBUG
+                         && defined( 'AMIR_ALLOW_UNVERIFIED_PAYMENTS' ) && AMIR_ALLOW_UNVERIFIED_PAYMENTS;
+
+            if ( ! $dev_override ) {
+                return new \WP_REST_Response( [
+                    'error' => 'Stripe no está configurado. No se puede confirmar el pago.',
+                ], 503 );
+            }
+
             $charge_id = $pi_id;
         }
 

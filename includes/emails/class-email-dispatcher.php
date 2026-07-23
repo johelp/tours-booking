@@ -236,6 +236,22 @@ abstract class BaseEmail {
     }
 
     /**
+     * URL de la página pública de verificación de reserva, con el
+     * access_token de la reserva para que el link autorice la lectura
+     * sin pedirle el email de nuevo al cliente.
+     */
+    protected function verify_url(): string {
+        $page_id = (int) get_option( 'amir_verify_page_id', 0 );
+        $base    = $page_id ? get_permalink( $page_id ) : false;
+        $base    = $base ?: ( get_site_url() . '/verificar-reserva/' );
+
+        return add_query_arg(
+            [ 'ref' => $this->booking->booking_ref, 'token' => $this->booking->access_token ?? '' ],
+            $base
+        );
+    }
+
+    /**
      * Oscurece un color hex ~20% para textos sobre fondos claros.
      */
     private function darken_color( string $hex, float $factor = 0.7 ): string {
@@ -440,13 +456,16 @@ class ConfirmationEmail extends BaseEmail {
         $policy_en = '<div class="policy-box"><p><strong>Cancellation policy:</strong></p><p>✓ 7+ days before: full refund</p><p>▸ 3–6 days before: 50% refund</p><p>✕ Less than 3 days: no refund</p></div>';
 
         $pdf_url = rest_url( 'amir/v1/bookings/' . rawurlencode($b->booking_ref) . '/pdf' )
-                   . '?email=' . rawurlencode( $b->customer_email );
+                   . '?token=' . rawurlencode( $b->access_token ?? '' );
 
         $actions = '
         <p style="text-align:center;margin-top:24px;">
           <a href="' . esc_url($pdf_url) . '" class="btn">' . $this->t('download_pdf') . '</a>
           &nbsp;&nbsp;
           <a href="' . $this->calendar_url() . '" class="btn btn-outline">' . $this->t('add_cal') . '</a>
+        </p>
+        <p style="text-align:center;font-size:13px;margin-top:12px;">
+          <a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . ( $this->lang === 'en' ? 'View booking status' : 'Ver estado de mi reserva' ) . '</a>
         </p>
         <p style="text-align:center;font-size:13px;color:#5a7068;margin-top:8px;">
           ' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a>
