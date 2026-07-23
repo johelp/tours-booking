@@ -79,7 +79,9 @@ dev-notes/                            # Material de referencia, NO es código de
 └── agents-skills/                    # Skill de desarrollo WP para asistentes de IA
 ```
 
-> **Nota sobre `assets/js/*.js`:** el widget de reservas y el panel de admin son React compilado a un bundle. El código fuente (`react-src/`, según las notas de desarrollo) todavía no está en este repositorio — solo existe el resultado del build. Cualquier cambio al frontend requiere recuperar ese código fuente primero; parchear el bundle minificado a mano no es viable.
+> **Nota sobre `assets/js/*.js`:** el widget de reservas y el panel de admin son React compilado a un bundle. El código fuente (`react-src/`, según las notas de desarrollo) todavía no está en este repositorio — solo existe el resultado del build. Cualquier cambio de fondo al frontend requiere recuperar ese código fuente primero; parchear el bundle minificado a mano solo es razonable para fixes puntuales y muy localizados (ver nota abajo), no para agregar funcionalidad nueva.
+>
+> **Parche aplicado directo sobre `booking-widget.js` (v1.3.1):** el paso "Tus datos" perdía el foco del input después de cada carácter en mobile. Causa: el componente que renderiza cada campo (`amirField`, antes una función anónima llamada `v`) estaba definido **dentro** del componente del paso, así que React lo recreaba como un tipo de componente distinto en cada render y desmontaba/remontaba el `<input>` en cada tecla — el bug clásico de "no definas componentes dentro de otros componentes" en React. Se corrigió moviendo `amirField` a nivel superior del módulo, recibiendo `value`/`error`/`onChange` como props en vez de capturarlos por closure. **Si alguna vez aparece `react-src`, hay que aplicar este mismo cambio en la fuente** (buscar el componente del paso de datos del cliente) para no reintroducir el bug en el próximo build.
 
 ## Seguridad de acceso público a reservas
 
