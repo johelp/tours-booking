@@ -24,6 +24,7 @@ class Installer {
         'bookings',
         'notifications',
         'payment_events',
+        'coupons',
     ];
 
     // ── Activación ────────────────────────────────────────────────────────
@@ -299,6 +300,8 @@ class Installer {
             payment_gateway          VARCHAR(20) DEFAULT 'stripe',
             gateway_reference        VARCHAR(255) DEFAULT '',
             gateway_charge_id        VARCHAR(255) DEFAULT '',
+            coupon_code              VARCHAR(50) DEFAULT '',
+            discount_mxn             DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             cancellation_policy_pct  TINYINT UNSIGNED NOT NULL DEFAULT 0,
             refund_amount_mxn        DECIMAL(10,2) DEFAULT 0.00,
             qr_code_path             VARCHAR(500) DEFAULT '',
@@ -342,6 +345,26 @@ class Installer {
             KEY gateway (gateway),
             KEY event_type (event_type),
             KEY created_at (created_at)
+        ) $charset;" );
+
+        // ── amir_coupons ──────────────────────────────────────────────────
+        dbDelta( "CREATE TABLE {$wpdb->prefix}amir_coupons (
+            id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            code            VARCHAR(50) NOT NULL,
+            discount_type   ENUM('percent','fixed') NOT NULL DEFAULT 'percent',
+            discount_value  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            valid_from      DATE,
+            valid_until     DATE,
+            usage_limit     INT UNSIGNED DEFAULT NULL,
+            times_used      INT UNSIGNED NOT NULL DEFAULT 0,
+            tour_id         INT UNSIGNED DEFAULT NULL,
+            active          TINYINT(1) NOT NULL DEFAULT 1,
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY code (code),
+            KEY active (active),
+            KEY tour_id (tour_id),
+            KEY validity (valid_from, valid_until)
         ) $charset;" );
 
         // ── amir_notifications ────────────────────────────────────────────
@@ -507,6 +530,13 @@ class Installer {
             $wpdb->query( "UPDATE {$wpdb->prefix}amir_bookings SET payment_gateway = 'stripe' WHERE payment_gateway IS NULL OR payment_gateway = ''" );
             $wpdb->query( "UPDATE {$wpdb->prefix}amir_bookings SET gateway_reference = stripe_payment_intent WHERE (gateway_reference = '' OR gateway_reference IS NULL) AND stripe_payment_intent <> ''" );
             $wpdb->query( "UPDATE {$wpdb->prefix}amir_bookings SET gateway_charge_id = stripe_charge_id WHERE (gateway_charge_id = '' OR gateway_charge_id IS NULL) AND stripe_charge_id <> ''" );
+        }
+
+        // 1.4.0: cupones — coupon_code/discount_mxn en la reserva + tabla
+        // amir_coupons (creada más abajo por create_tables()).
+        if ( ! in_array( 'coupon_code', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN coupon_code VARCHAR(50) DEFAULT '' AFTER gateway_charge_id" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN discount_mxn DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER coupon_code" );
         }
 
         self::create_tables();

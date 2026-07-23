@@ -59,14 +59,15 @@ class BookingManager {
             );
         }
 
-        // Calcular precio
+        // Calcular precio (con cupón si se envió uno)
         $quote = $this->pricing->quote(
             (int) $data['tour_id'],
             (int) $data['schedule_id'],
             $data['date'],
             (int) $data['adults'],
             (int) $data['children'],
-            (int) $data['babies']
+            (int) $data['babies'],
+            sanitize_text_field( $data['coupon_code'] ?? '' )
         );
 
         if ( ! $quote->is_valid() ) {
@@ -131,10 +132,12 @@ class BookingManager {
                 'total_mxn'       => $quote->total_mxn,
                 'usd_reference'   => $quote->usd_reference,
                 'exchange_rate'   => $this->pricing->get_exchange_rate(),
+                'coupon_code'     => $quote->coupon_code,
+                'discount_mxn'    => $quote->discount_mxn,
                 'special_requests'=> sanitize_textarea_field( $data['special_requests'] ?? '' ),
                 'created_at'      => current_time( 'mysql' ),
             ],
-            [ '%s','%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%f','%f','%s','%s' ]
+            [ '%s','%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%f','%f','%s','%f','%s','%s' ]
         );
 
         if ( ! $inserted ) {
@@ -144,6 +147,12 @@ class BookingManager {
 
         $booking_id = $wpdb->insert_id;
         $wpdb->query( 'COMMIT' );
+
+        // Marcar el cupón como usado (fuera de la transacción de cupos —
+        // si esto falla no debe tirar abajo una reserva ya confirmada)
+        if ( $quote->coupon_id > 0 ) {
+            ( new CouponEngine() )->mark_used( $quote->coupon_id );
+        }
 
         // Invalidar caché de disponibilidad para este tour/mes
         $date_parts = explode( '-', $data['date'] );

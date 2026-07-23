@@ -21,20 +21,51 @@ class PricingEngine {
         int    $tour_id,
         int    $schedule_id,
         string $date,
-        int    $adults   = 1,
-        int    $children = 0,
-        int    $babies   = 0
+        int    $adults      = 1,
+        int    $children    = 0,
+        int    $babies      = 0,
+        string $coupon_code = ''
     ): PriceQuote {
         $tour = $this->get_tour( $tour_id );
         if ( ! $tour ) {
             return PriceQuote::error( 'Tour no encontrado' );
         }
 
-        if ( $tour->price_model === 'group' ) {
-            return $this->quote_group( $tour_id, $schedule_id, $date, $adults + $children + $babies );
+        $quote = $tour->price_model === 'group'
+            ? $this->quote_group( $tour_id, $schedule_id, $date, $adults + $children + $babies )
+            : $this->quote_percapita( $tour_id, $schedule_id, $date, $adults, $children, $babies );
+
+        if ( ! $quote->is_valid() || $coupon_code === '' ) {
+            return $quote;
         }
 
-        return $this->quote_percapita( $tour_id, $schedule_id, $date, $adults, $children, $babies );
+        return $this->apply_coupon( $quote, $tour_id, $coupon_code );
+    }
+
+    /**
+     * Aplica un cupón a una cotización ya calculada. Si el cupón no es
+     * válido, devuelve la cotización sin descuento (el error del cupón
+     * queda en $quote->coupon_error para que el frontend pueda mostrarlo
+     * sin que eso bloquee ver el precio normal).
+     */
+    private function apply_coupon( PriceQuote $quote, int $tour_id, string $coupon_code ): PriceQuote {
+        $coupons = new CouponEngine();
+        $result  = $coupons->validate( $coupon_code, $tour_id );
+
+        if ( ! $result->valid ) {
+            $quote->coupon_error = $result->error;
+            return $quote;
+        }
+
+        $discount = $coupons->calculate_discount( $result->coupon, $quote->total_mxn );
+
+        $quote->coupon_code   = strtoupper( trim( $coupon_code ) );
+        $quote->coupon_id     = (int) $result->coupon->id;
+        $quote->discount_mxn  = $discount;
+        $quote->total_mxn     = round( $quote->total_mxn - $discount, 2 );
+        $quote->usd_reference = $this->convert_to_usd( $quote->total_mxn );
+
+        return $quote;
     }
 
     // ── Modelo per-capita ─────────────────────────────────────────────────
@@ -261,6 +292,14 @@ class PriceQuote {
     public $model;
     /** @var string */
     public $error;
+    /** @var string cupón aplicado con éxito, si lo hubo */
+    public $coupon_code = '';
+    /** @var int */
+    public $coupon_id = 0;
+    /** @var float monto descontado en MXN */
+    public $discount_mxn = 0.0;
+    /** @var string motivo por el que un cupón enviado NO se aplicó (sin bloquear el precio normal) */
+    public $coupon_error = '';
 
     public function __construct( float $total_mxn, float $usd_reference, array $breakdown, string $model, string $error = '' ) {
         $this->total_mxn     = $total_mxn;
@@ -286,6 +325,9 @@ class PriceQuote {
             'breakdown'     => $this->breakdown,
             'model'         => $this->model,
             'error'         => $this->error,
+            'coupon_code'   => $this->coupon_code,
+            'discount_mxn'  => $this->discount_mxn,
+            'coupon_error'  => $this->coupon_error,
         ];
     }
 }

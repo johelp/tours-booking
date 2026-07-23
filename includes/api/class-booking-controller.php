@@ -115,6 +115,7 @@ class BookingController {
             'lang'             => $request->get_param( 'lang' ) ?? 'es',
             'partner_token'    => $request->get_param( 'partner_token' ) ?? '',
             'special_requests' => $request->get_param( 'special_requests' ) ?? '',
+            'coupon_code'      => $request->get_param( 'coupon_code' ) ?? '',
             'source'           => 'direct',
         ] );
 
@@ -335,7 +336,8 @@ class BookingController {
             $request->get_param( 'date' ),
             (int) $request->get_param( 'adults' ),
             (int) ( $request->get_param( 'children' ) ?? 0 ),
-            (int) ( $request->get_param( 'babies' ) ?? 0 )
+            (int) ( $request->get_param( 'babies' ) ?? 0 ),
+            sanitize_text_field( $request->get_param( 'coupon_code' ) ?? '' )
         );
 
         if ( ! $quote->is_valid() ) {
@@ -658,6 +660,7 @@ class BookingController {
             'lang'             => [ 'required' => false, 'type' => 'string',  'enum' => [ 'es', 'en' ] ],
             'partner_token'    => [ 'required' => false, 'type' => 'string' ],
             'special_requests' => [ 'required' => false, 'type' => 'string' ],
+            'coupon_code'      => [ 'required' => false, 'type' => 'string' ],
         ];
     }
 }
