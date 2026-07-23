@@ -270,7 +270,14 @@ class SettingsPage {
             </div>
           </div>
 
-        <!-- Sincronización de tours -->
+          <button type="submit" class="button button-primary" style="padding:10px 28px;font-size:14px;">Guardar configuración</button>
+        </form>
+
+        <!-- Sincronización de tours — form independiente, fuera del form de -->
+        <!-- configuración (un <form> anidado dentro de otro es HTML inválido: -->
+        <!-- el navegador cierra el form exterior antes de tiempo y el botón -->
+        <!-- "Guardar configuración" queda fuera de cualquier form, sin poder -->
+        <!-- enviarse nunca). -->
         <div class="ab-settings-section" style="border-color:#9FE1CB;">
           <h3>🔄 Sincronización de tours</h3>
           <p style="font-size:13px;color:#5a7068;margin:0 0 14px;">
@@ -295,9 +302,6 @@ class SettingsPage {
             <button type="submit" class="button button-primary">🔄 Sincronizar todos los tours ahora</button>
           </form>
         </div>
-
-          <button type="submit" class="button button-primary" style="padding:10px 28px;font-size:14px;">Guardar configuración</button>
-        </form>
         </div>
 
         <script>
