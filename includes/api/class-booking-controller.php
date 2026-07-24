@@ -445,6 +445,19 @@ class BookingController {
             ], 200 );
         }
 
+        // El payment_intent_id debe ser el que se generó para ESTA reserva.
+        // Sin este chequeo, un payment_intent legítimo y exitoso de OTRA
+        // reserva (barata) podría reutilizarse para confirmar cualquier
+        // reserva ajena sin pagarla — fetch_payment_status() solo confirma
+        // que el pago existe y tuvo éxito, no de quién es. Fail-closed: si
+        // la reserva todavía no tiene una referencia de pago guardada, no
+        // hay forma de verificar que corresponde a esta reserva — no se
+        // confirma (el webhook es la ruta autoritativa en ese caso).
+        $known_reference = $booking->gateway_reference ?: $booking->stripe_payment_intent;
+        if ( empty( $known_reference ) || ! hash_equals( $known_reference, $pi_id ) ) {
+            return new \WP_REST_Response( [ 'error' => 'payment_intent_id no corresponde a esta reserva' ], 403 );
+        }
+
         // Verificar el pago directamente contra la pasarela — nunca
         // confiar en que el cliente diga "ya pagué".
         $gateway = \AmirBooking\Payments\PaymentGatewayFactory::for_booking( $booking );
