@@ -66,12 +66,22 @@ assets/
 │   ├── booking-widget.css            # CSS del widget de reservas (generado por build)
 │   └── tour-cards.css                # CSS de tarjetas para Elementor y el archive
 └── js/
-    ├── admin.js                      # SPA React del admin (compilado — sin fuente en el repo)
-    └── booking-widget.js             # Widget React de reservas (compilado — sin fuente en el repo)
+    ├── admin.js                      # JS plano del admin — es su propia fuente, se edita directo
+    └── booking-widget.js             # Compilado desde react-src/ — no editar directo, ver nota abajo
 
 templates/
 ├── single-amir_tour.php              # Página individual del tour
 └── archive-amir_tour.php             # Listado /tours/
+
+react-src/                            # Fuente del widget de reservas (React + Vite)
+├── package.json / vite.config.js
+└── src/
+    ├── booking-widget.jsx             # Entry point: monta BookingWidget y TourList
+    ├── BookingWidget.jsx               # Flujo completo de reserva (7 pasos)
+    ├── TourList.jsx                    # Grilla de tours ([amir_tour_list])
+    ├── api.js                          # Cliente de la REST API
+    ├── i18n.js                         # Traducciones ES/EN
+    └── styles/widget.css               # Fuente de assets/css/booking-widget.css
 
 dev-notes/                            # Material de referencia, NO es código del plugin
 ├── stripe.md                         # Guía de buenas prácticas de integración Stripe
@@ -79,11 +89,15 @@ dev-notes/                            # Material de referencia, NO es código de
 └── agents-skills/                    # Skill de desarrollo WP para asistentes de IA
 ```
 
-> **Nota sobre `assets/js/*.js`:** el widget de reservas y el panel de admin son React compilado a un bundle. El código fuente (`react-src/`, según las notas de desarrollo) todavía no está en este repositorio — solo existe el resultado del build. Cualquier cambio de fondo al frontend requiere recuperar ese código fuente primero; parchear el bundle minificado a mano solo es razonable para fixes puntuales y muy localizados (ver nota abajo), no para agregar funcionalidad nueva.
+> **`react-src/` ya está recuperado (commit `1a9b62d`).** El widget de reservas es React (Vite). Para compilar: `cd react-src && npm install && npm run build` — genera `assets/js/booking-widget.js` y `assets/css/booking-widget.css`. `admin.js` (panel de admin) es JS plano, no pasa por este build, se edita directo.
 >
-> **Parche aplicado directo sobre `booking-widget.js` (v1.3.1):** el paso "Tus datos" perdía el foco del input después de cada carácter en mobile. Causa: el componente que renderiza cada campo (`amirField`, antes una función anónima llamada `v`) estaba definido **dentro** del componente del paso, así que React lo recreaba como un tipo de componente distinto en cada render y desmontaba/remontaba el `<input>` en cada tecla — el bug clásico de "no definas componentes dentro de otros componentes" en React. Se corrigió moviendo `amirField` a nivel superior del módulo, recibiendo `value`/`error`/`onChange` como props en vez de capturarlos por closure. **Si alguna vez aparece `react-src`, hay que aplicar este mismo cambio en la fuente** (buscar el componente del paso de datos del cliente) para no reintroducir el bug en el próximo build.
+> **Historial de bugs que se parchearon a mano sobre el bundle compilado antes de recuperar la fuente** (ya portados a `react-src/`, mencionados acá solo como referencia de por qué el bundle y la fuente podían divergir):
+> - **v1.3.1** — el paso "Tus datos" perdía el foco del input en cada carácter en mobile: el componente de campo estaba definido **dentro** de `StepDetails` en vez de a nivel de módulo (bug clásico de React: identidad de componente nueva en cada render → desmonta/remonta el `<input>`). Ahora es `CustomerField`, a nivel de módulo, recibe `value`/`error`/`onChange` como props.
+> - **v1.3.3** — faltaba la clave de traducción `lang_pref_hint` (la función de traducción devuelve la clave cruda si no la encuentra, así que se veía el texto literal en pantalla), y no existía forma de ingresar un cupón en el checkout. Ambos ya están en `react-src/`.
 >
-> **Parches adicionales (v1.3.3):** (1) faltaba la clave de traducción `lang_pref_hint` en ambos diccionarios — la función de traducción devuelve la clave cruda cuando no la encuentra (`t[n] ?? n`), así que aparecía el texto literal "lang_pref_hint" debajo del selector de idioma en vez del texto real; se agregó la clave a `es`/`en`. (2) Se agregó el campo de cupón al paso "Resumen": nuevo campo `couponCode` en el estado del formulario, se envía como `coupon_code` tanto en la cotización (`bookings/quote`) como en la creación de la reserva (`bookings`), y se muestra el descuento/error que ya devuelve el backend (`quote.discount_mxn` / `quote.coupon_error`) sin necesitar lógica nueva del lado del cliente para calcular el descuento. **Si aparece `react-src`, portar ambos cambios ahí** (la clave de traducción faltante y el campo de cupón en el paso de resumen) para no perderlos en el próximo build.
+> Al reconciliar se encontró además que `react-src/src/styles/widget.css` no tenía varios ajustes responsive que sí estaban en el CSS shippeado (padding mobile-first, tamaños de fuente escalonados por breakpoint) — de una sesión anterior que los aplicó directo al compilado sin volver a la fuente. Ya están reconciliados; **si vas a tocar el CSS, edita `react-src/src/styles/widget.css` y compilá, no `assets/css/booking-widget.css` directo** (ese archivo ahora es un artefacto de build, se sobreescribe).
+>
+> `vite.config.js` tenía además un bug propio: el output del CSS apuntaba a `assets/js/` en vez de `assets/css/` (donde el plugin realmente lo carga). Ya corregido.
 
 ## Seguridad de acceso público a reservas
 
@@ -171,7 +185,7 @@ Motor evalúa → En junio: regla 2 (prioridad 20) gana → PERMITE
 2. Instalar dependencias PHP: `composer install` (ver INSTALL.md — `vendor/` ya no se versiona en git)
 3. Activar el plugin en WP Admin → Plugins
 4. Las tablas se crean automáticamente al activar (o se migran solas si ya existían de una versión anterior)
-5. Los assets de `assets/js/*.js` ya vienen compilados en el repo; el código fuente de React aún no está versionado (ver nota más arriba)
+5. Para compilar el widget de reservas: `cd react-src && npm install && npm run build` (genera `assets/js/booking-widget.js` y `assets/css/booking-widget.css`). No hace falta para `admin.js`, que es JS plano.
 6. Tests unitarios (lógica de dominio, sin base de datos real): `composer install && vendor/bin/phpunit`. CI corre esto mismo en cada push/PR (`.github/workflows/ci.yml`).
 
 ## Variables de entorno / Opciones de WordPress

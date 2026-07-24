@@ -6,14 +6,22 @@ Este documento es el punto de partida si te sumás a este proyecto sin haber est
 
 Plugin de WordPress para reservas de tours (Amir Adventours Bacalar), sin WooCommerce. Rebrandeado a **TourFlow** como nombre de producto (el operador turístico sigue siendo Amir Adventours — son dos cosas distintas, ver README § Tablas). Corre en un WordPress Multisite, en un subsitio de pruebas en `amiradventours.com/sandbox/`.
 
-## 2. Lo más importante que tenés que saber antes de tocar nada
+## 2. `react-src/` ya está recuperado — leé esto antes de tocar el widget
 
-**El código fuente de React del widget de reservas no existe en este repositorio.** Solo están los bundles ya compilados (`assets/js/booking-widget.js`, `assets/js/admin.js`). Esto es un problema real, no un detalle:
+El código fuente de React (`react-src/`) apareció y se reconcilió con el bundle compilado (commit `1a9b62d`). Para trabajar en el widget de reservas:
 
-- Cualquier cambio de fondo al widget de reservas (nuevo paso, nuevo campo, cambio de UI) requiere ese código fuente, que se perdió en algún momento del desarrollo anterior. Si en algún momento aparece (buscar `react-src/`, puede estar en la máquina de otra persona), avisar y agregarlo al repo antes de seguir construyendo sobre el bundle.
-- **Excepción:** `admin.js` (el JS del panel de admin) resultó ser JS plano de 56 líneas, no un bundle — ese sí es editable directamente, sin problema.
-- Ya hubo que parchear `booking-widget.js` a mano una vez (bug de foco perdido en mobile, ver commit `d97cc52`) leyendo el bundle minificado con `js-beautify` para ubicar el patrón exacto y editando el archivo original con cuidado, validando con `node --check`. Es factible pero laborioso — reservalo para bugs puntuales y localizables, no para features nuevas.
-- El CSS del widget (`assets/css/booking-widget.css`) **sí** es código fuente normal, se edita como cualquier CSS.
+```bash
+cd react-src
+npm install
+npm run build   # genera assets/js/booking-widget.js y assets/css/booking-widget.css
+```
+
+- **Nunca edites `assets/js/booking-widget.js` ni `assets/css/booking-widget.css` directo** — son artefactos de build, se sobreescriben. Editá `react-src/src/*` y compilá.
+- `admin.js` (panel de admin) es la excepción: es JS plano de 56 líneas, no pasa por este build, se edita directo en `assets/js/admin.js`.
+- `react-src/src/BookingWidget.jsx` ya tiene un componente `StepPaymentMP` y manejo de `result.gateway === 'mercadopago'` en `StepSummary` — el frontend para Mercado Pago **ya está escrito**, esperando que el backend (Tarea 14) devuelva `gateway`, `preference_id`, `init_point`, `sandbox_init_point`. Revisar esa función antes de diseñar la respuesta de `MercadoPagoGateway::create_payment()`.
+- `react-src/src/TourList.jsx` es la grilla de `[amir_tour_list]` — ya existe y está montada, no es algo por construir.
+- Antes de esto, hubo que parchear `booking-widget.js` compilado a mano tres veces (ver README § nota sobre assets/js) mientras no teníamos la fuente — ya está todo portado a `react-src/`, no hace falta repetir eso.
+- **Si algo en la fuente parece desactualizado respecto a lo que corre en el sandbox**, no asumas que la fuente es la verdad — compará contra el bundle compilado antes de construir encima (así se encontraron los ajustes responsive de CSS que la fuente no tenía).
 
 ## 3. Estado actual (rama `fase1/seguridad-base-codigo2`)
 
@@ -45,11 +53,17 @@ Trabajo ya en curso, en este orden:
 | 1 | `PaymentGatewayInterface` + Stripe migrado a esa interfaz | ✅ Hecho |
 | 2 | Log de eventos de pago (`wp_amir_payment_events` + pantalla admin) | ✅ Hecho |
 | 3 | Cupones (%, monto fijo, por fecha) | ✅ Hecho |
-| 4 | `MercadoPagoGateway` (Checkout Pro, activable por país: México/Argentina/Chile — Argentina solo Mercado Pago, Stripe no liquida bien en ARS) | ⏳ Pendiente |
+| 4 | `MercadoPagoGateway` (Checkout Pro, activable por país: México/Argentina/Chile — Argentina solo Mercado Pago, Stripe no liquida bien en ARS) | ⏳ Pendiente — **el frontend ya está listo** (`StepPaymentMP` en `BookingWidget.jsx`), ver § 2 |
 | 5 | "Cargar reserva + enviar link de pago" desde el admin | ⏳ Pendiente |
-| 6 | Checkbox de aceptación de términos | ⏳ Parcial — **el widget ya tiene el checkbox** (`ab-policy-check` en el CSS, campo `policyAccepted` en el bundle), falta la validación server-side y el texto configurable de la política |
+| 6 | Checkbox de aceptación de términos | ⏳ Parcial — **el widget ya tiene el checkbox** (`ab-policy-check`, campo `policyAccepted`), falta la validación server-side y el texto configurable de la política |
 | 7 | Lista de espera | ⏳ Pendiente |
-| 8 | Add-ons en checkout (alquiler de equipo, foto, etc.) | ⏳ Pendiente — backend solamente; la selección visual en el widget necesita el punto 2 (react-src) |
+| 8 | Add-ons en checkout (alquiler de equipo, foto, etc.) | ⏳ Pendiente — ya no está bloqueado por falta de fuente (recuperada), pero requiere UI nueva en `BookingWidget.jsx` |
+| 9 | Cupón: campo en el checkout | ✅ Hecho (backend y frontend) |
+| 10 | Fix `lang_pref_hint` visible como texto crudo | ✅ Hecho |
+| 11 | Mejoras mobile (touch targets, font-size inputs) | ✅ Hecho, portado a `react-src/` |
+| 12 | Multi-idioma más allá de ES/EN | ⏳ Pendiente — requiere refactor real: hoy varios archivos PHP (emails, voucher, verificación) y el JS asumen literalmente 2 idiomas con `idioma==='en'?X:Y`, no una iteración sobre N idiomas. Agregar italiano/francés bien hecho es cambiar ese patrón, no solo sumar traducciones |
+| 13 | Dos plantillas de detalle de tour + colores de reserva configurables | ⏳ Pendiente — bajo riesgo: `templates/single-amir_tour.php` es PHP normal (agregar una segunda plantilla + selector en Configuración), y los colores del widget ya son variables CSS (`--ab-teal`, etc.) — se pueden volcar desde una opción de Configuración sin tocar `react-src/` |
+| 14 | GDPR (mercado europeo) + evaluar Redsys u otra pasarela europea | ⏳ Backlog, sin diseñar todavía |
 
 Para agregar una pasarela nueva: implementar `PaymentGatewayInterface` (en `includes/payments/`), registrarla en `PaymentGatewayFactory::make()`. El controlador (`class-booking-controller.php`) no necesita cambios — ya está escrito contra la interfaz, no contra Stripe directamente.
 
