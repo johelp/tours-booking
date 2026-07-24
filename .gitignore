@@ -1,6 +1,9 @@
 # Dependencias — se instalan en el build/despliegue con `composer install`
 /vendor/
-/node_modules/
+
+# node_modules en cualquier profundidad (raíz y react-src/) — se instalan con
+# `npm install`, nunca se versionan
+node_modules/
 
 # Artefactos de SO / editor
 .DS_Store
