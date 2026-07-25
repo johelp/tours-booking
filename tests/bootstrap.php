@@ -115,11 +115,23 @@ foreach ( [ 'sanitize_text_field', 'sanitize_textarea_field', 'sanitize_key', 's
     }
 }
 
+if ( ! function_exists( 'is_email' ) ) {
+    function is_email( string $email ) {
+        return filter_var( $email, FILTER_VALIDATE_EMAIL ) ? $email : false;
+    }
+}
+
 require_once __DIR__ . '/fakes/FakeWpdb.php';
 
 // ── Clases de dominio bajo test (requeridas directamente, sin el bootstrap
 //    completo del plugin — no necesitamos registrar hooks de WP para
 //    probar lógica de negocio pura) ─────────────────────────────────────────
+require_once __DIR__ . '/../includes/core/class-currency.php';
 require_once __DIR__ . '/../includes/core/class-availability-engine.php';
 require_once __DIR__ . '/../includes/core/class-pricing-engine.php';
 require_once __DIR__ . '/../includes/core/class-booking-manager.php';
+require_once __DIR__ . '/../includes/payments/class-payment-gateway-interface.php';
+require_once __DIR__ . '/../includes/payments/class-payment-creation-result.php';
+require_once __DIR__ . '/../includes/payments/class-payment-event.php';
+require_once __DIR__ . '/../includes/payments/class-payment-status-result.php';
+require_once __DIR__ . '/../includes/payments/class-mercadopago-gateway.php';

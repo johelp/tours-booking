@@ -77,7 +77,7 @@ get_header();
               <div class="amir-tour-card__price-badge">
                 <span class="amir-tour-card__price-badge-label"><?php echo $is_en?'From':'Desde'; ?></span>
                 <span class="amir-tour-card__price-badge-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
-                <span class="amir-tour-card__price-badge-cur"> MXN</span>
+                <span class="amir-tour-card__price-badge-cur"> <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></span>
               </div>
             <?php endif; ?>
           </div>

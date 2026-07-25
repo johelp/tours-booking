@@ -78,6 +78,41 @@ class SettingsPage {
             </div>
           </div>
 
+          <!-- Mercado Pago -->
+          <div class="ab-settings-section">
+            <h3>💙 Mercado Pago</h3>
+            <div class="ab-field">
+              <label>Pasarela de pago activa</label>
+              <select name="amir_default_gateway">
+                <option value="stripe"      <?php selected(get_option('amir_default_gateway','stripe'),'stripe'); ?>>Stripe</option>
+                <option value="mercadopago" <?php selected(get_option('amir_default_gateway','stripe'),'mercadopago'); ?>>Mercado Pago</option>
+              </select>
+              <p class="ab-hint">Con qué pasarela se cobran las reservas nuevas por defecto. ⚠️ Argentina: usar Mercado Pago — Stripe no liquida bien en pesos argentinos.</p>
+            </div>
+            <div class="ab-field">
+              <label>Modo</label>
+              <select name="amir_mp_mode">
+                <option value="test" <?php selected(get_option('amir_mp_mode','test'),'test'); ?>>Test (pruebas)</option>
+                <option value="live" <?php selected(get_option('amir_mp_mode','test'),'live'); ?>>Live (producción)</option>
+              </select>
+            </div>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Access Token TEST</label>
+                <input type="password" name="amir_mp_access_token_test" value="<?php echo esc_attr(get_option('amir_mp_access_token_test','')); ?>" placeholder="TEST-…" />
+              </div>
+              <div class="ab-field">
+                <label>Access Token LIVE</label>
+                <input type="password" name="amir_mp_access_token_live" value="<?php echo esc_attr(get_option('amir_mp_access_token_live','')); ?>" placeholder="APP_USR-…" />
+              </div>
+            </div>
+            <div class="ab-field">
+              <label>Webhook Secret</label>
+              <input type="password" name="amir_mp_webhook_secret" value="<?php echo esc_attr(get_option('amir_mp_webhook_secret','')); ?>" placeholder="Clave secreta de la integración…" />
+              <p class="ab-hint">URL del webhook en Mercado Pago: <code><?php echo rest_url('amir/v1/bookings/mercadopago-webhook'); ?></code> — la clave secreta la genera MP en Tus integraciones → Webhooks.</p>
+            </div>
+          </div>
+
           <!-- General -->
           <div class="ab-settings-section">
             <h3>⚙ General</h3>
@@ -103,21 +138,61 @@ class SettingsPage {
             </div>
           </div>
 
-          <!-- Tipo de cambio USD -->
+          <!-- Moneda -->
           <div class="ab-settings-section">
-            <h3>💱 Tipo de cambio USD/MXN</h3>
-            <div class="ab-field">
-              <label>Modo</label>
-              <select name="amir_usd_rate_mode">
-                <option value="auto" <?php selected(get_option('amir_usd_rate_mode','auto'),'auto'); ?>>Automático (API ExchangeRate, actualiza c/4h)</option>
-                <option value="manual" <?php selected(get_option('amir_usd_rate_mode','auto'),'manual'); ?>>Manual (valor fijo)</option>
-              </select>
+            <h3>💰 Moneda</h3>
+            <p style="font-size:12px;color:#5a7068;margin:0 0 14px;">
+              Moneda en la que se cobran los tours (Stripe cobra en esta moneda directamente).
+              Depende del país donde opera el negocio.
+            </p>
+            <?php
+            $currency     = get_option('amir_currency','MXN');
+            $currency_std = in_array($currency, \AmirBooking\Core\Currency::SUPPORTED, true) ? $currency : '';
+            ?>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Moneda</label>
+                <select name="amir_currency" id="amir-currency-select">
+                  <option value="MXN" <?php selected($currency_std,'MXN'); ?>>MXN — Peso mexicano</option>
+                  <option value="ARS" <?php selected($currency_std,'ARS'); ?>>ARS — Peso argentino</option>
+                  <option value="USD" <?php selected($currency_std,'USD'); ?>>USD — Dólar estadounidense</option>
+                  <option value="EUR" <?php selected($currency_std,'EUR'); ?>>EUR — Euro</option>
+                  <option value="" <?php selected($currency_std,''); ?>>Otra (código ISO 4217)…</option>
+                </select>
+              </div>
+              <div class="ab-field">
+                <label>Código ISO (si elegiste "Otra")</label>
+                <input type="text" name="amir_currency_custom" id="amir-currency-custom"
+                       value="<?php echo $currency_std === '' ? esc_attr($currency) : ''; ?>"
+                       maxlength="3" placeholder="Ej: COP, CLP, GBP…"
+                       style="text-transform:uppercase;max-width:120px;" />
+                <p class="ab-hint">Cualquier código de 3 letras es válido — solo Stripe determina si realmente puede cobrar en esa moneda.</p>
+              </div>
             </div>
-            <div class="ab-field">
-              <label>Valor manual USD → MXN</label>
-              <input type="number" name="amir_usd_rate_manual" value="<?php echo esc_attr(get_option('amir_usd_rate_manual','17')); ?>" min="1" step="0.01" style="max-width:120px;" />
-              <p class="ab-hint">Ej: 17 = $1 USD = $17 MXN</p>
-            </div>
+          </div>
+
+          <!-- Tipo de cambio de referencia -->
+          <div class="ab-settings-section">
+            <h3>💱 Tipo de cambio de referencia (USD)</h3>
+            <?php if ( $currency === 'USD' ) : ?>
+              <p class="ab-hint" style="margin:0;">Tu moneda ya es USD — no aplica conversión de referencia.</p>
+            <?php else : ?>
+              <p style="font-size:12px;color:#5a7068;margin:0 0 12px;">
+                Se usa para mostrar también el precio en USD como referencia a turistas extranjeros (no afecta el cobro real, que siempre es en <?php echo esc_html($currency); ?>).
+              </p>
+              <div class="ab-field">
+                <label>Modo</label>
+                <select name="amir_usd_rate_mode">
+                  <option value="auto" <?php selected(get_option('amir_usd_rate_mode','auto'),'auto'); ?>>Automático (API ExchangeRate, actualiza c/4h)</option>
+                  <option value="manual" <?php selected(get_option('amir_usd_rate_mode','auto'),'manual'); ?>>Manual (valor fijo)</option>
+                </select>
+              </div>
+              <div class="ab-field">
+                <label>Valor manual USD → <?php echo esc_html($currency); ?></label>
+                <input type="number" name="amir_usd_rate_manual" value="<?php echo esc_attr(get_option('amir_usd_rate_manual','17')); ?>" min="0" step="0.0001" style="max-width:140px;" />
+                <p class="ab-hint">Ej: 17 = $1 USD = <?php echo esc_html(\AmirBooking\Core\Currency::symbol($currency)); ?>17 <?php echo esc_html($currency); ?></p>
+              </div>
+            <?php endif; ?>
           </div>
 
           <!-- Integraciones -->
@@ -442,6 +517,11 @@ class SettingsPage {
             'amir_stripe_pk_live'          => 'sanitize_text_field',
             'amir_stripe_sk_live'          => 'sanitize_text_field',
             'amir_stripe_webhook_secret'   => 'sanitize_text_field',
+            'amir_default_gateway'         => 'sanitize_key',
+            'amir_mp_mode'                 => 'sanitize_key',
+            'amir_mp_access_token_test'    => 'sanitize_text_field',
+            'amir_mp_access_token_live'    => 'sanitize_text_field',
+            'amir_mp_webhook_secret'       => 'sanitize_text_field',
             'amir_admin_email'             => 'sanitize_email',
             'amir_wa_phone'                => 'sanitize_text_field',
             'amir_pending_expire_mins'     => 'absint',
@@ -479,8 +559,20 @@ class SettingsPage {
         $delete = isset($_POST['amir_delete_data_on_uninstall']) ? '1' : '0';
         update_option('amir_delete_data_on_uninstall', $delete);
 
-        // Invalidar caché de tipo de cambio si cambió el modo
-        delete_transient('amir_usd_mxn_rate');
+        // Moneda: si eligió "Otra", usar el código ISO libre; si no, la opción estándar.
+        $selected = sanitize_text_field( $_POST['amir_currency'] ?? '' );
+        $custom   = strtoupper( sanitize_text_field( $_POST['amir_currency_custom'] ?? '' ) );
+        $currency = $selected !== '' ? $selected : $custom;
+        if ( preg_match( '/^[A-Z]{3}$/', $currency ) ) {
+            $old_currency = get_option( 'amir_currency', 'MXN' );
+            update_option( 'amir_currency', $currency );
+            if ( $currency !== $old_currency ) {
+                delete_transient( 'amir_usd_rate_' . strtolower( $old_currency ) );
+            }
+        }
+
+        // Invalidar caché de tipo de cambio de referencia
+        delete_transient( 'amir_usd_rate_' . strtolower( get_option( 'amir_currency', 'MXN' ) ) );
     }
 
     private function input_style(): string {

@@ -118,7 +118,7 @@ class DashboardPage {
           <div class="ab-stat-card">
             <div class="label">Ingresos este mes</div>
             <div class="value">$<?php echo number_format($stats['month_revenue'],0,'.',','); ?></div>
-            <div class="sub">MXN · <?php echo $stats['month_bookings']; ?> reservas</div>
+            <div class="sub"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?> · <?php echo $stats['month_bookings']; ?> reservas</div>
           </div>
           <div class="ab-stat-card">
             <div class="label">Pendientes de pago</div>

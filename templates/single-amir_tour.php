@@ -97,7 +97,7 @@ while ( have_posts() ) :
     'offers'      => $price_from > 0 ? [
         '@type'         => 'Offer',
         'price'         => $price_from,
-        'priceCurrency' => 'MXN',
+        'priceCurrency' => \AmirBooking\Core\Currency::code(),
         'availability'  => 'https://schema.org/InStock',
     ] : null,
 ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT); ?>
@@ -125,7 +125,7 @@ while ( have_posts() ) :
           <div class="amir-single-tour__price">
             <span class="amir-single-tour__price-from"><?php echo $is_en?'From':'Desde'; ?></span>
             <span class="amir-single-tour__price-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
-            <span class="amir-single-tour__price-cur">MXN</span>
+            <span class="amir-single-tour__price-cur"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></span>
           </div>
         <?php endif; ?>
       </div>
@@ -357,7 +357,7 @@ if ( $suggested->have_posts() ) :
               <div class="amir-tour-card__price-badge">
                 <span class="amir-tour-card__price-badge-label"><?php echo $is_en ? 'From' : 'Desde'; ?></span>
                 <span class="amir-tour-card__price-badge-value">$<?php echo number_format( $s_price, 0, '.', ',' ); ?></span>
-                <span class="amir-tour-card__price-badge-cur"> MXN</span>
+                <span class="amir-tour-card__price-badge-cur"> <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></span>
               </div>
             <?php endif; ?>
           </div>

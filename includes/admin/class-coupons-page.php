@@ -58,7 +58,7 @@ class CouponsPage {
                 <label class="ab-label">Tipo de descuento</label>
                 <select name="discount_type" style="<?php echo $this->input_style(); ?> width:100%;">
                   <option value="percent">Porcentaje (%)</option>
-                  <option value="fixed">Monto fijo (MXN)</option>
+                  <option value="fixed">Monto fijo (<?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>)</option>
                 </select>
               </div>
               <div>
@@ -116,7 +116,7 @@ class CouponsPage {
               <td class="ab-td">
                 <?php echo $c->discount_type === 'percent'
                     ? esc_html( rtrim( rtrim( number_format( (float) $c->discount_value, 2 ), '0' ), '.' ) . '%' )
-                    : '$' . esc_html( number_format( (float) $c->discount_value, 2 ) ) . ' MXN'; ?>
+                    : esc_html( \AmirBooking\Core\Currency::format( (float) $c->discount_value ) ); ?>
               </td>
               <td class="ab-td" style="font-size:12px;color:#5a7068;">
                 <?php echo esc_html( ( $c->valid_from ?: '—' ) . ' → ' . ( $c->valid_until ?: '—' ) ); ?>

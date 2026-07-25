@@ -19,13 +19,21 @@ class PaymentGatewayFactory {
         switch ( $id ) {
             case 'stripe':
                 return new StripeGateway();
+            case 'mercadopago':
+                return new MercadoPagoGateway();
             default:
                 return null;
         }
     }
 
-    /** Gateway a usar cuando el cliente no especifica uno (compatibilidad hacia atrás). */
+    /**
+     * Gateway a usar cuando el cliente no especifica uno — configurable
+     * desde Configuración (Configuración → Pasarela de pago activa).
+     * Si la opción no está seteada o apunta a algo no soportado, cae en
+     * Stripe (compatibilidad hacia atrás con instalaciones ya en uso).
+     */
     public static function default_gateway(): PaymentGatewayInterface {
-        return new StripeGateway();
+        $id = get_option( 'amir_default_gateway', 'stripe' );
+        return self::make( $id ) ?? new StripeGateway();
     }
 }

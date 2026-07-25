@@ -66,6 +66,27 @@ class Shortcodes {
         );
     }
 
+    public static function wishlist_list( array $atts ): string {
+        $atts = shortcode_atts(
+            [
+                'lang'    => self::detect_lang(),
+                'columns' => 3,
+                'accent'  => '',
+            ],
+            $atts,
+            'amir_wishlist'
+        );
+
+        self::enqueue_widget_assets();
+
+        return sprintf(
+            '<div data-amir-wishlist="1" data-lang="%s" data-columns="%d" data-accent="%s" id="amir-wishlist"></div>',
+            esc_attr( $atts['lang'] ),
+            (int) $atts['columns'],
+            esc_attr( $atts['accent'] )
+        );
+    }
+
     // ── Verificación de reserva ───────────────────────────────────────────
 
     public static function verify_booking( array $atts ): string {
@@ -112,10 +133,22 @@ class Shortcodes {
             return self::verify_lookup_form( $is_en, $ref, $email !== '' );
         }
 
+        // A partir de acá se conoce la reserva: mostrar todo en el idioma
+        // con el que el cliente reservó (mismo idioma en que se le mandaron
+        // los emails), no en el idioma que el sitio detecte para esta URL —
+        // si no, alguien que reservó en inglés puede terminar viendo esta
+        // página (y el paso de pago) en español según cómo resuelva Polylang.
+        if ( in_array( $b->lang, [ 'es', 'en' ], true ) ) {
+            $lang  = $b->lang;
+            $is_en = $lang === 'en';
+        }
+
         $status_map = array(
             'confirmed'              => array( 'es' => 'Confirmada',           'en' => 'Confirmed',            'color' => '#1D9E75', 'bg' => '#e8f5e9', 'icon' => '✅' ),
             'completed'              => array( 'es' => 'Completada',           'en' => 'Completed',            'color' => '#1D9E75', 'bg' => '#e8f5e9', 'icon' => '✅' ),
             'pending'                => array( 'es' => 'Pendiente de pago',    'en' => 'Pending payment',      'color' => '#BA7517', 'bg' => '#fef9ec', 'icon' => '⏳' ),
+            'wishlist'               => array( 'es' => 'Lista de interés',     'en' => 'Waitlisted',           'color' => '#6366f1', 'bg' => '#eef2ff', 'icon' => '📋' ),
+            'awaiting_payment'       => array( 'es' => 'Lista para pagar',     'en' => 'Ready for payment',    'color' => '#BA7517', 'bg' => '#fef9ec', 'icon' => '💳' ),
             'cancelled_client'       => array( 'es' => 'Cancelada',            'en' => 'Cancelled',            'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '❌' ),
             'cancelled_weather'      => array( 'es' => 'Cancelada (clima)',    'en' => 'Cancelled (weather)',  'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '🌧' ),
             'cancelled_min_pax'      => array( 'es' => 'Cancelada (cupo)',     'en' => 'Cancelled (capacity)', 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '❌' ),
@@ -171,10 +204,26 @@ class Shortcodes {
         }
         $rows .= $row( $is_en ? 'Passengers' : 'Pasajeros', esc_html( $pax ) );
         $rows .= $row( $is_en ? 'Passenger'  : 'Pasajero',  esc_html( $b->customer_name ) );
-        $rows .= $row( $is_en ? 'Total'      : 'Total',     '$' . number_format( (float) $b->total_mxn, 2 ) . ' MXN' );
+        $rows .= $row( $is_en ? 'Total'      : 'Total',     esc_html( \AmirBooking\Core\Currency::format( (float) $b->total_mxn ) ) );
 
         $verified_label = $is_en ? 'Verified booking' : 'Reserva verificada';
         $status_label   = $is_en ? $st['en'] : $st['es'];
+
+        // Reserva esperando pago (link de "cargar reserva + pagar" o lista
+        // de interés convertida al abrir el tour): montar el flujo de pago
+        // real justo debajo del estado, en la misma página.
+        $pay_widget = '';
+        if ( in_array( $b->status, array( 'awaiting_payment', 'pending' ), true ) ) {
+            self::enqueue_widget_assets();
+            $pay_widget = '<div style="background:#fff;padding:0 24px 24px;">'
+                . sprintf(
+                    '<div data-amir-pay-booking="1" data-ref="%s" data-token="%s" data-lang="%s"></div>',
+                    esc_attr( $b->booking_ref ),
+                    esc_attr( $b->access_token ?? '' ),
+                    esc_attr( $lang )
+                )
+                . '</div>';
+        }
 
         return '<div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:0;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08);">'
              . '<div style="background:' . esc_attr( $st['color'] ) . ';padding:24px 24px 20px;text-align:center;">'
@@ -185,6 +234,7 @@ class Shortcodes {
              . '<div style="background:#fff;padding:20px 24px 24px;">'
              . $rows
              . '</div>'
+             . $pay_widget
              . '</div>';
     }
 
@@ -258,6 +308,8 @@ class Shortcodes {
             'siteUrl'  => get_site_url(),
             'waPhone'  => get_option( 'amir_wa_phone', '5219831649541' ),
             'lang'     => self::detect_lang(),
+            'currency' => \AmirBooking\Core\Currency::code(),
+            'mpMode'   => get_option( 'amir_mp_mode', 'test' ),
         ] );
     }
 

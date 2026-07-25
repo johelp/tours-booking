@@ -144,7 +144,7 @@ function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
   const stepProps = { tour, form, patchForm, lang, setLang, t, goNext, goBack,
     availability, setAvailability, schedules, setSchedules,
     quote, clientSecret, setClientSecret, bookingRef, setBookingRef,
-    bookingId, setBookingId, mpData, setMpData, gateway, step, activeSteps };
+    bookingId, setBookingId, mpData, setMpData, gateway, setGateway, step, activeSteps };
 
   const stepLabels = activeSteps.map( s => t( `step_${s}` ) );
 
@@ -704,7 +704,7 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
                  `${b.qty} × ${t('babies')}`}
               </span>
               <span className="ab-summary-row-value">
-                ${b.total_mxn.toLocaleString('es-MX')} MXN
+                ${b.total_mxn.toLocaleString('es-MX')} {window.amirBooking?.currency ?? 'MXN'}
               </span>
             </div>
           ))}
@@ -722,7 +722,7 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
               <div className="ab-summary-row" style={{fontWeight:700,borderTop:'2px solid var(--ab-teal)',marginTop:4,paddingTop:10}}>
                 <span className="ab-summary-row-label" style={{color:'var(--ab-text)',fontWeight:700}}>{t('total')}</span>
                 <span className="ab-summary-row-value" style={{fontSize:17}}>
-                  ${totalMxn.toLocaleString('es-MX')} MXN
+                  ${totalMxn.toLocaleString('es-MX')} {window.amirBooking?.currency ?? 'MXN'}
                   {usdRef > 0 && (
                     <span style={{display:'block', fontSize:11, fontWeight:400, color:'var(--ab-muted)'}}>
                       {t('usd_ref', { amount: usdRef.toFixed(0) })}
@@ -787,7 +787,9 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
 }
 
 // ── Step 6: Stripe Payment ────────────────────────────────────────────────────
-function StepPayment({ t, goBack, goNext, setBookingRef, bookingId }) {
+// (exportado: PayBooking.jsx lo reutiliza para pagar una reserva ya cargada
+// vía link, fuera del flujo de pasos normal de BookingWidget)
+export function StepPayment({ t, goBack, goNext, setBookingRef, bookingId }) {
   const stripe   = useStripe();
   const elements = useElements();
   const [ processing, setProcessing ] = useState( false );
@@ -869,7 +871,7 @@ function StepPayment({ t, goBack, goNext, setBookingRef, bookingId }) {
 }
 
 // ── Step 6b: MercadoPago Payment ──────────────────────────────────────────────
-function StepPaymentMP({ t, goBack, goNext, setBookingRef, bookingId, mpData }) {
+export function StepPaymentMP({ t, goBack, goNext, setBookingRef, bookingId, mpData }) {
   const [ processing, setProcessing ] = useState( false );
   const [ error,      setError      ] = useState( '' );
 

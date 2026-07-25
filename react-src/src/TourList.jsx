@@ -266,7 +266,7 @@ function PriceTag({ tourId, lang, priceModel }) {
     <div className="al-price">
       <span className="al-price-from">{label}</span>
       <span className="al-price-val">{fmt(price)}</span>
-      <span className="al-price-cur">MXN</span>
+      <span className="al-price-cur">{window.amirBooking?.currency ?? 'MXN'}</span>
     </div>
   );
 }

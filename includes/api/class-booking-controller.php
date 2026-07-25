@@ -61,6 +61,22 @@ class BookingController {
             'permission_callback' => '__return_true',
         ] );
 
+        register_rest_route( self::NAMESPACE, '/bookings/mercadopago-webhook', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [ $this, 'mercadopago_webhook' ],
+            'permission_callback' => '__return_true',
+        ] );
+
+        // Polling desde StepPaymentMP mientras el cliente paga en la pestaña
+        // de Mercado Pago — primero mira si el webhook ya confirmó, y si no
+        // consulta activamente la API de MP como respaldo (útil en sandbox,
+        // donde a veces el webhook no está configurado).
+        register_rest_route( self::NAMESPACE, '/bookings/(?P<id>\d+)/confirm-mp', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [ $this, 'confirm_mp' ],
+            'permission_callback' => '__return_true',
+        ] );
+
         // Descarga del voucher PDF por referencia de reserva
         // (requiere el access_token del link, o el email del cliente)
         register_rest_route( self::NAMESPACE, '/bookings/(?P<ref>[A-Z0-9\-]+)/pdf', [
@@ -83,6 +99,16 @@ class BookingController {
                 'id'                => [ 'required' => true, 'type' => 'integer' ],
                 'payment_intent_id' => [ 'required' => true, 'type' => 'string'  ],
             ],
+        ] );
+
+        // Iniciar (o reiniciar) el cobro de una reserva ya cargada sin pagar
+        // (wishlist -> awaiting_payment, o un link de pago reenviado) — el
+        // cliente recién arranca a pagar en este momento, así que acá es
+        // donde arranca el cronómetro real de expiración de 'pending'.
+        register_rest_route( self::NAMESPACE, '/bookings/(?P<ref>[A-Z0-9\-]+)/init-payment', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [ $this, 'init_payment' ],
+            'permission_callback' => '__return_true',
         ] );
 
         // Cambio de estado manual desde el admin
@@ -195,6 +221,85 @@ class BookingController {
         }
 
         return rest_ensure_response( $this->format_booking_public( $booking ) );
+    }
+
+    // ── POST /bookings/{ref}/init-payment ─────────────────────────────────
+    // Reserva ya cargada (lista de interés convertida, o "cargar reserva +
+    // link de pago" desde el admin) sin cobrar todavía. El cliente hace clic
+    // en el link del email, llega acá, y RECIÉN ACÁ se genera el cobro real
+    // con la pasarela — misma forma de respuesta que POST /bookings, para
+    // que el frontend reutilice el mismo paso de pago (Stripe/Mercado Pago).
+
+    public function init_payment( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'init_payment_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
+        $ref     = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
+        $manager = new \AmirBooking\Core\BookingManager();
+        $booking = $manager->get_booking_by_ref( $ref );
+
+        if ( ! $booking ) {
+            return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
+        }
+
+        $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
+        $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Datos incorrectos' ], 403 );
+        }
+
+        if ( ! in_array( $booking->status, [ 'awaiting_payment', 'pending' ], true ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Esta reserva no está esperando pago.' ], 422 );
+        }
+
+        $gateway = \AmirBooking\Payments\PaymentGatewayFactory::for_booking( $booking )
+                ?? \AmirBooking\Payments\PaymentGatewayFactory::default_gateway();
+
+        $booking_result = new \AmirBooking\Core\BookingResult(
+            true, (int) $booking->id, $booking->booking_ref, (float) $booking->total_mxn
+        );
+        $payment = $gateway->create_payment( $booking_result );
+
+        if ( ! $payment->success ) {
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                (int) $booking->id, $gateway->id(), 'creation_failed', $payment->error
+            );
+            return new \WP_REST_Response(
+                [ 'success' => false, 'error' => 'Error al inicializar el pago. Intenta de nuevo.' ],
+                500
+            );
+        }
+
+        global $wpdb;
+        $wpdb->update(
+            "{$wpdb->prefix}amir_bookings",
+            [
+                'status'                => 'pending',
+                'stripe_payment_intent' => $payment->reference,
+                'payment_gateway'       => $gateway->id(),
+                'gateway_reference'     => $payment->reference,
+                // El cronómetro de expiración de 'pending' se cuenta desde
+                // created_at — si no se reinicia acá, una reserva de wishlist
+                // vieja quedaría "ya expirada" apenas pasa a pending.
+                'created_at'            => current_time( 'mysql' ),
+            ],
+            [ 'id' => $booking->id ],
+            [ '%s', '%s', '%s', '%s', '%s' ],
+            [ '%d' ]
+        );
+
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            (int) $booking->id, $gateway->id(), 'created', '', [ 'reference' => $payment->reference ]
+        );
+
+        return new \WP_REST_Response( array_merge( [
+            'success'     => true,
+            'booking_ref' => $booking->booking_ref,
+            'booking_id'  => (int) $booking->id,
+            'total_mxn'   => (float) $booking->total_mxn,
+            'gateway'     => $gateway->id(),
+        ], $payment->client_payload ), 200 );
     }
 
     // ── POST /bookings/{ref}/request-cancel ───────────────────────────────
@@ -568,6 +673,47 @@ class BookingController {
 
     public function stripe_webhook( \WP_REST_Request $request ): \WP_REST_Response {
         return $this->handle_gateway_webhook( new \AmirBooking\Payments\StripeGateway(), $request );
+    }
+
+    public function mercadopago_webhook( \WP_REST_Request $request ): \WP_REST_Response {
+        return $this->handle_gateway_webhook( new \AmirBooking\Payments\MercadoPagoGateway(), $request );
+    }
+
+    // ── POST /bookings/{id}/confirm-mp ────────────────────────────────────
+
+    public function confirm_mp( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'confirm_mp_' . \AmirBooking\Core\RateLimiter::client_ip(), 40, 300 ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
+        $booking_id = (int) $request->get_param( 'id' );
+        $manager    = new \AmirBooking\Core\BookingManager();
+        $booking    = $manager->get_booking( $booking_id );
+
+        if ( ! $booking ) {
+            return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
+        }
+
+        if ( $booking->status === 'confirmed' ) {
+            return rest_ensure_response( [ 'confirmed' => true, 'booking_ref' => $booking->booking_ref ] );
+        }
+
+        if ( $booking->status !== 'pending' ) {
+            return rest_ensure_response( [ 'confirmed' => false ] );
+        }
+
+        // El webhook todavía no llegó (o no está configurado, típico en
+        // sandbox) — consultar directo contra la API de MP como respaldo.
+        $gateway = \AmirBooking\Payments\PaymentGatewayFactory::for_booking( $booking );
+        if ( $gateway && $gateway->is_configured() ) {
+            $status = $gateway->fetch_payment_status( $booking->booking_ref );
+            if ( $status && $status->status === \AmirBooking\Payments\PaymentStatusResult::SUCCEEDED ) {
+                $manager->confirm( $booking_id, $status->charge_reference );
+                return rest_ensure_response( [ 'confirmed' => true, 'booking_ref' => $booking->booking_ref ] );
+            }
+        }
+
+        return rest_ensure_response( [ 'confirmed' => false ] );
     }
 
     /**

@@ -33,6 +33,22 @@ class StripeGateway implements PaymentGatewayInterface {
         $amount_cents = (int) round( $booking->total_mxn * 100 );
         $company      = get_option( 'amir_company_name', 'TourFlow' );
 
+        // Stripe rechaza cobros por debajo de un piso mínimo (~$0.50 USD
+        // equivalente, varía por moneda). Validar antes de llamar a la API
+        // evita crear una reserva 'pending' condenada a fallar, y da un
+        // mensaje que apunta a la causa real: los precios del tour están en
+        // una escala que no corresponde a la moneda configurada (típico al
+        // cambiar de moneda — ej. a ARS — sin reajustar los precios).
+        $usd_equivalent = ( new \AmirBooking\Core\PricingEngine() )->convert_to_usd( $booking->total_mxn );
+        if ( $usd_equivalent > 0 && $usd_equivalent < 0.50 ) {
+            return PaymentCreationResult::error( sprintf(
+                'El monto (%s %s) es demasiado bajo para procesarse — revisá que los precios de este tour estén en la escala correcta para %s.',
+                number_format( $booking->total_mxn, 2 ),
+                strtoupper( $currency ),
+                strtoupper( $currency )
+            ) );
+        }
+
         $response = wp_remote_post( 'https://api.stripe.com/v1/payment_intents', [
             'headers' => [
                 'Authorization'  => 'Bearer ' . $sk,

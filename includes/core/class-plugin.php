@@ -44,6 +44,7 @@ final class Plugin {
             ( new \AmirBooking\Api\BookingController() )->register_routes();
             ( new \AmirBooking\Api\PricesController() )->register_routes();
             ( new \AmirBooking\Api\NotificationsController() )->register_routes();
+            ( new \AmirBooking\Api\WishlistController() )->register_routes();
         } );
 
         // ── Admin (site-level) ────────────────────────────────────────────
@@ -68,6 +69,7 @@ final class Plugin {
         // ── Shortcodes ────────────────────────────────────────────────────
         add_shortcode( 'amir_booking',        [ Shortcodes::class, 'booking_widget' ] );
         add_shortcode( 'amir_tour_list',      [ Shortcodes::class, 'tour_list'      ] );
+        add_shortcode( 'amir_wishlist',       [ Shortcodes::class, 'wishlist_list'  ] );
         add_shortcode( 'amir_verify_booking', [ Shortcodes::class, 'verify_booking' ] );
 
         // ── Cron jobs ─────────────────────────────────────────────────────

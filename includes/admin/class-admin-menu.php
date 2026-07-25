@@ -70,6 +70,7 @@ class AdminMenu {
             [ 'amir-bookings-list',  __( 'Reservas',       'amir-booking' ), [ $this, 'page_bookings'    ] ],
             [ 'amir-availability',   __( 'Disponibilidad', 'amir-booking' ), [ $this, 'page_availability'] ],
             [ 'amir-partners',       __( 'Partners',       'amir-booking' ), [ $this, 'page_partners'    ] ],
+            [ 'amir-wishlist',       __( 'Lista de interés','amir-booking' ), [ $this, 'page_wishlist'    ] ],
             [ 'amir-reports',        __( 'Reportes',       'amir-booking' ), [ $this, 'page_reports'     ] ],
             [ 'amir-payment-log',    __( 'Log de pagos',   'amir-booking' ), [ $this, 'page_payment_log' ] ],
             [ 'amir-coupons',        __( 'Cupones',        'amir-booking' ), [ $this, 'page_coupons'     ] ],
@@ -119,6 +120,9 @@ class AdminMenu {
     }
     public function page_partners(): void {
         ( new \AmirBooking\Admin\PartnersPage() )->render();
+    }
+    public function page_wishlist(): void {
+        ( new \AmirBooking\Admin\WishlistPage() )->render();
     }
     public function page_reports(): void {
         ( new \AmirBooking\Admin\ReportsPage() )->render();

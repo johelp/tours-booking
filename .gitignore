@@ -10,5 +10,8 @@ node_modules/
 Thumbs.db
 *.log
 
+# Caché de PHPUnit
+.phpunit.result.cache
+
 # Configuración local de Claude Code
 .claude/settings.local.json

@@ -15,10 +15,22 @@ async function request( path, options = {} ) {
     ...options,
   } );
 
-  const data = await resp.json();
+  // Si la respuesta no es JSON válido (ej. un WAF/proxy devolviendo HTML,
+  // o un 500 sin cuerpo), no dejar que resp.json() reviente sin control —
+  // eso es lo que produce errores crípticos tipo "X is not a function" en
+  // vez de un mensaje legible en el banner de error del widget.
+  let data = null;
+  try {
+    data = await resp.json();
+  } catch {
+    if ( ! resp.ok ) {
+      throw new Error( `HTTP ${resp.status}` );
+    }
+  }
 
   if ( ! resp.ok ) {
-    throw new Error( data.message ?? data.error ?? `HTTP ${resp.status}` );
+    const msg = data && typeof data === 'object' ? ( data.message ?? data.error ) : null;
+    throw new Error( typeof msg === 'string' && msg !== '' ? msg : `HTTP ${resp.status}` );
   }
   return data;
 }
@@ -31,6 +43,23 @@ export function getTour( id, lang = 'es' ) {
 
 export function getTours( lang = 'es' ) {
   return request( `tours?lang=${lang}` );
+}
+
+// ── Lista de interés ("avísame cuando abra") ────────────────────────────────
+
+export function getUpcomingTours( lang = 'es' ) {
+  return request( `tours/upcoming?lang=${lang}` );
+}
+
+export function registerInterest( tourId, payload ) {
+  return request( `tours/${tourId}/wishlist`, {
+    method: 'POST',
+    body: JSON.stringify( payload ),
+  } );
+}
+
+export function getTourSchedules( tourId, lang = 'es' ) {
+  return request( `tours/${tourId}/schedules?lang=${lang}` );
 }
 
 // ── Disponibilidad ────────────────────────────────────────────────────────────

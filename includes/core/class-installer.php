@@ -188,6 +188,10 @@ class Installer {
             tripadvisor_id     VARCHAR(100) DEFAULT '',
             gyg_id             VARCHAR(100) DEFAULT '',
             sort_order         SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            wishlist_enabled     TINYINT(1) NOT NULL DEFAULT 0,
+            wishlist_threshold   SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            wishlist_date        DATE DEFAULT NULL,
+            wishlist_notified_at DATETIME DEFAULT NULL,
             created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -275,6 +279,8 @@ class Installer {
             partner_id               INT UNSIGNED,
             tour_date                DATE NOT NULL,
             status                   ENUM(
+                                        'wishlist',
+                                        'awaiting_payment',
                                         'pending',
                                         'confirmed',
                                         'cancellation_requested',
@@ -284,7 +290,7 @@ class Installer {
                                         'rescheduled',
                                         'completed'
                                      ) NOT NULL DEFAULT 'pending',
-            booking_source           ENUM('direct','tripadvisor','getyourguide','partner','manual') NOT NULL DEFAULT 'direct',
+            booking_source           ENUM('direct','tripadvisor','getyourguide','partner','manual','wishlist') NOT NULL DEFAULT 'direct',
             lang                     ENUM('es','en') NOT NULL DEFAULT 'es',
             customer_name            VARCHAR(255) NOT NULL DEFAULT '',
             customer_email           VARCHAR(255) NOT NULL DEFAULT '',
@@ -381,6 +387,7 @@ class Installer {
             KEY type (type),
             KEY created_at (created_at)
         ) $charset;" );
+
     }
 
     // ── Datos por defecto ─────────────────────────────────────────────────
@@ -477,6 +484,8 @@ class Installer {
             'amir_stripe_pk_test', 'amir_stripe_sk_test',
             'amir_stripe_pk_live', 'amir_stripe_sk_live',
             'amir_stripe_webhook_secret', 'amir_pending_expire_mins',
+            'amir_default_gateway', 'amir_mp_mode',
+            'amir_mp_access_token_test', 'amir_mp_access_token_live', 'amir_mp_webhook_secret',
             'amir_review_delay_days', 'amir_admin_email',
             'amir_delete_data_on_uninstall', 'amir_verify_page_id',
             'amir_brand_logo_id', 'amir_brand_logo_url', 'amir_brand_color',
@@ -538,6 +547,44 @@ class Installer {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN coupon_code VARCHAR(50) DEFAULT '' AFTER gateway_charge_id" );
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN discount_mxn DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER coupon_code" );
         }
+
+        // 1.5.0: lista de interés ("avísame cuando abra") para tours en
+        // borrador — columnas en amir_tours + tabla amir_tour_interest
+        // (esta última la crea create_tables() más abajo, dbDelta no
+        // duplica si ya existe).
+        $tour_cols = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'wishlist_enabled', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN wishlist_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER sort_order" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN wishlist_threshold SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER wishlist_enabled" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN wishlist_notified_at DATETIME DEFAULT NULL AFTER wishlist_threshold" );
+        }
+
+        // 1.6.0: la lista de interés pasó a crear reservas reales (no solo
+        // registros de contacto) — necesita dos estados nuevos que el cron
+        // de expiración de 'pending' (BookingManager::release_expired_pending())
+        // debe ignorar: 'wishlist' (interés registrado, tour todavía en
+        // borrador, sin cobrar) y 'awaiting_payment' (tour ya abierto, el
+        // cliente tiene el link de pago pero todavía no hizo click — recién
+        // ahí pasa a 'pending' y arranca el cronómetro de expiración real).
+        $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN status ENUM(
+            'wishlist','awaiting_payment','pending','confirmed','cancellation_requested',
+            'cancelled_client','cancelled_weather','cancelled_min_pax','rescheduled','completed'
+        ) NOT NULL DEFAULT 'pending'" );
+        $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN booking_source ENUM('direct','tripadvisor','getyourguide','partner','manual','wishlist') NOT NULL DEFAULT 'direct'" );
+
+        // wishlist_date: la fecha fija del tour/retiro al que la gente
+        // muestra interés (no hay calendario de disponibilidad — el motor
+        // de disponibilidad exige status='active', y estos tours siguen en
+        // borrador a propósito). La carga el operador al activar la lista
+        // de interés.
+        if ( ! in_array( 'wishlist_date', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN wishlist_date DATE DEFAULT NULL AFTER wishlist_threshold" );
+        }
+
+        // 1.6.1: la lista de interés pasó a usar reservas reales
+        // (amir_bookings, status='wishlist') en vez de esta tabla aparte —
+        // quedó huérfana, nunca llegó a una versión estable.
+        $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}amir_tour_interest" );
 
         self::create_tables();
         self::create_verify_page();

@@ -54,7 +54,7 @@ class PartnersPage {
                 <label class="ab-label">Tipo de comisión</label>
                 <select name="commission_type" style="<?php echo $this->input_style(); ?> width:100%;">
                   <option value="percentage">Porcentaje (%)</option>
-                  <option value="fixed">Monto fijo (MXN)</option>
+                  <option value="fixed">Monto fijo (<?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>)</option>
                 </select>
               </div>
               <div><?php $this->field('Valor','commission_value','number','15',true,'min="0" step="0.01"'); ?></div>
@@ -97,10 +97,10 @@ class PartnersPage {
               </td>
               <td class="ab-td">
                 <?php echo $stats['total_bookings']; ?> reservas<br>
-                <span style="font-size:12px;color:#5a7068;">$<?php echo number_format($stats['total_revenue'],0,'.',','); ?> MXN</span>
+                <span style="font-size:12px;color:#5a7068;"><?php echo esc_html( \AmirBooking\Core\Currency::format( (float) $stats['total_revenue'], 0 ) ); ?></span>
               </td>
               <td class="ab-td" style="font-weight:700;color:#1D9E75;">
-                $<?php echo number_format($stats['commission_mxn'],2); ?> MXN
+                <?php echo esc_html( \AmirBooking\Core\Currency::format( (float) $stats['commission_mxn'] ) ); ?>
               </td>
               <td class="ab-td">
                 <span style="background:<?php echo $p->active?'#e1f5ee':'#fef2f2'; ?>;
@@ -156,9 +156,9 @@ class PartnersPage {
             <!-- Stats -->
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
               <?php foreach ([
-                ['Total ventas','$'.number_format($stats['total_revenue'],0,'.',',').' MXN'],
+                ['Total ventas', \AmirBooking\Core\Currency::format( (float) $stats['total_revenue'], 0 )],
                 ['Reservas',$stats['total_bookings'].' confirmadas'],
-                ['Comisión','$'.number_format($stats['commission_mxn'],2).' MXN'],
+                ['Comisión', \AmirBooking\Core\Currency::format( (float) $stats['commission_mxn'] )],
               ] as [$label,$val]) : ?>
                 <div style="background:#f0faf6;border:1px solid #e1f5ee;border-radius:10px;padding:14px 16px;">
                   <div style="font-size:11px;font-weight:700;color:#5a7068;text-transform:uppercase;letter-spacing:.4px;"><?php echo $label; ?></div>
@@ -242,7 +242,7 @@ class PartnersPage {
                 <div>Comisión: <strong style="color:#1D9E75;">
                   <?php echo $p->commission_type==='percentage'
                     ? number_format($p->commission_value,1).'%'
-                    : '$'.number_format($p->commission_value,2).' MXN fijo'; ?>
+                    : \AmirBooking\Core\Currency::format( (float) $p->commission_value ) . ' fijo'; ?>
                 </strong></div>
               </div>
             </div>

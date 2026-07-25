@@ -224,31 +224,44 @@ class PricingEngine {
     }
 
     // ── Tipo de cambio USD ────────────────────────────────────────────────
+    // "USD" acá es siempre la moneda de referencia para mostrarle un precio
+    // aproximado a turistas extranjeros — la moneda en la que realmente se
+    // cobra (Stripe) es la que esté configurada en amir_currency, sea cual sea.
 
-    public function convert_to_usd( float $mxn ): float {
+    public function convert_to_usd( float $amount ): float {
+        if ( Currency::code() === 'USD' ) {
+            return round( $amount, 2 ); // ya está en USD, no hay nada que convertir
+        }
         $rate = $this->get_exchange_rate();
         if ( $rate <= 0 ) {
             return 0.0;
         }
-        return round( $mxn / $rate, 2 );
+        return round( $amount / $rate, 2 );
     }
 
     public function get_exchange_rate(): float {
+        if ( Currency::code() === 'USD' ) {
+            return 1.0;
+        }
+
         $mode = get_option( 'amir_usd_rate_mode', 'auto' );
 
         if ( $mode === 'manual' ) {
             return (float) get_option( 'amir_usd_rate_manual', 17.00 );
         }
 
-        // Modo auto: caché de 4 horas en WP Transients
-        $cached = get_transient( 'amir_usd_mxn_rate' );
+        // Modo auto: caché de 4 horas en WP Transients, una por moneda
+        // (para no servir una tasa vieja de otra moneda si el operador cambia
+        // la configuración).
+        $transient_key = 'amir_usd_rate_' . strtolower( Currency::code() );
+        $cached        = get_transient( $transient_key );
         if ( $cached !== false ) {
             return (float) $cached;
         }
 
         $rate = $this->fetch_live_rate();
         if ( $rate > 0 ) {
-            set_transient( 'amir_usd_mxn_rate', $rate, 4 * HOUR_IN_SECONDS );
+            set_transient( $transient_key, $rate, 4 * HOUR_IN_SECONDS );
             return $rate;
         }
 
@@ -257,7 +270,9 @@ class PricingEngine {
     }
 
     private function fetch_live_rate(): float {
-        // ExchangeRate-API (plan gratuito soporta consultas básicas)
+        // ExchangeRate-API (plan gratuito): USD como base devuelve la tasa
+        // contra TODAS las monedas soportadas en una sola consulta, así que
+        // alcanza con leer la clave de la moneda configurada.
         $response = wp_remote_get(
             'https://open.er-api.com/v6/latest/USD',
             [ 'timeout' => 5 ]
@@ -268,7 +283,7 @@ class PricingEngine {
         }
 
         $body = json_decode( wp_remote_retrieve_body( $response ), true );
-        $rate = $body['rates']['MXN'] ?? 0.0;
+        $rate = $body['rates'][ Currency::code() ] ?? 0.0;
 
         return (float) $rate;
     }

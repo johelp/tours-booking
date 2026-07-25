@@ -76,7 +76,7 @@ class ReportsPage {
           <div class="ab-rep-card green">
             <div class="label">Ingresos</div>
             <div class="value">$<?php echo number_format($summary['revenue'],0,'.',','); ?></div>
-            <div class="sub">MXN en el período</div>
+            <div class="sub"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?> en el período</div>
           </div>
           <div class="ab-rep-card">
             <div class="label">Reservas confirmadas</div>
@@ -91,7 +91,7 @@ class ReportsPage {
           <div class="ab-rep-card">
             <div class="label">Ticket promedio</div>
             <div class="value">$<?php echo $summary['bookings'] > 0 ? number_format($summary['revenue']/$summary['bookings'],0,'.',',') : '0'; ?></div>
-            <div class="sub">MXN por reserva</div>
+            <div class="sub"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?> por reserva</div>
           </div>
         </div>
 
@@ -122,7 +122,7 @@ class ReportsPage {
             <h3>Ingresos por origen</h3>
             <table class="ab-table">
               <thead><tr>
-                <th>Origen</th><th>Reservas</th><th>Ingresos MXN</th><th>%</th>
+                <th>Origen</th><th>Reservas</th><th>Ingresos <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></th><th>%</th>
               </tr></thead>
               <tbody>
               <?php
@@ -151,7 +151,7 @@ class ReportsPage {
           <h3>Evolución mensual — últimos 12 meses</h3>
           <table class="ab-table">
             <thead><tr>
-              <th>Mes</th><th>Reservas</th><th>Personas</th><th>Ingresos MXN</th><th>Ticket promedio</th>
+              <th>Mes</th><th>Reservas</th><th>Personas</th><th>Ingresos <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></th><th>Ticket promedio</th>
             </tr></thead>
             <tbody>
             <?php foreach ($by_month as $row) : ?>
@@ -287,7 +287,7 @@ class ReportsPage {
         fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
 
         fputcsv($out, ['Referencia','Tour','Fecha','Hora','Estado','Origen','Partner',
-                       'Cliente','Email','Adultos','Niños','Bebés','Total MXN','Ref. USD','Reservado el']);
+                       'Cliente','Email','Adultos','Niños','Bebés','Total ' . \AmirBooking\Core\Currency::code(), 'Ref. USD','Reservado el']);
 
         foreach ($rows as $r) {
             fputcsv($out, [

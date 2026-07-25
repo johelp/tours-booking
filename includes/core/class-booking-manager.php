@@ -163,6 +163,117 @@ class BookingManager {
         return new BookingResult( true, $booking_id, $booking_ref, $quote->total_mxn, $quote );
     }
 
+    // ── Crear reserva de lista de interés (estado 'wishlist') ──────────────
+
+    /**
+     * Crea una reserva real para un tour todavía en borrador ("avísame
+     * cuando abra"): misma fecha/horario/personas/datos que una reserva
+     * normal, pero SIN cobrar y SIN bloquear cupo — el tour ni siquiera
+     * está abierto para reservar todavía. El precio se congela con el
+     * cotizador actual para no depender de que el operador no cambie
+     * tarifas entre el interés y la apertura real.
+     *
+     * No pasa por AvailabilityEngine a propósito: mientras el tour está en
+     * borrador queremos poder medir demanda incluso por encima del cupo
+     * configurado (para decidir, por ejemplo, si conviene abrir una segunda
+     * fecha), no bloquear anotados.
+     */
+    public function create_wishlist( array $data ): BookingResult {
+        global $wpdb;
+
+        $tour_id     = (int) ( $data['tour_id'] ?? 0 );
+        $schedule_id = (int) ( $data['schedule_id'] ?? 0 );
+        $date        = sanitize_text_field( $data['date'] ?? '' );
+        $adults      = max( 1, (int) ( $data['adults'] ?? 1 ) );
+        $children    = max( 0, (int) ( $data['children'] ?? 0 ) );
+        $babies      = max( 0, (int) ( $data['babies'] ?? 0 ) );
+
+        if ( ! $tour_id || ! $date || ! strtotime( $date ) ) {
+            return BookingResult::error( 'Tour y fecha son obligatorios.' );
+        }
+        if ( empty( $data['customer_name'] ) || empty( $data['customer_email'] ) ) {
+            return BookingResult::error( 'Nombre y email son obligatorios.' );
+        }
+        if ( ! is_email( $data['customer_email'] ) ) {
+            return BookingResult::error( 'Email no válido.' );
+        }
+
+        // Sin schedule_id explícito, tomar el primero configurado del tour
+        if ( $schedule_id === 0 ) {
+            $first = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}amir_tour_schedules WHERE tour_id = %d AND active = 1 ORDER BY sort_order ASC, time_start ASC LIMIT 1",
+                $tour_id
+            ) );
+            $schedule_id = (int) $first;
+        }
+
+        $lang  = in_array( $data['lang'] ?? '', [ 'es', 'en' ], true ) ? $data['lang'] : 'es';
+        $quote = $this->pricing->quote( $tour_id, $schedule_id, $date, $adults, $children, $babies );
+
+        // Evitar duplicar si la misma persona ya se había anotado para el
+        // mismo tour/horario/fecha — actualiza sus datos en vez de sumar
+        // una fila nueva (por ejemplo, si reintenta el formulario).
+        $existing_id = $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}amir_bookings
+             WHERE tour_id = %d AND schedule_id = %d AND tour_date = %s
+               AND customer_email = %s AND status = 'wishlist'",
+            $tour_id, $schedule_id, $date, sanitize_email( $data['customer_email'] )
+        ) );
+
+        $row = [
+            'customer_name'    => sanitize_text_field( $data['customer_name'] ),
+            'customer_phone'   => sanitize_text_field( $data['customer_phone'] ?? '' ),
+            'adults'           => $adults,
+            'children'         => $children,
+            'babies'           => $babies,
+            'total_mxn'        => $quote->is_valid() ? $quote->total_mxn : 0.0,
+            'usd_reference'    => $quote->is_valid() ? $quote->usd_reference : 0.0,
+            'exchange_rate'    => $this->pricing->get_exchange_rate(),
+            'special_requests' => sanitize_textarea_field( $data['special_requests'] ?? '' ),
+        ];
+
+        if ( $existing_id ) {
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings", $row,
+                [ 'id' => (int) $existing_id ],
+                [ '%s', '%s', '%d', '%d', '%d', '%f', '%f', '%f', '%s' ], [ '%d' ]
+            );
+            $booking = $this->get_booking( (int) $existing_id );
+            return new BookingResult( true, (int) $existing_id, $booking->booking_ref, $row['total_mxn'], $quote->is_valid() ? $quote : null );
+        }
+
+        $booking_ref  = $this->generate_ref();
+        $access_token = self::generate_access_token();
+
+        $inserted = $wpdb->insert(
+            "{$wpdb->prefix}amir_bookings",
+            array_merge( $row, [
+                'booking_ref'    => $booking_ref,
+                'access_token'   => $access_token,
+                'tour_id'        => $tour_id,
+                'schedule_id'    => $schedule_id,
+                'tour_date'      => $date,
+                'status'         => 'wishlist',
+                'booking_source' => 'wishlist',
+                'lang'           => $lang,
+                'customer_email' => sanitize_email( $data['customer_email'] ),
+                'created_at'     => current_time( 'mysql' ),
+            ] ),
+            [
+                '%s', '%s', '%d', '%d', '%d', '%f', '%f', '%f', '%s', // $row
+                '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s',
+            ]
+        );
+
+        if ( ! $inserted ) {
+            return BookingResult::error( 'Error al guardar tu registro. Por favor intenta de nuevo.' );
+        }
+
+        $booking_id = (int) $wpdb->insert_id;
+
+        return new BookingResult( true, $booking_id, $booking_ref, $row['total_mxn'], $quote->is_valid() ? $quote : null );
+    }
+
     // ── Crear reserva manual (confirmada directamente) ────────────────────
 
     /**
@@ -435,7 +546,7 @@ class BookingManager {
         if ( in_array( $booking->booking_source, [ 'tripadvisor', 'getyourguide' ], true ) ) {
             return [
                 'charge_pct' => 0,
-                'refund_mxn' => 0,
+                'refund_mxn' => 0.0,
                 'message'    => 'Reserva externa. La política de reembolso aplica en la plataforma de origen.',
             ];
         }

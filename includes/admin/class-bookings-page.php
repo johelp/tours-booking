@@ -529,7 +529,7 @@ class BookingsPage {
         $out = fopen('php://output','w');
         fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM UTF-8
 
-        fputcsv($out, ['Referencia','Tour','Fecha','Horario','Estado','Cliente','Email','Teléfono','Adultos','Niños','Bebés','Total MXN','Origen','Partner','Reservado en']);
+        fputcsv($out, ['Referencia','Tour','Fecha','Horario','Estado','Cliente','Email','Teléfono','Adultos','Niños','Bebés','Total ' . \AmirBooking\Core\Currency::code(), 'Origen','Partner','Reservado en']);
 
         foreach ($bookings as $b) {
             fputcsv($out, [
@@ -855,7 +855,7 @@ class BookingsPage {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
               <div>
                 <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">
-                  Total MXN
+                  Total <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>
                   <span style="font-weight:400;color:#5a7068;">(0 = calcular automático)</span>
                 </label>
                 <input type="number" name="total_mxn" value="0" min="0" step="0.01"

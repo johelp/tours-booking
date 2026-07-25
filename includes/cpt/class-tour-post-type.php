@@ -159,6 +159,31 @@ class TourPostType {
             <input type="number" name="amir_sort_order" value="<?php echo esc_attr($m['sort_order']); ?>" min="0" placeholder="0" />
           </div>
         </div>
+
+        <div class="amir-section-title">📋 Lista de interés ("Próximamente")</div>
+        <p style="font-size:12px;color:#666;margin:0 0 12px;">
+          Mientras este tour esté en <strong>borrador</strong>, se puede mostrar en la sección "Próximamente" del sitio
+          para que la gente se anote — completando fecha, personas y datos como una reserva normal, pero sin pagar todavía.
+          Al publicar el tour (o usar "Amir Booking → Lista de interés"), cada anotado recibe un email con el link para pagar.
+        </p>
+        <div class="amir-meta-grid">
+          <div class="amir-field">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
+              <input type="checkbox" name="amir_wishlist_enabled" value="1" <?php checked( $m['wishlist_enabled'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+              <?php _e('Activar lista de interés para este tour', 'amir-booking'); ?>
+            </label>
+          </div>
+          <div class="amir-field">
+            <label><?php _e('Umbral para avisar al admin', 'amir-booking'); ?></label>
+            <input type="number" name="amir_wishlist_threshold" value="<?php echo esc_attr($m['wishlist_threshold']); ?>" min="0" placeholder="Ej: 10" />
+            <p class="amir-hint">0 = sin umbral, solo acumula interesados</p>
+          </div>
+          <div class="amir-field">
+            <label><?php _e('Fecha del tour/retiro', 'amir-booking'); ?></label>
+            <input type="date" name="amir_wishlist_date" value="<?php echo esc_attr($m['wishlist_date']); ?>" />
+            <p class="amir-hint">La fecha ya definida a la que la gente muestra interés — no hay calendario de disponibilidad mientras el tour está en borrador</p>
+          </div>
+        </div>
         <?php
     }
 
@@ -359,7 +384,7 @@ class TourPostType {
 
         <!-- Precios per-capita -->
         <div id="amir-prices-percapita" style="<?php echo $price_model === 'group' ? 'display:none' : ''; ?>">
-          <div style="font-weight:700;font-size:13px;color:#1D9E75;margin-bottom:8px;">💲 Precios por persona (MXN)</div>
+          <div style="font-weight:700;font-size:13px;color:#1D9E75;margin-bottom:8px;">💲 Precios por persona (<?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
             <?php
             $types = [ 'adult' => 'Adulto (13+)', 'child' => 'Niño (4–12)', 'baby' => 'Bebé (0–3) — 0 = gratis' ];
@@ -384,7 +409,7 @@ class TourPostType {
 
         <!-- Precios grupo -->
         <div id="amir-prices-group" style="<?php echo $price_model === 'percapita' ? 'display:none' : ''; ?>">
-          <div style="font-weight:700;font-size:13px;color:#1D9E75;margin-bottom:8px;">💲 Precios por grupo (MXN)</div>
+          <div style="font-weight:700;font-size:13px;color:#1D9E75;margin-bottom:8px;">💲 Precios por grupo (<?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
             <?php
             $group_ranges = [ [1,2,'1–2 personas'], [3,3,'3 personas'], [4,4,'4 personas (máx.)'] ];
@@ -537,6 +562,8 @@ class TourPostType {
             '_amir_meeting_lng'      => 'sanitize_text_field',
             '_amir_tripadvisor_id'   => 'sanitize_text_field',
             '_amir_gyg_id'           => 'sanitize_text_field',
+            '_amir_wishlist_threshold' => 'absint',
+            '_amir_wishlist_date'      => 'sanitize_text_field',
         ];
 
         $map = [
@@ -559,6 +586,8 @@ class TourPostType {
             '_amir_meeting_lng'       => 'amir_meeting_lng',
             '_amir_tripadvisor_id'    => 'amir_tripadvisor_id',
             '_amir_gyg_id'            => 'amir_gyg_id',
+            '_amir_wishlist_threshold' => 'amir_wishlist_threshold',
+            '_amir_wishlist_date'      => 'amir_wishlist_date',
         ];
 
         foreach ( $map as $meta_key => $post_key ) {
@@ -566,6 +595,9 @@ class TourPostType {
             $value     = call_user_func( $sanitizer, $_POST[ $post_key ] ?? '' );
             update_post_meta( $post_id, $meta_key, $value );
         }
+
+        // Checkbox: ausente en $_POST cuando está destildado
+        update_post_meta( $post_id, '_amir_wishlist_enabled', ! empty( $_POST['amir_wishlist_enabled'] ) ? '1' : '0' );
 
         // Activos/days de la semana
         $weekdays = array_map( 'intval', $_POST['amir_active_weekdays'] ?? [] );
@@ -632,6 +664,9 @@ class TourPostType {
             'tripadvisor_id'     => get_post_meta( $post_id, '_amir_tripadvisor_id', true ) ?: '',
             'gyg_id'             => get_post_meta( $post_id, '_amir_gyg_id', true ) ?: '',
             'sort_order'         => (int) get_post_meta( $post_id, '_amir_sort_order', true ),
+            'wishlist_enabled'   => (int) get_post_meta( $post_id, '_amir_wishlist_enabled', true ),
+            'wishlist_threshold' => (int) get_post_meta( $post_id, '_amir_wishlist_threshold', true ),
+            'wishlist_date'      => get_post_meta( $post_id, '_amir_wishlist_date', true ) ?: null,
         ];
 
         if ( $db_id ) {
@@ -858,6 +893,9 @@ class TourPostType {
             'tripadvisor_id'   => $get('tripadvisor_id'),
             'gyg_id'           => $get('gyg_id'),
             'active_weekdays'  => $get('active_weekdays') ?: '[1,2,3,4,5,6]',
+            'wishlist_enabled'   => $get('wishlist_enabled') ?: '0',
+            'wishlist_threshold' => $get('wishlist_threshold') ?: '0',
+            'wishlist_date'      => $get('wishlist_date'),
         ];
     }
 }

@@ -237,7 +237,7 @@ class TourCardWidget extends \Elementor\Widget_Base {
               <div class="amir-tour-card__price">
                 <span class="amir-tour-card__price-from">Desde</span>
                 <span class="amir-tour-card__price-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
-                <span class="amir-tour-card__price-currency">MXN</span>
+                <span class="amir-tour-card__price-currency"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></span>
               </div>
             <?php endif; ?>
             <a href="<?php echo esc_url($link); ?>" class="amir-tour-card__cta">
@@ -263,7 +263,7 @@ trait TourTagBase {
 class DynamicTagPriceFrom extends \Elementor\Core\DynamicTags\Tag {
     use TourTagBase;
     public function get_name()  { return 'amir-price-from'; }
-    public function get_title() { return __( 'Tour: Precio desde (MXN)', 'amir-booking' ); }
+    public function get_title() { return __( 'Tour: Precio desde', 'amir-booking' ) . ' (' . \AmirBooking\Core\Currency::code() . ')'; }
 
     public function render(): void {
         $db_id = (int) get_post_meta( get_the_ID(), '_amir_tour_db_id', true );
@@ -272,7 +272,7 @@ class DynamicTagPriceFrom extends \Elementor\Core\DynamicTags\Tag {
         $price = (float) $wpdb->get_var( $wpdb->prepare(
             "SELECT MIN(price_mxn) FROM {$wpdb->prefix}amir_prices WHERE tour_id=%d AND price_mxn>0", $db_id
         ) );
-        echo $price > 0 ? '$' . number_format($price,0,'.',',') . ' MXN' : '';
+        echo $price > 0 ? esc_html( \AmirBooking\Core\Currency::format( $price, 0 ) ) : '';
     }
 }
 
