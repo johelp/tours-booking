@@ -5,7 +5,8 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Calendario mensual — pantalla completa, sin el chrome de WordPress
- * (ver AdminMenu::maybe_hide_admin_bar_for_calendar()/maybe_print_fullscreen_css()).
+ * (ver AdminMenu::maybe_hide_admin_bar_fullscreen()/maybe_print_fullscreen_css()
+ * — mismo mecanismo que usa FieldPage, el "modo campo" para el celular).
  * Pensado para tablet desde el muelle, igual que DashboardPage.
  *
  * Como el chrome de WP (admin bar + menú lateral) queda oculto, esta pantalla

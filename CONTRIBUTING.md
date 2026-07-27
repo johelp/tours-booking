@@ -66,6 +66,8 @@ Trabajo ya en curso, en este orden:
 | 15 | Meta Pixel + Google Ads/Analytics + descuento vía URL para partners | ✅ Hecho — ver § 5.3 |
 | 16 | Tours que no admiten niños/bebés (ej. solo adultos) | ✅ Hecho — ver § 5.4 |
 | 17 | Plantillas de email editables + contenido extra por tour | ⏳ Pedido del cliente, sin priorizar todavía — ver § 5.5 para el spec |
+| 18 | Admin mobile-friendly ("Modo campo") | ✅ Hecho — ver § 5.6. Construido, revisado, **falta probarlo en vivo desde un celular real** |
+| 19 | Marketplace de proveedores externos (tours de terceros) | ⏳ Spec cerrado, sin construir — ver § 11 y `PROMPT_MARKETPLACE.md` para retomarlo en otra sesión |
 | 14 | GDPR (mercado europeo) + evaluar Redsys u otra pasarela europea | ⏳ Backlog, sin diseñar todavía |
 
 Para agregar una pasarela nueva: implementar `PaymentGatewayInterface` (en `includes/payments/`), registrarla en `PaymentGatewayFactory::make()`. El controlador (`class-booking-controller.php`) no necesita cambios — ya está escrito contra la interfaz, no contra Stripe directamente.
@@ -138,6 +140,17 @@ Sin diseñar el resto todavía. Puntos a resolver antes de construirlo:
 - Qué tan editable: ¿un editor de texto simple con placeholders (`{{customer_name}}`, `{{tour_name}}`, etc., como hacen la mayoría de los plugins de email transaccional) o control total sobre el HTML? Un editor con placeholders es mucho más simple de construir y más seguro (no hay forma de romper el layout), pero menos flexible.
 - El contenido extra por tour probablemente sea un campo nuevo en el meta box del tour (`class-tour-post-type.php`, similar a `what_to_expect`) — multi-idioma igual que el resto (`content_i18n`), inyectado en `EmailDispatcher::send_confirmation()` si no está vacío.
 - Si se permite editar el HTML/diseño de las plantillas, hay que decidir si eso vive en `amir_options` (como el resto de la configuración) o si conviene una tabla dedicada tipo `amir_email_templates` — más limpio para versionar cambios, pero es una tabla nueva y una migración más.
+
+### 5.6 Admin mobile-friendly — "Modo campo" (Tarea 18)
+
+Pedido del cliente: quien gestiona el día a día necesita poder hacerlo desde el celular, no solo desde el escritorio. Diagnóstico antes de construir: **el admin de hoy no tiene nada de responsive real** — `class-dashboard-page.php` dice en su docblock "pensado para tablet", pero su CSS usa `grid-template-columns:repeat(4,1fr)` sin ningún `@media`, y el mismo patrón de grids fijos se repite en Reservas, Cupones, el formulario de reserva manual, etc.
+
+**Decisión tomada con el cliente**: no un retrofit responsive de las pantallas existentes (quedarían igual de densas, solo más chicas) — una pantalla nueva y separada, "modo campo", con el criterio fullscreen que ya usaba Calendario (sin el chrome de WP). Prioridad acordada: ver/buscar reservas, cargar una nueva, reprogramarla, ver los datos del cliente y contactarlo.
+
+- **`includes/admin/class-field-page.php`** (menú TourFlow → 📱 Modo campo) — lista de reservas (tabs Hoy/Próximas/Todas + buscador por nombre/teléfono/email/referencia), tarjetas grandes con botones directos `tel:`/`wa.me` para contactar sin entrar al detalle, vista de detalle con confirmar/reprogramar/cancelar, y un formulario de alta rápida — todo reusando `BookingManager` (`confirm()`, `cancel()`, `reschedule()`, `create_manual()`) tal cual, sin lógica de negocio nueva.
+- **`AdminMenu::maybe_hide_admin_bar_fullscreen()`/`maybe_print_fullscreen_css()`** (antes `..._for_calendar()`, renombrado) se generalizaron para aceptar una lista de páginas fullscreen (`FULLSCREEN_PAGES`) en vez de tener el slug de Calendario hardcodeado — agregar una pantalla fullscreen nueva en el futuro es solo sumarla a esa constante.
+- **Sin probar en vivo todavía** — construido y revisado en esta sesión, pero el ZIP con esto no se subió al sandbox. Probar desde un celular real es lo primero antes de dar por bueno el diseño de las tarjetas/botones táctiles.
+- Fuera de alcance de esta vuelta, candidatos a v2 si hace falta: Dashboard/Calendario en modo campo (hoy el enfoque quedó 100% en Reservas, que fue lo que se priorizó), y el portal de autogestión de proveedores externos (marketplace, § 11) podría reusar este mismo patrón fullscreen el día que se construya.
 
 ## 6. Convenciones del código
 

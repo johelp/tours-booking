@@ -15,21 +15,25 @@ class AdminMenu {
         // La descarga del PDF debe ocurrir antes de que WordPress envíe cualquier HTML
         add_action( 'admin_init',   [ $this, 'maybe_stream_pdf' ] );
 
-        // Calendario: pantalla completa, sin nada del chrome de WP. La admin
-        // bar se decide temprano (antes de que WP la arme), por eso va en
-        // admin_init y no dentro del callback de la página — ahí ya es tarde.
-        add_action( 'admin_init', [ $this, 'maybe_hide_admin_bar_for_calendar' ] );
+        // Calendario y Modo campo: pantalla completa, sin nada del chrome de
+        // WP. La admin bar se decide temprano (antes de que WP la arme), por
+        // eso va en admin_init y no dentro del callback de la página — ahí
+        // ya es tarde.
+        add_action( 'admin_init', [ $this, 'maybe_hide_admin_bar_fullscreen' ] );
         add_action( 'admin_head', [ $this, 'maybe_print_fullscreen_css' ] );
     }
 
-    public function maybe_hide_admin_bar_for_calendar(): void {
-        if ( ( $_GET['page'] ?? '' ) === 'amir-calendar' ) {
+    /** Páginas que se muestran fullscreen, sin el chrome de WP admin. */
+    private const FULLSCREEN_PAGES = [ 'amir-calendar', 'amir-field' ];
+
+    public function maybe_hide_admin_bar_fullscreen(): void {
+        if ( in_array( $_GET['page'] ?? '', self::FULLSCREEN_PAGES, true ) ) {
             add_filter( 'show_admin_bar', '__return_false' );
         }
     }
 
     public function maybe_print_fullscreen_css(): void {
-        if ( ( $_GET['page'] ?? '' ) !== 'amir-calendar' ) {
+        if ( ! in_array( $_GET['page'] ?? '', self::FULLSCREEN_PAGES, true ) ) {
             return;
         }
         echo '<style>
@@ -91,6 +95,7 @@ class AdminMenu {
         $submenus = [
             [ 'amir-booking',        __( 'Dashboard',      'amir-booking' ), [ $this, 'page_dashboard'   ] ],
             [ 'amir-calendar',       __( '📅 Calendario',  'amir-booking' ), [ $this, 'page_calendar'    ] ],
+            [ 'amir-field',          __( '📱 Modo campo',  'amir-booking' ), [ $this, 'page_field'       ] ],
             [ 'amir-bookings-list',  __( 'Reservas',       'amir-booking' ), [ $this, 'page_bookings'    ] ],
             [ 'amir-availability',   __( 'Disponibilidad', 'amir-booking' ), [ $this, 'page_availability'] ],
             [ 'amir-partners',       __( 'Partners',       'amir-booking' ), [ $this, 'page_partners'    ] ],
@@ -139,6 +144,9 @@ class AdminMenu {
     }
     public function page_calendar(): void {
         ( new \AmirBooking\Admin\CalendarPage() )->render();
+    }
+    public function page_field(): void {
+        ( new \AmirBooking\Admin\FieldPage() )->render();
     }
     public function page_bookings(): void {
         ( new \AmirBooking\Admin\BookingsPage() )->render();
