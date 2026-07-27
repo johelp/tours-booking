@@ -14,6 +14,29 @@ class AdminMenu {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
         // La descarga del PDF debe ocurrir antes de que WordPress envíe cualquier HTML
         add_action( 'admin_init',   [ $this, 'maybe_stream_pdf' ] );
+
+        // Calendario: pantalla completa, sin nada del chrome de WP. La admin
+        // bar se decide temprano (antes de que WP la arme), por eso va en
+        // admin_init y no dentro del callback de la página — ahí ya es tarde.
+        add_action( 'admin_init', [ $this, 'maybe_hide_admin_bar_for_calendar' ] );
+        add_action( 'admin_head', [ $this, 'maybe_print_fullscreen_css' ] );
+    }
+
+    public function maybe_hide_admin_bar_for_calendar(): void {
+        if ( ( $_GET['page'] ?? '' ) === 'amir-calendar' ) {
+            add_filter( 'show_admin_bar', '__return_false' );
+        }
+    }
+
+    public function maybe_print_fullscreen_css(): void {
+        if ( ( $_GET['page'] ?? '' ) !== 'amir-calendar' ) {
+            return;
+        }
+        echo '<style>
+            #adminmenumain, #adminmenuback, #adminmenuwrap, #wpfooter { display: none !important; }
+            #wpcontent, #wpbody-content { margin-left: 0 !important; }
+            #wpbody { padding-top: 0 !important; }
+        </style>';
     }
 
     /**
@@ -67,6 +90,7 @@ class AdminMenu {
         // Submenús — todos visibles para admin y tour manager
         $submenus = [
             [ 'amir-booking',        __( 'Dashboard',      'amir-booking' ), [ $this, 'page_dashboard'   ] ],
+            [ 'amir-calendar',       __( '📅 Calendario',  'amir-booking' ), [ $this, 'page_calendar'    ] ],
             [ 'amir-bookings-list',  __( 'Reservas',       'amir-booking' ), [ $this, 'page_bookings'    ] ],
             [ 'amir-availability',   __( 'Disponibilidad', 'amir-booking' ), [ $this, 'page_availability'] ],
             [ 'amir-partners',       __( 'Partners',       'amir-booking' ), [ $this, 'page_partners'    ] ],
@@ -111,6 +135,9 @@ class AdminMenu {
 
     public function page_dashboard(): void {
         ( new \AmirBooking\Admin\DashboardPage() )->render();
+    }
+    public function page_calendar(): void {
+        ( new \AmirBooking\Admin\CalendarPage() )->render();
     }
     public function page_bookings(): void {
         ( new \AmirBooking\Admin\BookingsPage() )->render();

@@ -120,6 +120,23 @@ if ( ! function_exists( 'is_email' ) ) {
         return filter_var( $email, FILTER_VALIDATE_EMAIL ) ? $email : false;
     }
 }
+if ( ! function_exists( 'wp_json_encode' ) ) {
+    function wp_json_encode( $data, int $options = 0, int $depth = 512 ) {
+        return json_encode( $data, $options, $depth );
+    }
+}
+
+// ── i18n (sin gettext real: devuelven el msgid tal cual) ──────────────────
+foreach ( [ '__', 'esc_html__', 'esc_attr__' ] as $fn ) {
+    if ( ! function_exists( $fn ) ) {
+        eval( "function {$fn}( \$text, \$domain = 'default' ) { return \$text; }" );
+    }
+}
+foreach ( [ '_e', 'esc_html_e' ] as $fn ) {
+    if ( ! function_exists( $fn ) ) {
+        eval( "function {$fn}( \$text, \$domain = 'default' ) { echo \$text; }" );
+    }
+}
 
 require_once __DIR__ . '/fakes/FakeWpdb.php';
 
@@ -127,6 +144,8 @@ require_once __DIR__ . '/fakes/FakeWpdb.php';
 //    completo del plugin — no necesitamos registrar hooks de WP para
 //    probar lógica de negocio pura) ─────────────────────────────────────────
 require_once __DIR__ . '/../includes/core/class-currency.php';
+require_once __DIR__ . '/../includes/core/class-languages.php';
+require_once __DIR__ . '/../includes/core/class-structured-data.php';
 require_once __DIR__ . '/../includes/core/class-availability-engine.php';
 require_once __DIR__ . '/../includes/core/class-pricing-engine.php';
 require_once __DIR__ . '/../includes/core/class-booking-manager.php';
@@ -134,4 +153,4 @@ require_once __DIR__ . '/../includes/payments/class-payment-gateway-interface.ph
 require_once __DIR__ . '/../includes/payments/class-payment-creation-result.php';
 require_once __DIR__ . '/../includes/payments/class-payment-event.php';
 require_once __DIR__ . '/../includes/payments/class-payment-status-result.php';
-require_once __DIR__ . '/../includes/payments/class-mercadopago-gateway.php';
+require_once __DIR__ . '/../includes/payments/class-mercado-pago-gateway.php';

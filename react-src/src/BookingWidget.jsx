@@ -3,13 +3,17 @@ import { loadStripe }          from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useT }               from './i18n.js';
 import * as API               from './api.js';
+import { trackInitiateCheckout, trackPurchase, getCouponFromUrl } from './marketing.js';
 import './styles/widget.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const STEPS = [ 'date', 'schedule', 'people', 'details', 'summary', 'payment', 'confirm' ];
+const STEPS = [ 'date', 'schedule', 'people', 'extras', 'details', 'summary', 'payment', 'confirm' ];
 
 // Steps that require a schedule selector (skip if tour has only 1 schedule)
 const needsScheduleStep = ( schedules ) => schedules?.length > 1;
+
+// Skip the extras step entirely if the tour has no add-ons configured
+const needsExtrasStep = ( tour ) => ( tour?.addons?.length ?? 0 ) > 0;
 
 // Si no hay horarios, usar schedule_id=0 como placeholder
 const resolveScheduleId = ( form, schedules, tourSchedules ) => {
@@ -94,15 +98,25 @@ function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
     customerEmail:   '',
     customerPhone:   '',
     specialRequests: '',
-    couponCode:      '',
+    couponCode:      getCouponFromUrl(),
     policyAccepted:  false,
+    selectedAddons:  {}, // { [addonId]: qty }
   });
 
   const patchForm = ( patch ) => setForm( f => ( { ...f, ...patch } ) );
 
+  // InitiateCheckout/begin_checkout: se dispara una sola vez, cuando el
+  // widget de reserva ya está montado e interactivo (no hay un paso previo
+  // de "ver tour" separado dentro del widget mismo — eso lo cubre el
+  // ViewContent/view_item del template de single-amir_tour.php).
+  useEffect( () => {
+    trackInitiateCheckout( tour );
+  }, [] );
+
   // Filter applicable steps (skip schedule step if only 1 schedule)
   const activeSteps = STEPS.filter( s => {
     if ( s === 'schedule' ) return needsScheduleStep( schedules ?? tour.schedules );
+    if ( s === 'extras' )   return needsExtrasStep( tour );
     return true;
   } );
   const stepName    = activeSteps[ step ];
@@ -124,10 +138,14 @@ function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
     }
   }, [ schedules ] );
 
-  // Fetch quote whenever people/schedule/date changes
+  // Fetch quote whenever people/schedule/date/extras changes
+  const addonsKey = JSON.stringify( form.selectedAddons );
   useEffect( () => {
     if ( ! form.date || ( form.adults + form.children ) === 0 ) return;
     const sid = resolveScheduleId( form, schedules, tour.schedules ) ?? 0;
+    const addons = Object.entries( form.selectedAddons )
+      .filter( ( [ , qty ] ) => qty > 0 )
+      .map( ( [ id, qty ] ) => ( { id: Number( id ), qty } ) );
     API.getQuote({
       tourId:     tour.id,
       scheduleId: sid,
@@ -136,10 +154,12 @@ function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
       children:   form.children,
       babies:     form.babies,
       couponCode: form.couponCode,
+      addons,
+      lang,
     })
     .then( setQuote )
     .catch( () => {} );
-  }, [ form.date, form.scheduleId, form.adults, form.children, form.babies, form.couponCode ] );
+  }, [ form.date, form.scheduleId, form.adults, form.children, form.babies, form.couponCode, addonsKey ] );
 
   const stepProps = { tour, form, patchForm, lang, setLang, t, goNext, goBack,
     availability, setAvailability, schedules, setSchedules,
@@ -150,11 +170,12 @@ function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
 
   return (
     <div className="ab-widget">
-      <ProgressBar steps={stepLabels} current={step} />
+      <ProgressBar steps={stepLabels} stepKeys={activeSteps} current={step} />
 
       { stepName === 'date'     && <StepDate     {...stepProps} /> }
       { stepName === 'schedule' && <StepSchedule {...stepProps} /> }
       { stepName === 'people'   && <StepPeople   {...stepProps} /> }
+      { stepName === 'extras'   && <StepExtras   {...stepProps} /> }
       { stepName === 'details'  && <StepDetails  {...stepProps} /> }
       { stepName === 'summary'  && <StepSummary  {...stepProps} /> }
       { stepName === 'payment'  && gateway === 'mercadopago' && (
@@ -171,13 +192,30 @@ function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
 }
 
 // ── Progress Bar ──────────────────────────────────────────────────────────────
-function ProgressBar({ steps, current }) {
+// Un ícono por paso en vez del número — más identificable de un vistazo,
+// sobre todo cuando el texto está oculto (ver STEP_ICONS/showLabels abajo).
+const STEP_ICONS = {
+  date: '📅', schedule: '🕐', people: '👥', extras: '🎁',
+  details: '📝', summary: '🧾', payment: '💳', confirm: '✅',
+};
+
+function ProgressBar({ steps, stepKeys, current }) {
+  // Configuración → Widget de reserva → "Mostrar texto de los pasos".
+  // Sin texto, los pasos se reparten parejo (ver .ab-progress-compact en
+  // widget.css) y la línea de progreso queda perfectamente alineada.
+  const showLabels = ( typeof window !== 'undefined' ? window.amirBooking?.progressLabels : undefined ) ?? true;
+  const total = steps.length;
+  const progressPct = total > 1 ? ( current / ( total - 1 ) ) * 100 : 0;
+
   return (
-    <div className="ab-progress">
+    <div className={`ab-progress${showLabels ? '' : ' ab-progress-compact'}`}>
+      <div className="ab-progress-track">
+        <div className="ab-progress-track-fill" style={{ width: `${progressPct}%` }} />
+      </div>
       {steps.map( ( label, i ) => (
         <div key={i} className={`ab-step-dot ${i === current ? 'active' : i < current ? 'done' : ''}`}>
-          <div className="ab-step-dot-circle">{i < current ? '' : i + 1}</div>
-          <div className="ab-step-dot-label">{label}</div>
+          <div className="ab-step-dot-circle">{i < current ? '' : ( STEP_ICONS[ stepKeys?.[i] ] || i + 1 )}</div>
+          {showLabels && <div className="ab-step-dot-label">{label}</div>}
         </div>
       ))}
     </div>
@@ -235,8 +273,7 @@ function StepDate({ tour, form, patchForm, t, goNext, availability, setAvailabil
   const daysInMonth  = new Date( viewYear, viewMonth, 0 ).getDate();
   const firstDow     = new Date( viewYear, viewMonth - 1, 1 ).getDay(); // 0=Sun
   const todayStr     = today.toISOString().slice( 0, 10 );
-  const t2 = useT( 'es' ); // day-of-week labels use the i18n from the flow's lang
-  const months = [ 'Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre' ];
+  const months = t( 'months' ); // t() con una sola clave y sin vars devuelve el array tal cual
 
   return (
     <div className="ab-panel">
@@ -483,6 +520,59 @@ function StepPeople({ tour, form, patchForm, t, goNext, goBack, quote }) {
   );
 }
 
+// ── Step: Servicios extra (add-ons) ─────────────────────────────────────────
+function StepExtras({ tour, form, patchForm, t, goNext, goBack }) {
+  const addons    = tour.addons ?? [];
+  const peopleCap = form.adults + form.children;
+  const currency  = ( typeof window !== 'undefined' && window.amirBooking?.currency ) || 'MXN';
+
+  const fmt = ( n ) => `$${n.toLocaleString('es-MX')} ${currency}`;
+
+  const setQty = ( addonId, qty ) => {
+    patchForm({ selectedAddons: { ...form.selectedAddons, [addonId]: qty } });
+  };
+
+  return (
+    <div className="ab-panel">
+      <p className="ab-panel-title">{t('extras_title')}</p>
+
+      <div className="ab-people-list">
+        {addons.map( a => {
+          const qty = form.selectedAddons[ a.id ] ?? 0;
+          return (
+            <div key={a.id} className="ab-people-row">
+              <div className="ab-people-info">
+                <div className="ab-people-label">{a.name}</div>
+              </div>
+              <div className="ab-people-price">{fmt(a.price_mxn)}</div>
+              { a.pricing_type === 'flat' ? (
+                <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer'}}>
+                  <input
+                    type="checkbox"
+                    checked={qty > 0}
+                    onChange={ e => setQty( a.id, e.target.checked ? 1 : 0 ) }
+                    style={{width:18, height:18, accentColor:'var(--ab-teal)'}}
+                  />
+                  {t('extras_included')}
+                </label>
+              ) : (
+                <Counter
+                  value={qty}
+                  min={0}
+                  max={peopleCap}
+                  onChange={ v => setQty( a.id, v ) }
+                />
+              )}
+            </div>
+          );
+        } )}
+      </div>
+
+      <NavRow t={t} goBack={goBack} onNext={goNext} />
+    </div>
+  );
+}
+
 // ── Campo de formulario reutilizable ───────────────────────────────────────────
 // IMPORTANTE: este componente vive a nivel de módulo, NUNCA dentro de otro
 // componente. Si se define dentro de StepDetails (como estaba antes), React lo
@@ -545,16 +635,14 @@ function StepDetails({ form, patchForm, lang, setLang, t, goNext, goBack }) {
       <div className="ab-form-group">
         <label className="ab-label">{t('lang_pref')}</label>
         <div className="ab-lang-toggle">
-          <button
-            type="button"
-            className={`ab-lang-btn${(form.lang ?? lang) === 'es' ? ' active' : ''}`}
-            onClick={() => { patchForm({ lang: 'es' }); setLang('es'); }}
-          >{t('lang_es')}</button>
-          <button
-            type="button"
-            className={`ab-lang-btn${(form.lang ?? lang) === 'en' ? ' active' : ''}`}
-            onClick={() => { patchForm({ lang: 'en' }); setLang('en'); }}
-          >{t('lang_en')}</button>
+          { ( window.amirBooking?.activeLanguages ?? [ 'es', 'en' ] ).map( code => (
+            <button
+              key={code}
+              type="button"
+              className={`ab-lang-btn${(form.lang ?? lang) === code ? ' active' : ''}`}
+              onClick={() => { patchForm({ lang: code }); setLang(code); }}
+            >{ code === 'es' ? t('lang_es') : code === 'en' ? t('lang_en') : code.toUpperCase() }</button>
+          ) ) }
         </div>
         <p style={{fontSize:'11px',color:'#5a7068',marginTop:'4px'}}>
           {t('lang_pref_hint')}
@@ -585,11 +673,8 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
 
   const fmtDate = ( dateStr ) => {
     const [ y, m, d ] = dateStr.split('-');
-    const months = {
-      es: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'],
-      en: ['January','February','March','April','May','June','July','August','September','October','November','December'],
-    };
-    return `${parseInt(d)} ${months[lang]?.[parseInt(m)-1]} ${y}`;
+    const months = t( 'months' ); // sin vars, t() devuelve el array tal cual
+    return `${parseInt(d)} ${months?.[parseInt(m)-1]} ${y}`;
   };
 
   const fmtTime = ( t24 ) => {
@@ -631,6 +716,9 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
         partner_token:    partnerToken,
         special_requests: form.specialRequests,
         coupon_code:      form.couponCode ?? '',
+        addons: Object.entries( form.selectedAddons ?? {} )
+          .filter( ( [ , qty ] ) => qty > 0 )
+          .map( ( [ id, qty ] ) => ( { id: Number( id ), qty } ) ),
       });
 
       setBookingId( result.booking_id );
@@ -701,6 +789,7 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
                 {b.type === 'group' ? `Grupo (${b.qty} pax)` :
                  b.type === 'adult' ? `${b.qty} × ${t('adults')}` :
                  b.type === 'child' ? `${b.qty} × ${t('children')}` :
+                 b.type === 'addon' ? `${b.qty} × ${b.name}` :
                  `${b.qty} × ${t('babies')}`}
               </span>
               <span className="ab-summary-row-value">
@@ -748,7 +837,7 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
         />
         {quote?.coupon_code && (
           <p style={{fontSize:12,color:'var(--ab-teal-dark)',marginTop:4,fontWeight:600}}>
-            ✓ {t('coupon_applied')} -${(quote.discount_mxn ?? 0).toLocaleString('es-MX')} MXN
+            ✓ {t('coupon_applied')} -${(quote.discount_mxn ?? 0).toLocaleString('es-MX')} {window.amirBooking?.currency ?? 'MXN'}
           </p>
         )}
         {quote?.coupon_error && <p className="ab-field-error">{quote.coupon_error}</p>}
@@ -950,13 +1039,27 @@ export function StepPaymentMP({ t, goBack, goNext, setBookingRef, bookingId, mpD
 }
 
 // ── Step 7: Confirmation ──────────────────────────────────────────────────────
-function StepConfirm({ tour, form, bookingRef, t, lang }) {
+function StepConfirm({ tour, form, bookingRef, t, lang, quote }) {
   const waPhone  = window.amirBooking?.waPhone ?? '5219831649541';
+
+  // Purchase/purchase + conversión de Google Ads — una sola vez por reserva
+  // (el ref evita que un re-render por cambio de idioma, etc. lo dispare de
+  // nuevo con la misma referencia).
+  const purchaseFired = useRef( false );
+  useEffect( () => {
+    if ( purchaseFired.current || ! bookingRef ) return;
+    purchaseFired.current = true;
+    trackPurchase({
+      tourId:     tour?.id,
+      tourName:   tour?.name,
+      bookingRef,
+      value:      quote?.total_mxn ?? 0,
+      currency:   window.amirBooking?.currency ?? 'USD',
+    });
+  }, [ bookingRef ] );
   const fmtDate  = ( dateStr ) => {
     const [ y, m, d ] = dateStr.split('-');
-    const months = lang === 'en'
-      ? ['January','February','March','April','May','June','July','August','September','October','November','December']
-      : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const months = t( 'months' ); // sin vars, t() devuelve el array tal cual
     return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
   };
 

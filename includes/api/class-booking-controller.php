@@ -126,6 +126,10 @@ class BookingController {
     // ── POST /bookings ────────────────────────────────────────────────────
 
     public function create_booking( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'create_booking_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $manager = new \AmirBooking\Core\BookingManager();
 
         $result = $manager->create_pending( [
@@ -142,6 +146,7 @@ class BookingController {
             'partner_token'    => $request->get_param( 'partner_token' ) ?? '',
             'special_requests' => $request->get_param( 'special_requests' ) ?? '',
             'coupon_code'      => $request->get_param( 'coupon_code' ) ?? '',
+            'addons'           => $this->sanitize_addons_param( $request->get_param( 'addons' ) ),
             'source'           => 'direct',
         ] );
 
@@ -152,10 +157,25 @@ class BookingController {
             );
         }
 
-        // Iniciar el cobro con la pasarela activa (hoy solo Stripe;
-        // Mercado Pago se suma implementando la misma interfaz)
-        $gateway  = \AmirBooking\Payments\PaymentGatewayFactory::default_gateway();
-        $payment  = $gateway->create_payment( $result );
+        // Iniciar el cobro con la pasarela activa. Envuelto en try/catch:
+        // un error inesperado acá (credenciales mal cargadas, respuesta rara
+        // de la API de la pasarela, etc.) no debe tirar la reserva ya creada
+        // a una pantalla blanca de WordPress — mejor un 500 con JSON legible
+        // y logueado en Amir Booking → Log de pagos.
+        $gateway = \AmirBooking\Payments\PaymentGatewayFactory::default_gateway();
+        try {
+            $payment = $gateway->create_payment( $result );
+        } catch ( \Throwable $e ) {
+            $this->cleanup_failed_booking( $result->booking_id );
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                $result->booking_id, $gateway->id(), 'creation_failed', $e->getMessage()
+            );
+            error_log( sprintf( 'Amir Booking: excepción al crear el cobro (%s) — %s', $gateway->id(), $e->getMessage() ) );
+            return new \WP_REST_Response(
+                [ 'success' => false, 'error' => 'Error al inicializar el pago. Intenta de nuevo.' ],
+                500
+            );
+        }
 
         if ( ! $payment->success ) {
             // Limpiar la reserva pending si la pasarela falla
@@ -259,7 +279,18 @@ class BookingController {
         $booking_result = new \AmirBooking\Core\BookingResult(
             true, (int) $booking->id, $booking->booking_ref, (float) $booking->total_mxn
         );
-        $payment = $gateway->create_payment( $booking_result );
+        try {
+            $payment = $gateway->create_payment( $booking_result );
+        } catch ( \Throwable $e ) {
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                (int) $booking->id, $gateway->id(), 'creation_failed', $e->getMessage()
+            );
+            error_log( sprintf( 'Amir Booking: excepción al crear el cobro (%s) — %s', $gateway->id(), $e->getMessage() ) );
+            return new \WP_REST_Response(
+                [ 'success' => false, 'error' => 'Error al inicializar el pago. Intenta de nuevo.' ],
+                500
+            );
+        }
 
         if ( ! $payment->success ) {
             \AmirBooking\Payments\PaymentEventLogger::log(
@@ -351,7 +382,7 @@ class BookingController {
         if ($admin_email) {
             wp_mail(
                 $admin_email,
-                '[Amir Booking] Solicitud de cancelación — ' . $booking->booking_ref,
+                '[TourFlow] Solicitud de cancelación — ' . $booking->booking_ref,
                 sprintf(
                     "%s (%s) solicita cancelar la reserva %s del %s.\n\nRevisar: %s",
                     $booking->customer_name, $booking->customer_email,
@@ -433,6 +464,14 @@ class BookingController {
     // ── POST /bookings/quote ──────────────────────────────────────────────
 
     public function get_quote( \WP_REST_Request $request ): \WP_REST_Response {
+        // Límite más alto que el default: el widget recotiza en vivo cada vez
+        // que cambia gente/fecha/cupón/extras durante el checkout normal —
+        // esto solo tiene que frenar el abuso (probar cupones a fuerza bruta),
+        // no el uso interactivo legítimo.
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'get_quote_' . \AmirBooking\Core\RateLimiter::client_ip(), 60, 300 ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $pricing = new \AmirBooking\Core\PricingEngine();
 
         $quote = $pricing->quote(
@@ -442,7 +481,9 @@ class BookingController {
             (int) $request->get_param( 'adults' ),
             (int) ( $request->get_param( 'children' ) ?? 0 ),
             (int) ( $request->get_param( 'babies' ) ?? 0 ),
-            sanitize_text_field( $request->get_param( 'coupon_code' ) ?? '' )
+            sanitize_text_field( $request->get_param( 'coupon_code' ) ?? '' ),
+            $this->sanitize_addons_param( $request->get_param( 'addons' ) ),
+            sanitize_text_field( $request->get_param( 'lang' ) ?? 'es' )
         );
 
         if ( ! $quote->is_valid() ) {
@@ -523,6 +564,10 @@ class BookingController {
     // Verifica el PaymentIntent directamente con Stripe y confirma la reserva.
 
     public function confirm_payment( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'confirm_payment_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         global $wpdb;
 
         $booking_id = (int) $request->get_param( 'id' );
@@ -805,6 +850,29 @@ class BookingController {
         $wpdb->delete( "{$wpdb->prefix}amir_bookings", [ 'id' => $booking_id ], [ '%d' ] );
     }
 
+    /**
+     * Normaliza el parámetro `addons` (array de {id, qty} que manda el
+     * cliente) a algo seguro para pasarle a PricingEngine::quote() — nunca
+     * confía en precio/nombre del request, solo en id+qty; PricingEngine
+     * revalida todo contra amir_addons antes de cobrar un centavo.
+     */
+    private function sanitize_addons_param( $raw ): array {
+        if ( ! is_array( $raw ) ) {
+            return [];
+        }
+        $out = [];
+        foreach ( $raw as $item ) {
+            if ( ! is_array( $item ) || empty( $item['id'] ) ) {
+                continue;
+            }
+            $out[] = [
+                'id'  => (int) $item['id'],
+                'qty' => max( 0, (int) ( $item['qty'] ?? 0 ) ),
+            ];
+        }
+        return $out;
+    }
+
     private function create_args(): array {
         return [
             'tour_id'          => [ 'required' => true,  'type' => 'integer', 'minimum' => 1 ],
@@ -816,10 +884,11 @@ class BookingController {
             'customer_name'    => [ 'required' => true,  'type' => 'string',  'minLength' => 2 ],
             'customer_email'   => [ 'required' => true,  'type' => 'string',  'format' => 'email' ],
             'customer_phone'   => [ 'required' => false, 'type' => 'string' ],
-            'lang'             => [ 'required' => false, 'type' => 'string',  'enum' => [ 'es', 'en' ] ],
+            'lang'             => [ 'required' => false, 'type' => 'string',  'enum' => \AmirBooking\Core\Languages::active() ],
             'partner_token'    => [ 'required' => false, 'type' => 'string' ],
             'special_requests' => [ 'required' => false, 'type' => 'string' ],
             'coupon_code'      => [ 'required' => false, 'type' => 'string' ],
+            'addons'           => [ 'required' => false, 'type' => 'array' ],
         ];
     }
 }

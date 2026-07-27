@@ -128,7 +128,7 @@ class CronManager {
         if ( $admin_email ) {
             wp_mail(
                 $admin_email,
-                sprintf( '[Amir Booking] Alerta mínimo pax: %s el %s', $tour->name_es, $date ),
+                sprintf( '[TourFlow] Alerta mínimo pax: %s el %s', $tour->name_es, $date ),
                 sprintf(
                     "El tour '%s' el %s tiene %d de %d pasajeros mínimos.\n\nRevisar en el panel: %s",
                     $tour->name_es,

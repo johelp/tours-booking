@@ -19,9 +19,11 @@ class Installer {
         'tours',
         'tour_schedules',
         'prices',
+        'addons',
         'availability_rules',
         'partners',
         'bookings',
+        'booking_addons',
         'notifications',
         'payment_events',
         'coupons',
@@ -185,6 +187,7 @@ class Installer {
             gallery_images     TEXT DEFAULT '[]',
             itinerary_es       LONGTEXT,
             itinerary_en       LONGTEXT,
+            content_i18n       LONGTEXT,
             tripadvisor_id     VARCHAR(100) DEFAULT '',
             gyg_id             VARCHAR(100) DEFAULT '',
             sort_order         SMALLINT UNSIGNED NOT NULL DEFAULT 0,
@@ -231,6 +234,27 @@ class Installer {
             KEY schedule_id (schedule_id),
             KEY person_type (person_type),
             KEY validity (valid_from, valid_until)
+        ) $charset;" );
+
+        // ── amir_addons ───────────────────────────────────────────────────
+        // Servicios extra opcionales por tour (alquiler de equipo, cena,
+        // etc.). 'per_unit': el cliente elige cantidad, precio × cantidad
+        // (tope = adultos+niños de la reserva). 'flat': precio fijo, se
+        // agrega o no, sin cantidad. name_es/name_en + content_i18n siguen
+        // el mismo patrón multi-idioma que amir_tours (Languages::tour_field()).
+        dbDelta( "CREATE TABLE {$wpdb->prefix}amir_addons (
+            id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            tour_id       INT UNSIGNED NOT NULL,
+            pricing_type  ENUM('per_unit','flat') NOT NULL DEFAULT 'per_unit',
+            name_es       VARCHAR(255) NOT NULL DEFAULT '',
+            name_en       VARCHAR(255) NOT NULL DEFAULT '',
+            content_i18n  LONGTEXT,
+            price_mxn     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            active        TINYINT(1) NOT NULL DEFAULT 1,
+            sort_order    TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            PRIMARY KEY (id),
+            KEY tour_id (tour_id),
+            KEY active (active)
         ) $charset;" );
 
         // ── amir_availability_rules ───────────────────────────────────────
@@ -291,7 +315,7 @@ class Installer {
                                         'completed'
                                      ) NOT NULL DEFAULT 'pending',
             booking_source           ENUM('direct','tripadvisor','getyourguide','partner','manual','wishlist') NOT NULL DEFAULT 'direct',
-            lang                     ENUM('es','en') NOT NULL DEFAULT 'es',
+            lang                     VARCHAR(5) NOT NULL DEFAULT 'es',
             customer_name            VARCHAR(255) NOT NULL DEFAULT '',
             customer_email           VARCHAR(255) NOT NULL DEFAULT '',
             customer_phone           VARCHAR(50) DEFAULT '',
@@ -317,6 +341,8 @@ class Installer {
             custom_email_note        TEXT,
             review_email_sent_at     DATETIME,
             reminder_sent_at         DATETIME,
+            wishlist_notice_sent_at  DATETIME,
+            wishlist_notice_error    VARCHAR(255) DEFAULT '',
             confirmed_at             DATETIME,
             created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -332,6 +358,24 @@ class Installer {
             KEY stripe_payment_intent (stripe_payment_intent),
             KEY gateway_reference (gateway_reference),
             KEY created_at (created_at)
+        ) $charset;" );
+
+        // ── amir_booking_addons ───────────────────────────────────────────
+        // Servicios extra elegidos en una reserva puntual. Precio y nombre
+        // quedan "congelados" al momento de reservar (mismo criterio que
+        // amir_bookings.total_mxn) — si el operador después cambia el precio
+        // o borra el addon, esta fila no se ve afectada.
+        dbDelta( "CREATE TABLE {$wpdb->prefix}amir_booking_addons (
+            id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            booking_id      INT UNSIGNED NOT NULL,
+            addon_id        INT UNSIGNED NOT NULL,
+            qty             SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+            unit_price_mxn  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            total_mxn       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            name_snapshot   VARCHAR(255) NOT NULL DEFAULT '',
+            PRIMARY KEY (id),
+            KEY booking_id (booking_id),
+            KEY addon_id (addon_id)
         ) $charset;" );
 
         // ── amir_payment_events ───────────────────────────────────────────
@@ -401,6 +445,8 @@ class Installer {
         }
 
         add_option( 'amir_currency',             'MXN' );
+        add_option( 'amir_booking_ref_prefix',   'BK' );
+        add_option( 'amir_active_languages',     wp_json_encode( [ 'es', 'en' ] ) );
         add_option( 'amir_usd_rate_mode',         'auto' );
         add_option( 'amir_usd_rate_manual',       '17.00' );
         add_option( 'amir_stripe_mode',           'test' );
@@ -479,7 +525,7 @@ class Installer {
 
     private static function delete_options(): void {
         $options = array(
-            'amir_db_version', 'amir_installed_at', 'amir_currency',
+            'amir_db_version', 'amir_installed_at', 'amir_currency', 'amir_booking_ref_prefix', 'amir_active_languages',
             'amir_usd_rate_mode', 'amir_usd_rate_manual', 'amir_stripe_mode',
             'amir_stripe_pk_test', 'amir_stripe_sk_test',
             'amir_stripe_pk_live', 'amir_stripe_sk_live',
@@ -500,6 +546,38 @@ class Installer {
     }
 
     // ── Actualización de DB ───────────────────────────────────────────────
+
+    /**
+     * Red de seguridad independiente del gate de versión — ver el comentario
+     * en Plugin::init(). Se cachea en un transient de 1h para no pegarle un
+     * DESCRIBE a la base en cada request — pero SOLO si las tres columnas
+     * quedaron realmente confirmadas, nunca si algún ALTER falló. Antes esto
+     * cacheaba "ok" pasara lo que pasara, así que un solo intento fallido
+     * (ej. content_i18n con `AFTER itinerary_en` cuando itinerary_en tampoco
+     * existía todavía) dejaba el tour_sync roto en silencio para siempre —
+     * es la causa real de "Unknown column 'content_i18n'" visto en el sandbox.
+     */
+    public static function ensure_tour_columns(): void {
+        if ( get_transient( 'amir_tour_columns_ok' ) ) {
+            return;
+        }
+        global $wpdb;
+        $cols     = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        $missing  = array_diff( [ 'itinerary_es', 'itinerary_en', 'content_i18n' ], $cols );
+        $all_ok   = true;
+
+        foreach ( $missing as $col ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN {$col} LONGTEXT" );
+            if ( $wpdb->last_error ) {
+                $all_ok = false;
+                error_log( "Amir Booking: no se pudo agregar la columna {$col} a amir_tours — " . $wpdb->last_error );
+            }
+        }
+
+        if ( $all_ok ) {
+            set_transient( 'amir_tour_columns_ok', 1, HOUR_IN_SECONDS );
+        }
+    }
 
     /**
      * Ejecuta migraciones de schema si la versión instalada es anterior.
@@ -585,6 +663,43 @@ class Installer {
         // (amir_bookings, status='wishlist') en vez de esta tabla aparte —
         // quedó huérfana, nunca llegó a una versión estable.
         $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}amir_tour_interest" );
+
+        // 1.6.2: el panel "Emails enviados" del admin no tenía forma de saber
+        // si el email de "tu tour ya abrió" (wishlist → awaiting_payment) se
+        // había mandado — solo miraba confirmed_at/reminder_sent_at/review_email_sent_at.
+        // Se guarda también el error puntual si wp_mail() falla, para no
+        // depender del error_log del servidor para diagnosticarlo.
+        if ( ! in_array( 'wishlist_notice_sent_at', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN wishlist_notice_sent_at DATETIME DEFAULT NULL AFTER reminder_sent_at" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN wishlist_notice_error VARCHAR(255) DEFAULT '' AFTER wishlist_notice_sent_at" );
+        }
+
+        // 1.7.0: soporte real de N idiomas (antes solo es/en hardcodeado).
+        // `lang` deja de ser un ENUM de 2 valores — el operador activa los
+        // idiomas que quiera desde Configuración (amir_active_languages) sin
+        // que un desarrollador toque el esquema. `content_i18n` guarda el
+        // contenido de tours para cualquier idioma más allá de es/en (esos
+        // dos siguen usando las columnas name_es/en, description_es/en, etc.
+        // de siempre — no se migran, cero riesgo sobre lo ya probado).
+        $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN lang VARCHAR(5) NOT NULL DEFAULT 'es'" );
+        // itinerary_es/en y content_i18n: dbDelta() de create_tables() no las
+        // venía agregando de forma confiable a instalaciones existentes (visto
+        // en vivo — quedaban faltando en el sandbox, rompiendo en silencio
+        // TODO guardado de tour con "Unknown column"). Ninguna lleva `AFTER`
+        // (esa cláusula fallaba si la columna de referencia tampoco existía
+        // todavía — justo lo que pasaba acá con itinerary_en). Ver también
+        // ensure_tour_columns(), la misma corrección corre en cada request
+        // como red de seguridad fuera del gate de versión.
+        if ( ! in_array( 'itinerary_es', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN itinerary_es LONGTEXT" );
+        }
+        if ( ! in_array( 'itinerary_en', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN itinerary_en LONGTEXT" );
+        }
+        if ( ! in_array( 'content_i18n', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN content_i18n LONGTEXT" );
+        }
+        add_option( 'amir_active_languages', wp_json_encode( [ 'es', 'en' ] ) );
 
         self::create_tables();
         self::create_verify_page();

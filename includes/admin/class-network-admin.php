@@ -201,7 +201,7 @@ class NetworkAdmin {
 
           <p style="color:#999;font-size:12px;margin-top:12px;">
             <?php printf(
-                esc_html__( 'Amir Booking v%s · DB schema v%s', 'amir-booking' ),
+                esc_html__( 'TourFlow v%s · DB schema v%s', 'amir-booking' ),
                 AMIR_VERSION,
                 AMIR_DB_VERSION
             ); ?>
@@ -224,7 +224,7 @@ class NetworkAdmin {
 
         ?>
         <div class="wrap">
-          <h1><?php esc_html_e( 'Amir Booking — Configuración de Red', 'amir-booking' ); ?></h1>
+          <h1><?php esc_html_e( 'TourFlow — Configuración de Red', 'amir-booking' ); ?></h1>
 
           <?php if ( $saved ) : ?>
             <div class="notice notice-success is-dismissible">

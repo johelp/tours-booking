@@ -87,6 +87,9 @@ final class Plugin {
         // ── Partners ──────────────────────────────────────────────────────
         ( new \AmirBooking\Partners\PartnerTracker() )->register();
 
+        // ── Marketing (Meta Pixel / Google Ads / GA4) ─────────────────────
+        Marketing::init();
+
         // ── Reembolsos ────────────────────────────────────────────────────
         // BookingManager::cancel() dispara esta acción cuando la política de
         // cancelación indica reembolso, pero hasta ahora nadie la escuchaba
@@ -129,5 +132,12 @@ final class Plugin {
         if ( get_option( 'amir_db_version', '0' ) !== AMIR_DB_VERSION ) {
             Installer::maybe_update();
         }
+
+        // Red de seguridad: maybe_update() marca la migración como hecha
+        // (amir_db_version) aunque algún ALTER TABLE puntual haya fallado
+        // en el host (permisos, versión de MySQL, etc.) — sin esto, una
+        // columna que no llegó a crearse queda faltante para siempre. Chequeo
+        // barato (una sola vez por request) fuera del gate de versión.
+        Installer::ensure_tour_columns();
     }
 }

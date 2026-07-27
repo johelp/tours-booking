@@ -28,6 +28,37 @@ class TourPostType {
         // Sincronizar con tabla amir_tours al guardar/eliminar
         add_action( 'save_post_' . self::POST_TYPE, [ $this, 'sync_to_db'   ], 20, 2 );
         add_action( 'before_delete_post',      [ $this, 'delete_from_db'    ] );
+
+        // Forzar el editor clásico para este CPT — todo el contenido del tour
+        // se guarda vía cajas meta de PHP (meta_box_main/content/pricing/
+        // addons/etc.), no bloques. En el editor de bloques (Gutenberg) esas
+        // cajas quedan en un panel de "compatibilidad" que se guarda con un
+        // POST aparte del guardado principal (vía REST) — menos confiable, y
+        // la causa real de reservas de lista de interés que no sincronizaban
+        // (el estado del post sí se guardaba porque es nativo de Gutenberg,
+        // pero la casilla/fecha de lista de interés no, porque dependen del
+        // POST clásico de compatibilidad). show_in_rest se mantiene en true
+        // igual (lo necesitan Elementor y la REST API pública), esto solo
+        // cambia qué UI de edición usa wp-admin.
+        add_filter( 'use_block_editor_for_post_type', [ $this, 'disable_block_editor' ], 10, 2 );
+
+        // Aviso visible si sync_to_db() no pudo escribir en amir_tours.
+        add_action( 'admin_notices', [ $this, 'maybe_show_sync_error' ] );
+    }
+
+    public function disable_block_editor( bool $use_block_editor, string $post_type ): bool {
+        return $post_type === self::POST_TYPE ? false : $use_block_editor;
+    }
+
+    public function maybe_show_sync_error(): void {
+        $screen = get_current_screen();
+        if ( ! $screen || $screen->id !== self::POST_TYPE || empty( $_GET['post'] ) ) {
+            return;
+        }
+        $error = get_transient( 'amir_sync_error_' . (int) $_GET['post'] );
+        if ( $error ) {
+            echo '<div class="notice notice-error"><p><strong>TourFlow:</strong> este tour no se pudo sincronizar con la base de datos interna (los cambios visibles acá pueden no reflejarse en el sitio) — ' . esc_html( $error ) . '</p></div>';
+        }
     }
 
     // ── CPT ───────────────────────────────────────────────────────────────
@@ -89,6 +120,7 @@ class TourPostType {
             [ 'amir_tour_content', __( '📝 Contenido bilingüe (EN)',   'amir-booking' ), [ $this, 'meta_box_content'   ] ],
             [ 'amir_tour_gallery', __( '🖼 Galería de fotos',          'amir-booking' ), [ $this, 'meta_box_gallery'   ] ],
             [ 'amir_tour_pricing', __( '💰 Precios y horarios',        'amir-booking' ), [ $this, 'meta_box_pricing'   ] ],
+            [ 'amir_tour_addons',  __( '🎁 Servicios extra',           'amir-booking' ), [ $this, 'meta_box_addons'    ] ],
             [ 'amir_tour_avail',   __( '📅 Disponibilidad',            'amir-booking' ), [ $this, 'meta_box_avail'     ] ],
             [ 'amir_tour_meeting', __( '📍 Punto de encuentro',        'amir-booking' ), [ $this, 'meta_box_meeting'   ] ],
             [ 'amir_tour_integr',  __( '🔗 Integraciones externas',    'amir-booking' ), [ $this, 'meta_box_integr'    ] ],
@@ -164,7 +196,7 @@ class TourPostType {
         <p style="font-size:12px;color:#666;margin:0 0 12px;">
           Mientras este tour esté en <strong>borrador</strong>, se puede mostrar en la sección "Próximamente" del sitio
           para que la gente se anote — completando fecha, personas y datos como una reserva normal, pero sin pagar todavía.
-          Al publicar el tour (o usar "Amir Booking → Lista de interés"), cada anotado recibe un email con el link para pagar.
+          Al publicar el tour (o usar "TourFlow → Lista de interés"), cada anotado recibe un email con el link para pagar.
         </p>
         <div class="amir-meta-grid">
           <div class="amir-field">
@@ -247,7 +279,63 @@ class TourPostType {
             <textarea name="amir_itinerary_en" rows="5" style="width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:8px 10px;font-size:13px;box-sizing:border-box;"><?php echo esc_textarea($m['itinerary_en']??''); ?></textarea>
           </div>
         </div>
+
+        <?php $this->render_extra_language_tabs( $m['content_i18n'] ?? [] ); ?>
         <?php
+    }
+
+    /**
+     * Un bloque de campos por cada idioma activo más allá de es/en (que ya
+     * tienen sus propios campos fijos arriba). El operador agrega el idioma
+     * en Configuración → Idiomas y automáticamente aparece acá — nada de
+     * esto requiere que un desarrollador toque código.
+     */
+    private function render_extra_language_tabs( array $content_i18n ): void {
+        $extra_langs = array_diff( \AmirBooking\Core\Languages::active(), [ 'es', 'en' ] );
+        if ( empty( $extra_langs ) ) {
+            return;
+        }
+        ?>
+        <div class="amir-section-title">🌐 Otros idiomas</div>
+        <?php foreach ( $extra_langs as $lang ) :
+            $data = $content_i18n[ $lang ] ?? [];
+            $includes_str = implode( "\n", (array) ( $data['includes'] ?? [] ) );
+            $excludes_str = implode( "\n", (array) ( $data['excludes'] ?? [] ) );
+        ?>
+        <div class="amir-field-row" style="border:1px solid #e1f5ee;border-radius:8px;padding:14px;margin-bottom:14px;">
+          <div style="grid-column:1/-1;font-weight:700;font-size:12px;color:#1D9E75;text-transform:uppercase;margin-bottom:8px;">
+            <?php echo esc_html( strtoupper( $lang ) ); ?>
+          </div>
+          <div class="amir-field">
+            <label>Nombre del tour</label>
+            <input type="text" name="amir_i18n[<?php echo esc_attr($lang); ?>][name]" value="<?php echo esc_attr( $data['name'] ?? '' ); ?>" />
+          </div>
+          <div class="amir-field">
+            <label>Punto de encuentro</label>
+            <textarea name="amir_i18n[<?php echo esc_attr($lang); ?>][meeting_point]" rows="2" style="width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:7px 10px;font-size:13px;box-sizing:border-box;"><?php echo esc_textarea( $data['meeting_point'] ?? '' ); ?></textarea>
+          </div>
+          <div class="amir-field" style="grid-column:1/-1;">
+            <label>Descripción</label>
+            <textarea name="amir_i18n[<?php echo esc_attr($lang); ?>][description]" rows="4" style="width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:8px 10px;font-size:13px;box-sizing:border-box;"><?php echo esc_textarea( $data['description'] ?? '' ); ?></textarea>
+          </div>
+          <div class="amir-field" style="grid-column:1/-1;">
+            <label>Qué esperar</label>
+            <textarea name="amir_i18n[<?php echo esc_attr($lang); ?>][what_to_expect]" rows="3" style="width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:8px 10px;font-size:13px;box-sizing:border-box;"><?php echo esc_textarea( $data['what_to_expect'] ?? '' ); ?></textarea>
+          </div>
+          <div class="amir-field">
+            <label>Incluye — una por línea</label>
+            <textarea name="amir_i18n[<?php echo esc_attr($lang); ?>][includes]" rows="4" style="width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:8px 10px;font-size:13px;box-sizing:border-box;"><?php echo esc_textarea( $includes_str ); ?></textarea>
+          </div>
+          <div class="amir-field">
+            <label>No incluye — una por línea</label>
+            <textarea name="amir_i18n[<?php echo esc_attr($lang); ?>][excludes]" rows="4" style="width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:8px 10px;font-size:13px;box-sizing:border-box;"><?php echo esc_textarea( $excludes_str ); ?></textarea>
+          </div>
+          <div class="amir-field" style="grid-column:1/-1;">
+            <label>Itinerario — opcional</label>
+            <textarea name="amir_i18n[<?php echo esc_attr($lang); ?>][itinerary]" rows="4" style="width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:8px 10px;font-size:13px;box-sizing:border-box;"><?php echo esc_textarea( $data['itinerary'] ?? '' ); ?></textarea>
+          </div>
+        </div>
+        <?php endforeach;
     }
 
     // ── Meta Box: Galería ─────────────────────────────────────────────────
@@ -453,6 +541,86 @@ class TourPostType {
         <?php
     }
 
+    // ── Meta Box: Servicios extra ─────────────────────────────────────────
+
+    public function meta_box_addons( \WP_Post $post ): void {
+        global $wpdb;
+        $tour_db_id = (int) get_post_meta( $post->ID, '_amir_tour_db_id', true );
+
+        $addons = $tour_db_id
+            ? $wpdb->get_results( $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}amir_addons WHERE tour_id=%d ORDER BY sort_order, id",
+                $tour_db_id ) )
+            : [];
+        ?>
+        <p style="font-size:12px;color:#666;margin:0 0 14px;">
+          Extras opcionales que el cliente puede sumar al reservar (alquiler de equipo, cena, etc.).
+          <strong>Por unidad</strong>: el cliente elige cuántos quiere (tope = personas de la reserva).
+          <strong>Extra general</strong>: precio fijo, se agrega o no, sin cantidad.
+        </p>
+
+        <div id="amir-addons-wrap">
+          <?php
+          // Sin checkbox de "activo": igual que horarios, la fila presente
+          // en el form = activa; borrarla con ✕ la desactiva/elimina al
+          // guardar (sync_addons() borra lo que ya no está en el POST).
+          $render_addon_row = function ( $a = null ) {
+              $db_id = $a->id ?? '';
+              $type  = $a->pricing_type ?? 'per_unit';
+              $es    = $a->name_es ?? '';
+              $en    = $a->name_en ?? '';
+              $price = $a->price_mxn ?? '';
+              ?>
+              <div class="amir-addon-row" style="display:flex;gap:10px;margin-bottom:8px;align-items:center;">
+                <input type="hidden" name="amir_addon_db_id[]" value="<?php echo esc_attr( $db_id ); ?>" />
+                <select name="amir_addon_pricing_type[]" style="border:1px solid #c3d9d0;border-radius:6px;padding:6px 8px;font-size:13px;">
+                  <option value="per_unit" <?php selected( $type, 'per_unit' ); ?>>Por unidad</option>
+                  <option value="flat"     <?php selected( $type, 'flat' ); ?>>Extra general</option>
+                </select>
+                <input type="text" name="amir_addon_name_es[]" value="<?php echo esc_attr( $es ); ?>" placeholder="Ej: Equipo de snorkel" style="flex:1;border:1px solid #c3d9d0;border-radius:6px;padding:6px 8px;font-size:13px;" />
+                <input type="text" name="amir_addon_name_en[]" value="<?php echo esc_attr( $en ); ?>" placeholder="Ex: Snorkel gear" style="flex:1;border:1px solid #c3d9d0;border-radius:6px;padding:6px 8px;font-size:13px;" />
+                <div style="position:relative;">
+                  <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#888;">$</span>
+                  <input type="number" name="amir_addon_price[]" value="<?php echo esc_attr( $price ); ?>" min="0" step="0.01" placeholder="0.00"
+                         style="width:100px;border:1px solid #c3d9d0;border-radius:6px;padding:6px 8px 6px 20px;font-size:13px;box-sizing:border-box;" />
+                </div>
+                <button type="button" onclick="this.closest('.amir-addon-row').remove()" style="background:#fef2f2;color:#e24b4a;border:1px solid #fecaca;border-radius:6px;padding:5px 8px;cursor:pointer;font-size:12px;">✕</button>
+              </div>
+              <?php
+          };
+
+          if ( empty( $addons ) ) {
+              $render_addon_row();
+          } else {
+              foreach ( $addons as $a ) {
+                  $render_addon_row( $a );
+              }
+          }
+          ?>
+        </div>
+        <button type="button" id="amir-add-addon-btn"
+                style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
+          + Agregar servicio
+        </button>
+
+        <script>
+        document.getElementById('amir-add-addon-btn').addEventListener('click', function(){
+          var row = '<div class="amir-addon-row" style="display:flex;gap:10px;margin-bottom:8px;align-items:center;">'
+            + '<input type="hidden" name="amir_addon_db_id[]" value="" />'
+            + '<select name="amir_addon_pricing_type[]" style="border:1px solid #c3d9d0;border-radius:6px;padding:6px 8px;font-size:13px;">'
+            + '<option value="per_unit">Por unidad</option><option value="flat">Extra general</option></select>'
+            + '<input type="text" name="amir_addon_name_es[]" placeholder="Nombre (ES)" style="flex:1;border:1px solid #c3d9d0;border-radius:6px;padding:6px 8px;font-size:13px;" />'
+            + '<input type="text" name="amir_addon_name_en[]" placeholder="Name (EN)" style="flex:1;border:1px solid #c3d9d0;border-radius:6px;padding:6px 8px;font-size:13px;" />'
+            + '<div style="position:relative;"><span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#888;">$</span>'
+            + '<input type="number" name="amir_addon_price[]" min="0" step="0.01" placeholder="0.00" style="width:100px;border:1px solid #c3d9d0;border-radius:6px;padding:6px 8px 6px 20px;font-size:13px;box-sizing:border-box;" /></div>'
+            + '<button type="button" onclick="this.closest(\'.amir-addon-row\').remove()" style="background:#fef2f2;color:#e24b4a;border:1px solid #fecaca;border-radius:6px;padding:5px 8px;cursor:pointer;font-size:12px;">✕</button>'
+            + '</div>';
+          document.getElementById('amir-addons-wrap').insertAdjacentHTML('beforeend', row);
+        });
+        </script>
+        <?php
+    }
+
     // ── Meta Box: Disponibilidad ──────────────────────────────────────────
 
     public function meta_box_avail( \WP_Post $post ): void {
@@ -478,7 +646,7 @@ class TourPostType {
               </label>
             <?php endforeach; ?>
           </div>
-          <p style="font-size:11px;color:#888;margin-top:6px;">Las reglas de excepción se gestionan desde <strong>Amir Booking → Disponibilidad</strong></p>
+          <p style="font-size:11px;color:#888;margin-top:6px;">Las reglas de excepción se gestionan desde <strong>TourFlow → Disponibilidad</strong></p>
         </div>
         <?php
     }
@@ -612,6 +780,46 @@ class TourPostType {
             $lines = array_filter( array_map( 'trim', explode( "\n", $_POST["amir_{$field}"] ?? '' ) ) );
             update_post_meta( $post_id, "_amir_{$field}", json_encode( array_values($lines) ) );
         }
+
+        $this->save_extra_languages( $post_id );
+    }
+
+    /**
+     * Contenido de idiomas activos más allá de es/en — el operador los
+     * agrega en Configuración → Idiomas, sin tocar código. Se guarda como
+     * un JSON indexado por idioma en un meta aparte (content_i18n en la
+     * tabla amir_tours). Se hace merge con lo existente en vez de
+     * sobreescribir todo: si un idioma se desactiva temporalmente, su
+     * contenido no se pierde, simplemente no se muestra ni se actualiza.
+     */
+    private function save_extra_languages( int $post_id ): void {
+        $extra_langs = array_diff( \AmirBooking\Core\Languages::active(), [ 'es', 'en' ] );
+        if ( empty( $extra_langs ) ) {
+            return;
+        }
+
+        $existing = json_decode( get_post_meta( $post_id, '_amir_content_i18n', true ) ?: '{}', true ) ?: [];
+
+        foreach ( $extra_langs as $lang ) {
+            $raw = $_POST['amir_i18n'][ $lang ] ?? [];
+            if ( ! is_array( $raw ) ) {
+                continue;
+            }
+            $includes = array_values( array_filter( array_map( 'trim', explode( "\n", $raw['includes'] ?? '' ) ) ) );
+            $excludes = array_values( array_filter( array_map( 'trim', explode( "\n", $raw['excludes'] ?? '' ) ) ) );
+
+            $existing[ $lang ] = [
+                'name'           => sanitize_text_field( $raw['name'] ?? '' ),
+                'description'    => wp_kses_post( $raw['description'] ?? '' ),
+                'what_to_expect' => wp_kses_post( $raw['what_to_expect'] ?? '' ),
+                'meeting_point'  => sanitize_textarea_field( $raw['meeting_point'] ?? '' ),
+                'includes'       => $includes,
+                'excludes'       => $excludes,
+                'itinerary'      => wp_kses_post( $raw['itinerary'] ?? '' ),
+            ];
+        }
+
+        update_post_meta( $post_id, '_amir_content_i18n', wp_json_encode( $existing ) );
     }
 
     // ── Sincronización CPT → tabla amir_tours ────────────────────────────
@@ -667,18 +875,37 @@ class TourPostType {
             'wishlist_enabled'   => (int) get_post_meta( $post_id, '_amir_wishlist_enabled', true ),
             'wishlist_threshold' => (int) get_post_meta( $post_id, '_amir_wishlist_threshold', true ),
             'wishlist_date'      => get_post_meta( $post_id, '_amir_wishlist_date', true ) ?: null,
+            'content_i18n'       => get_post_meta( $post_id, '_amir_content_i18n', true ) ?: '{}',
         ];
 
         if ( $db_id ) {
-            $wpdb->update( "{$wpdb->prefix}amir_tours", $data, [ 'id' => $db_id ] );
+            $result = $wpdb->update( "{$wpdb->prefix}amir_tours", $data, [ 'id' => $db_id ] );
         } else {
-            $wpdb->insert( "{$wpdb->prefix}amir_tours", $data );
-            $db_id = $wpdb->insert_id;
+            $result = $wpdb->insert( "{$wpdb->prefix}amir_tours", $data );
+            $db_id  = $wpdb->insert_id;
             update_post_meta( $post_id, '_amir_tour_db_id', $db_id );
+        }
+
+        // $wpdb->update()/insert() devuelven false solo si MySQL rechazó la
+        // query (no si "no había nada que cambiar") — antes esto se perdía
+        // en silencio: el post quedaba "guardado" para WordPress mientras
+        // amir_tours se desincronizaba sin que nadie se enterara. Ahora
+        // queda un aviso visible en el propio editor del tour.
+        if ( $result === false && $wpdb->last_error ) {
+            set_transient( "amir_sync_error_{$post_id}", $wpdb->last_error, 5 * MINUTE_IN_SECONDS );
+            error_log( sprintf(
+                'Amir Booking: fallo al sincronizar el tour (post %d, amir_tours.id %d): %s',
+                $post_id, $db_id, $wpdb->last_error
+            ) );
+        } else {
+            delete_transient( "amir_sync_error_{$post_id}" );
         }
 
         // Sincronizar horarios y precios desde los meta boxes
         $this->sync_schedules_prices( $post_id, $db_id );
+
+        // Sincronizar servicios extra (add-ons)
+        $this->sync_addons( $post_id, $db_id );
 
         // Sincronizar regla base de disponibilidad (días activos)
         $this->sync_base_availability_rule( $post_id, $db_id );
@@ -688,6 +915,72 @@ class TourPostType {
         delete_transient( "amir_tour_{$db_id}_en" );
         delete_transient( 'amir_tours_list_es' );
         delete_transient( 'amir_tours_list_en' );
+    }
+
+    /**
+     * A diferencia de sync_schedules_prices() (que lee $_POST sin chequear
+     * nonce, comportamiento preexistente que no se toca acá), este método sí
+     * exige el nonce del editor del tour. Es necesario porque sync_to_db()
+     * también se dispara con un wp_update_post() "a pelo" desde otros lugares
+     * del plugin (ej. "Publicar y notificar" de la lista de interés,
+     * class-wishlist-page.php) que NO mandan los campos de este meta box —
+     * sin este guard, esas llamadas borrarían todos los add-ons del tour.
+     */
+    private function sync_addons( int $post_id, int $tour_db_id ): void {
+        if (
+            ! isset( $_POST['amir_tour_nonce'] ) ||
+            ! wp_verify_nonce( $_POST['amir_tour_nonce'], 'amir_tour_meta' )
+        ) {
+            return;
+        }
+
+        global $wpdb;
+
+        $types    = $_POST['amir_addon_pricing_type'] ?? [];
+        $names_es = $_POST['amir_addon_name_es']       ?? [];
+        $names_en = $_POST['amir_addon_name_en']       ?? [];
+        $prices   = $_POST['amir_addon_price']         ?? [];
+        $db_ids   = $_POST['amir_addon_db_id']         ?? [];
+
+        $processed_ids = [];
+
+        foreach ( $names_es as $i => $name_es ) {
+            $name_en = sanitize_text_field( $names_en[ $i ] ?? '' );
+            $name_es = sanitize_text_field( $name_es );
+            if ( $name_es === '' && $name_en === '' ) {
+                continue; // fila vacía, se ignora
+            }
+
+            $addon_data = [
+                'tour_id'      => $tour_db_id,
+                'pricing_type' => in_array( $types[ $i ] ?? '', [ 'per_unit', 'flat' ], true ) ? $types[ $i ] : 'per_unit',
+                'name_es'      => $name_es,
+                'name_en'      => $name_en,
+                'price_mxn'    => max( 0, (float) ( $prices[ $i ] ?? 0 ) ),
+                'active'       => 1,
+                'sort_order'   => $i,
+            ];
+
+            $existing_id = isset( $db_ids[ $i ] ) ? (int) $db_ids[ $i ] : 0;
+            if ( $existing_id ) {
+                $wpdb->update( "{$wpdb->prefix}amir_addons", $addon_data, [ 'id' => $existing_id ] );
+                $processed_ids[] = $existing_id;
+            } else {
+                $wpdb->insert( "{$wpdb->prefix}amir_addons", $addon_data );
+                $processed_ids[] = $wpdb->insert_id;
+            }
+        }
+
+        // Borrar los que ya no están en el form (se sacaron con el botón ✕)
+        if ( ! empty( $processed_ids ) ) {
+            $placeholders = implode( ',', array_fill( 0, count( $processed_ids ), '%d' ) );
+            $wpdb->query( $wpdb->prepare(
+                "DELETE FROM {$wpdb->prefix}amir_addons WHERE tour_id=%d AND id NOT IN ($placeholders)",
+                array_merge( [ $tour_db_id ], $processed_ids )
+            ) );
+        } else {
+            $wpdb->delete( "{$wpdb->prefix}amir_addons", [ 'tour_id' => $tour_db_id ] );
+        }
     }
 
     private function sync_schedules_prices( int $post_id, int $tour_db_id ): void {
@@ -896,6 +1189,7 @@ class TourPostType {
             'wishlist_enabled'   => $get('wishlist_enabled') ?: '0',
             'wishlist_threshold' => $get('wishlist_threshold') ?: '0',
             'wishlist_date'      => $get('wishlist_date'),
+            'content_i18n'       => json_decode( $get('content_i18n') ?: '{}', true ) ?: [],
         ];
     }
 }

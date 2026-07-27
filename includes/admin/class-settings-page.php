@@ -41,6 +41,48 @@ class SettingsPage {
         <form method="post">
           <?php wp_nonce_field('amir_settings','amir_settings_nonce'); ?>
 
+          <!-- Pasarela de pago activa -->
+          <?php
+          $stripe_mode      = get_option( 'amir_stripe_mode', 'test' );
+          $stripe_key       = get_option( "amir_stripe_sk_{$stripe_mode}", '' );
+          $stripe_configured = $stripe_key !== '';
+
+          $mp_mode      = get_option( 'amir_mp_mode', 'test' );
+          $mp_token     = get_option( "amir_mp_access_token_{$mp_mode}", '' );
+          $mp_configured = $mp_token !== '';
+
+          $default_gateway = get_option( 'amir_default_gateway', 'stripe' );
+          $status_pill = fn( bool $ok ) => $ok
+              ? '<span style="color:#1D9E75;font-weight:700;">✓ Configurado</span>'
+              : '<span style="color:#BA7517;font-weight:700;">⚠ Sin credenciales cargadas</span>';
+          ?>
+          <div class="ab-settings-section">
+            <h3>🔀 Pasarela de pago</h3>
+            <div class="ab-field">
+              <label>Pasarela activa</label>
+              <select name="amir_default_gateway">
+                <option value="stripe"      <?php selected( $default_gateway, 'stripe' ); ?>>Stripe</option>
+                <option value="mercadopago" <?php selected( $default_gateway, 'mercadopago' ); ?>>Mercado Pago</option>
+              </select>
+              <p class="ab-hint">Con qué pasarela se cobran las reservas nuevas. La moneda configurada más abajo (sección Moneda) determina cuál conviene: ⚠️ para Argentina (ARS) usar Mercado Pago — Stripe no liquida bien en pesos argentinos.</p>
+            </div>
+            <div class="ab-field-row" style="margin-top:10px;">
+              <div class="ab-field" style="margin-bottom:0;">
+                <label style="text-transform:none;font-weight:400;color:#5a7068;">💳 Stripe (modo <?php echo esc_html( $stripe_mode ); ?>)</label>
+                <div style="font-size:13px;"><?php echo $status_pill( $stripe_configured ); ?></div>
+              </div>
+              <div class="ab-field" style="margin-bottom:0;">
+                <label style="text-transform:none;font-weight:400;color:#5a7068;">💙 Mercado Pago (modo <?php echo esc_html( $mp_mode ); ?>)</label>
+                <div style="font-size:13px;"><?php echo $status_pill( $mp_configured ); ?></div>
+              </div>
+            </div>
+            <?php if ( $default_gateway === 'stripe' && ! $stripe_configured ) : ?>
+              <p class="ab-hint" style="color:#BA7517;margin-top:10px;">⚠ La pasarela activa es Stripe pero no tiene credenciales cargadas para el modo <?php echo esc_html( $stripe_mode ); ?> — las reservas nuevas van a fallar al cobrar.</p>
+            <?php elseif ( $default_gateway === 'mercadopago' && ! $mp_configured ) : ?>
+              <p class="ab-hint" style="color:#BA7517;margin-top:10px;">⚠ La pasarela activa es Mercado Pago pero no tiene credenciales cargadas para el modo <?php echo esc_html( $mp_mode ); ?> — las reservas nuevas van a fallar al cobrar.</p>
+            <?php endif; ?>
+          </div>
+
           <!-- Stripe -->
           <div class="ab-settings-section">
             <h3>💳 Stripe</h3>
@@ -81,14 +123,6 @@ class SettingsPage {
           <!-- Mercado Pago -->
           <div class="ab-settings-section">
             <h3>💙 Mercado Pago</h3>
-            <div class="ab-field">
-              <label>Pasarela de pago activa</label>
-              <select name="amir_default_gateway">
-                <option value="stripe"      <?php selected(get_option('amir_default_gateway','stripe'),'stripe'); ?>>Stripe</option>
-                <option value="mercadopago" <?php selected(get_option('amir_default_gateway','stripe'),'mercadopago'); ?>>Mercado Pago</option>
-              </select>
-              <p class="ab-hint">Con qué pasarela se cobran las reservas nuevas por defecto. ⚠️ Argentina: usar Mercado Pago — Stripe no liquida bien en pesos argentinos.</p>
-            </div>
             <div class="ab-field">
               <label>Modo</label>
               <select name="amir_mp_mode">
@@ -167,6 +201,80 @@ class SettingsPage {
                        maxlength="3" placeholder="Ej: COP, CLP, GBP…"
                        style="text-transform:uppercase;max-width:120px;" />
                 <p class="ab-hint">Cualquier código de 3 letras es válido — solo Stripe determina si realmente puede cobrar en esa moneda.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Idiomas -->
+          <div class="ab-settings-section">
+            <h3>🌐 Idiomas</h3>
+            <p style="font-size:12px;color:#5a7068;margin:0 0 14px;">
+              Idiomas activos para el contenido de los tours y los textos del sitio (emails, voucher, widget de reserva). "Español" es el idioma base y no se puede quitar. Para agregar uno nuevo, escribí su código de 2 letras (ISO 639-1) — aparece como pestaña nueva en el editor de cada tour. Si existe traducción (<code>.po</code>/<code>.mo</code>) para ese código en <code>/languages</code>, los textos fijos también salen traducidos; si no, se muestran en español como respaldo.
+            </p>
+            <div class="ab-field">
+              <label>Códigos activos (separados por coma)</label>
+              <input type="text" name="amir_active_languages_csv"
+                     value="<?php echo esc_attr( implode( ', ', array_map('strtoupper', \AmirBooking\Core\Languages::active()) ) ); ?>"
+                     placeholder="ES, EN, IT, FR" style="max-width:320px;" />
+              <p class="ab-hint">Ejemplos ya traducidos por el plugin: EN (inglés), IT (italiano), FR (francés), PT (portugués). Cualquier otro código de 2 letras queda activo y disponible en el editor, aunque sin traducción de los textos fijos hasta que se agregue el <code>.po</code>/<code>.mo</code> correspondiente.</p>
+            </div>
+          </div>
+
+          <!-- Widget de reserva -->
+          <div class="ab-settings-section">
+            <h3>🎨 Widget de reserva</h3>
+            <p style="font-size:12px;color:#5a7068;margin:0 0 14px;">
+              Personalización visual de <code>[amir_booking]</code> — se aplica al instante, sin recompilar nada.
+            </p>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Color principal</label>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <input type="color" name="amir_widget_color" id="amir-widget-color"
+                         value="<?php echo esc_attr( get_option( 'amir_widget_color', '#1D9E75' ) ); ?>"
+                         style="width:48px;height:36px;border:1px solid #c3d9d0;border-radius:6px;padding:2px;cursor:pointer;" />
+                  <input type="text" name="amir_widget_color_hex" id="amir-widget-color-hex"
+                         value="<?php echo esc_attr( get_option( 'amir_widget_color', '#1D9E75' ) ); ?>"
+                         style="width:90px;font-family:monospace;" placeholder="#1D9E75" />
+                </div>
+                <p class="ab-hint">Los tonos oscuro/claro/medio (botones, fondos, acentos) se calculan automáticamente a partir de este color.</p>
+              </div>
+              <div class="ab-field">
+                <label>Tipografía</label>
+                <select name="amir_widget_font">
+                  <?php foreach ( \AmirBooking\Core\WidgetTheme::fonts() as $key => $f ) : ?>
+                    <option value="<?php echo esc_attr( $key ); ?>" <?php selected( \AmirBooking\Core\WidgetTheme::font_key(), $key ); ?>><?php echo esc_html( $f['label'] ); ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+            </div>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Tamaño de texto</label>
+                <select name="amir_widget_font_scale">
+                  <?php foreach ( \AmirBooking\Core\WidgetTheme::scales() as $key => $s ) : ?>
+                    <option value="<?php echo esc_attr( $key ); ?>" <?php selected( \AmirBooking\Core\WidgetTheme::scale_key(), $key ); ?>><?php echo esc_html( $s['label'] ); ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <p class="ab-hint">Los campos de formulario y los botones nunca bajan de su tamaño mínimo táctil/legible, aunque elijas "Compacto".</p>
+              </div>
+              <div class="ab-field">
+                <label>Radio de esquinas</label>
+                <select name="amir_widget_radius">
+                  <?php foreach ( \AmirBooking\Core\WidgetTheme::radii() as $key => $r ) : ?>
+                    <option value="<?php echo esc_attr( $key ); ?>" <?php selected( \AmirBooking\Core\WidgetTheme::radius_key(), $key ); ?>><?php echo esc_html( $r['label'] ); ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+            </div>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Texto de los pasos</label>
+                <select name="amir_widget_progress_labels">
+                  <option value="1" <?php selected( \AmirBooking\Core\WidgetTheme::progress_labels(), true ); ?>>Mostrar (ícono + nombre del paso)</option>
+                  <option value="0" <?php selected( \AmirBooking\Core\WidgetTheme::progress_labels(), false ); ?>>Ocultar (solo íconos)</option>
+                </select>
+                <p class="ab-hint">La barra de progreso siempre muestra un ícono por paso — esto solo agrega o quita el nombre debajo.</p>
               </div>
             </div>
           </div>
@@ -281,6 +389,17 @@ class SettingsPage {
                        placeholder="Experiences in Bacalar…" />
               </div>
             </div>
+
+            <!-- Prefijo de reserva -->
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Prefijo de número de reserva</label>
+                <input type="text" name="amir_booking_ref_prefix" maxlength="10"
+                       value="<?php echo esc_attr(get_option('amir_booking_ref_prefix','BK')); ?>"
+                       placeholder="BK" style="width:120px;text-transform:uppercase;" />
+                <p class="ab-hint">Ejemplo: <strong>BK-<?php echo date('Y'); ?>-00001</strong>. Solo letras y números, sin espacios. Las reservas ya creadas conservan su número actual — esto solo aplica a las nuevas.</p>
+              </div>
+            </div>
           </div>
 
           <!-- ── Contenido del email ── -->
@@ -328,6 +447,34 @@ class SettingsPage {
                     "Comfortable clothes and swimsuit\nBiodegradable sunscreen (required)\nWater and light snacks\nPhoto ID\nCamera in waterproof bag\nArrive 10 min before departure"));
                 ?></textarea>
               </div>
+            </div>
+          </div>
+
+          <!-- Marketing: píxeles -->
+          <div class="ab-settings-section">
+            <h3>📣 Marketing (píxeles)</h3>
+            <p class="ab-hint" style="margin:0 0 14px;">
+              Se cargan solo si completás al menos un ID acá abajo — sin nada configurado, no se agrega ningún script de terceros al sitio.
+              Eventos que dispara el widget de reserva: <strong>ver tour</strong> (ViewContent/view_item), <strong>iniciar reserva</strong> (InitiateCheckout/begin_checkout) y <strong>reserva confirmada</strong> (Purchase/purchase, con el monto real cobrado).
+            </p>
+            <div class="ab-field">
+              <label>Meta Pixel ID</label>
+              <input type="text" name="amir_meta_pixel_id" value="<?php echo esc_attr( get_option( 'amir_meta_pixel_id', '' ) ); ?>" placeholder="123456789012345" />
+            </div>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Google Ads — Conversion ID</label>
+                <input type="text" name="amir_gads_conversion_id" value="<?php echo esc_attr( get_option( 'amir_gads_conversion_id', '' ) ); ?>" placeholder="AW-123456789" />
+              </div>
+              <div class="ab-field">
+                <label>Google Ads — Conversion Label</label>
+                <input type="text" name="amir_gads_conversion_label" value="<?php echo esc_attr( get_option( 'amir_gads_conversion_label', '' ) ); ?>" placeholder="AbCdEfGhIjKlMnOp" />
+              </div>
+            </div>
+            <div class="ab-field">
+              <label>GA4 — Measurement ID</label>
+              <input type="text" name="amir_ga4_id" value="<?php echo esc_attr( get_option( 'amir_ga4_id', '' ) ); ?>" placeholder="G-XXXXXXXXXX" />
+              <p class="ab-hint">Opcional, aparte de Google Ads — si solo querés medir conversión de campañas, alcanza con el Conversion ID/Label de arriba.</p>
             </div>
           </div>
 
@@ -389,6 +536,16 @@ class SettingsPage {
                 hexInput.addEventListener('input', function(){
                     var v = this.value.trim();
                     if ( /^#[0-9A-Fa-f]{6}$/.test(v) ) { colorInput.value = v; }
+                });
+            }
+
+            var widgetColorInput = document.getElementById('amir-widget-color');
+            var widgetHexInput   = document.getElementById('amir-widget-color-hex');
+            if ( widgetColorInput && widgetHexInput ) {
+                widgetColorInput.addEventListener('input', function(){ widgetHexInput.value = this.value; });
+                widgetHexInput.addEventListener('input', function(){
+                    var v = this.value.trim();
+                    if ( /^#[0-9A-Fa-f]{6}$/.test(v) ) { widgetColorInput.value = v; }
                 });
             }
 
@@ -540,6 +697,11 @@ class SettingsPage {
             'amir_email_recs_en'           => 'sanitize_textarea_field',
             'amir_voucher_recs_es'         => 'sanitize_textarea_field',
             'amir_voucher_recs_en'         => 'sanitize_textarea_field',
+            // Marketing (píxeles)
+            'amir_meta_pixel_id'           => 'sanitize_text_field',
+            'amir_gads_conversion_id'      => 'sanitize_text_field',
+            'amir_gads_conversion_label'   => 'sanitize_text_field',
+            'amir_ga4_id'                  => 'sanitize_text_field',
         ];
 
         foreach ($options as $key => $sanitizer) {
@@ -558,6 +720,44 @@ class SettingsPage {
 
         $delete = isset($_POST['amir_delete_data_on_uninstall']) ? '1' : '0';
         update_option('amir_delete_data_on_uninstall', $delete);
+
+        // Widget de reserva: color validado como hex, el resto son selects
+        // con valores fijos conocidos (WidgetTheme::*_key() ya valida contra
+        // la lista curada y cae al default si viene algo raro).
+        if ( isset( $_POST['amir_widget_color_hex'] ) ) {
+            $widget_color = sanitize_text_field( $_POST['amir_widget_color_hex'] );
+            if ( preg_match( '/^#[0-9A-Fa-f]{6}$/', $widget_color ) ) {
+                update_option( 'amir_widget_color', $widget_color );
+            }
+        }
+        if ( isset( $_POST['amir_widget_font'] ) ) {
+            update_option( 'amir_widget_font', sanitize_key( $_POST['amir_widget_font'] ) );
+        }
+        if ( isset( $_POST['amir_widget_font_scale'] ) ) {
+            update_option( 'amir_widget_font_scale', sanitize_key( $_POST['amir_widget_font_scale'] ) );
+        }
+        if ( isset( $_POST['amir_widget_radius'] ) ) {
+            update_option( 'amir_widget_radius', sanitize_key( $_POST['amir_widget_radius'] ) );
+        }
+        if ( isset( $_POST['amir_widget_progress_labels'] ) ) {
+            update_option( 'amir_widget_progress_labels', $_POST['amir_widget_progress_labels'] === '0' ? '0' : '1' );
+        }
+
+        // Prefijo de reserva: solo letras/números en mayúscula, sin espacios.
+        if ( isset( $_POST['amir_booking_ref_prefix'] ) ) {
+            $prefix = strtoupper( preg_replace( '/[^A-Za-z0-9]/', '', $_POST['amir_booking_ref_prefix'] ) );
+            update_option( 'amir_booking_ref_prefix', $prefix !== '' ? substr( $prefix, 0, 10 ) : 'BK' );
+        }
+
+        // Idiomas activos: códigos de 2 letras separados por coma, 'es' siempre presente.
+        if ( isset( $_POST['amir_active_languages_csv'] ) ) {
+            $codes = array_map( 'trim', explode( ',', strtolower( $_POST['amir_active_languages_csv'] ) ) );
+            $codes = array_values( array_unique( array_filter( $codes, fn( $c ) => (bool) preg_match( '/^[a-z]{2}$/', $c ) ) ) );
+            if ( ! in_array( 'es', $codes, true ) ) {
+                array_unshift( $codes, 'es' );
+            }
+            update_option( 'amir_active_languages', wp_json_encode( $codes ) );
+        }
 
         // Moneda: si eligió "Otra", usar el código ISO libre; si no, la opción estándar.
         $selected = sanitize_text_field( $_POST['amir_currency'] ?? '' );

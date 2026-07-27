@@ -56,7 +56,7 @@ class WishlistPage {
         <h1>📋 Lista de interés</h1>
         <p style="color:#5a7068;font-size:13px;margin-top:-4px;">
           Tours en borrador con fecha ya definida donde la gente se anota — con horario, personas y datos, como una
-          reserva real, pero sin pagar. Se activa por tour desde <strong>Amir Booking → Tours → editar tour →
+          reserva real, pero sin pagar. Se activa por tour desde <strong>TourFlow → Tours → editar tour →
           "Lista de interés"</strong>.
         </p>
 
@@ -253,7 +253,16 @@ class WishlistPage {
                 [ '%s' ], [ '%d' ]
             );
             $booking->status = 'awaiting_payment';
-            $dispatcher->send_tour_opened_notice( $booking );
+
+            $result = $dispatcher->send_tour_opened_notice( $booking );
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings",
+                $result['success']
+                    ? [ 'wishlist_notice_sent_at' => current_time( 'mysql' ), 'wishlist_notice_error' => '' ]
+                    : [ 'wishlist_notice_error' => substr( $result['error'] ?: 'Error desconocido', 0, 255 ) ],
+                [ 'id' => $booking->id ],
+                null, [ '%d' ]
+            );
             $notified++;
         }
 

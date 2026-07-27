@@ -79,11 +79,69 @@ class DashboardPage {
         .ab-wa-btn { display:inline-flex; align-items:center; gap:5px; background:#25D366; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; }
 
         .ab-section-title { font-size:16px; font-weight:700; color:#1D9E75; margin:24px 0 12px; border-bottom:2px solid #e1f5ee; padding-bottom:8px; }
+
+        .ab-shortcodes { background:#fff; border:1px solid #e1f5ee; border-radius:10px; margin-bottom:24px; }
+        .ab-shortcodes summary { cursor:pointer; padding:14px 18px; font-size:14px; font-weight:700; color:#1a2e24; list-style:none; display:flex; align-items:center; gap:8px; }
+        .ab-shortcodes summary::-webkit-details-marker { display:none; }
+        .ab-shortcodes summary::before { content:'▸'; color:#1D9E75; transition:transform .15s; }
+        .ab-shortcodes[open] summary::before { transform:rotate(90deg); }
+        .ab-shortcodes-body { padding:0 18px 18px; }
+        .ab-sc-item { border-top:1px solid #f0f5f2; padding:14px 0; }
+        .ab-sc-item:first-child { border-top:none; padding-top:4px; }
+        .ab-sc-code { display:inline-block; background:#f0faf6; color:#0F6E56; font-family:Consolas,Monaco,monospace; font-size:13px; padding:3px 8px; border-radius:5px; }
+        .ab-sc-desc { font-size:13px; color:#5a7068; margin:6px 0 8px; }
+        .ab-sc-atts { width:100%; border-collapse:collapse; font-size:12.5px; }
+        .ab-sc-atts th { text-align:left; color:#5a7068; font-weight:600; padding:4px 10px 4px 0; }
+        .ab-sc-atts td { padding:4px 10px 4px 0; color:#1a2e24; }
+        .ab-sc-atts code { background:#f8fdfb; padding:1px 5px; border-radius:4px; color:#0F6E56; }
         </style>
 
         <h1>📅 <?php _e('Dashboard operativo', 'amir-booking'); ?>
           <span style="font-size:14px;font-weight:400;color:#5a7068;"><?php echo date_i18n( 'l j \d\e F Y', strtotime($today) ); ?></span>
+          <span style="margin-left:auto;font-size:11px;font-weight:600;color:#5a7068;background:#f0faf6;border:1px solid #e1f5ee;border-radius:20px;padding:4px 12px;" title="Versión del plugin instalada en este sitio">TourFlow v<?php echo esc_html( AMIR_VERSION ); ?></span>
         </h1>
+
+        <details class="ab-shortcodes">
+          <summary>🧩 Shortcodes disponibles — cómo usar el plugin en una página</summary>
+          <div class="ab-shortcodes-body">
+            <p class="ab-sc-desc" style="margin-top:0;">Pegá cualquiera de estos en el contenido de una página o entrada de WordPress (editor de bloques, Elementor "Shortcode", etc.) para mostrar la parte correspondiente del plugin.</p>
+
+            <div class="ab-sc-item">
+              <span class="ab-sc-code">[amir_booking tour_id="3"]</span>
+              <p class="ab-sc-desc">Widget de reserva completo (calendario, personas, datos, pago) para un tour puntual. Usalo en la página de detalle de ese tour.</p>
+              <table class="ab-sc-atts">
+                <tr><th>tour_id</th><td>Obligatorio. El ID numérico del tour (columna "ID" en TourFlow → Tours).</td></tr>
+                <tr><th>lang</th><td>Opcional. Código de idioma (<code>es</code>, <code>en</code>, o cualquiera activado en Configuración → Idiomas). Por defecto detecta el idioma del sitio (Polylang/WPML) o español.</td></tr>
+              </table>
+            </div>
+
+            <div class="ab-sc-item">
+              <span class="ab-sc-code">[amir_tour_list]</span>
+              <p class="ab-sc-desc">Grilla o lista con todos los tours publicados (<code>status = activo</code>). Pensado para una página tipo "Nuestros tours".</p>
+              <table class="ab-sc-atts">
+                <tr><th>columns</th><td>Opcional. Columnas de la grilla, 1 a 3. Por defecto <code>3</code>.</td></tr>
+                <tr><th>layout</th><td>Opcional. <code>grid</code> o <code>list</code>. Por defecto <code>grid</code>.</td></tr>
+                <tr><th>limit</th><td>Opcional. Cantidad máxima de tours a mostrar. <code>0</code> = todos. Por defecto <code>0</code>.</td></tr>
+                <tr><th>lang</th><td>Opcional, igual que en <code>[amir_booking]</code>.</td></tr>
+              </table>
+            </div>
+
+            <div class="ab-sc-item">
+              <span class="ab-sc-code">[amir_wishlist]</span>
+              <p class="ab-sc-desc">Grilla "Próximamente" con los tours en borrador que tienen la lista de interés activada (ver TourFlow → Lista de interés). Deja anotarse sin cobrar todavía.</p>
+              <table class="ab-sc-atts">
+                <tr><th>columns</th><td>Opcional. Igual que en <code>[amir_tour_list]</code>.</td></tr>
+                <tr><th>accent</th><td>Opcional. Color de acento en hex (ej. <code>#1D9E75</code>). Por defecto el verde de la marca.</td></tr>
+                <tr><th>lang</th><td>Opcional, igual que en <code>[amir_booking]</code>.</td></tr>
+              </table>
+            </div>
+
+            <div class="ab-sc-item">
+              <span class="ab-sc-code">[amir_verify_booking]</span>
+              <p class="ab-sc-desc">Página de verificación/pago de una reserva puntual — a la que llegan los links de los emails (<code>?ref=...&amp;token=...</code>). No lleva atributos. El plugin ya crea y configura esta página automáticamente al instalarse; normalmente no hace falta agregarla a mano.</p>
+            </div>
+          </div>
+        </details>
 
         <?php if ( ! empty($notifications) ) : ?>
         <div class="ab-notif-bar">
@@ -167,7 +225,7 @@ class DashboardPage {
                     <br><a class="ab-wa-btn" href="https://wa.me/<?php echo esc_attr(preg_replace('/[^0-9]/','',$b->customer_phone)); ?>">WhatsApp</a>
                   <?php endif; ?>
                 </td>
-                <td>$<?php echo number_format($b->total_mxn,0,'.',','); ?> MXN</td>
+                <td><?php echo \AmirBooking\Core\Currency::format((float)$b->total_mxn, 0); ?></td>
                 <td>
                   <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=view&id='.$b->id); ?>"
                      style="color:#1D9E75;font-size:12px;font-weight:600;">Ver detalle →</a>
@@ -192,7 +250,7 @@ class DashboardPage {
 
     // ── Render bloque de tours de un día ──────────────────────────────────
 
-    private function render_day_tours( array $tours ): void {
+    public function render_day_tours( array $tours ): void {
         if ( empty($tours) ) {
             echo '<div class="ab-day-empty">Sin tours programados para este día.</div>';
             return;
@@ -291,7 +349,7 @@ class DashboardPage {
 
     // ── Queries ───────────────────────────────────────────────────────────
 
-    private function get_day_summary( string $date ): array {
+    public function get_day_summary( string $date ): array {
         global $wpdb;
 
         $bookings = $wpdb->get_results( $wpdb->prepare(

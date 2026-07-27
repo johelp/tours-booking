@@ -46,23 +46,40 @@ while ( have_posts() ) :
         }
     }
     $lang       = function_exists('pll_current_language') ? pll_current_language('slug') : 'es';
+    $lang       = \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
     $is_en      = $lang === 'en';
 
-    // Campos del tour
-    $name_en        = get_post_meta( $post_id, '_amir_name_en',          true );
+    // Campos del tour — contenido multi-idioma vía Languages::tour_field():
+    // es/en siguen leyendo el post meta de siempre, cualquier idioma 3+
+    // (agregado por el operador en Configuración → Idiomas) lee del JSON
+    // _amir_content_i18n guardado por el editor del CPT.
+    $tour_i18n_obj = (object) [
+        'name_es'            => get_the_title( $post_id ),
+        'name_en'            => get_post_meta( $post_id, '_amir_name_en', true ),
+        'meeting_point_es'   => get_post_meta( $post_id, '_amir_meeting_point_es', true ),
+        'meeting_point_en'   => get_post_meta( $post_id, '_amir_meeting_point_en', true ),
+        'what_to_expect_es'  => get_post_meta( $post_id, '_amir_what_to_expect_es', true ),
+        'what_to_expect_en'  => get_post_meta( $post_id, '_amir_what_to_expect_en', true ),
+        'includes_es'        => get_post_meta( $post_id, '_amir_includes_es', true ) ?: '[]',
+        'includes_en'        => get_post_meta( $post_id, '_amir_includes_en', true ) ?: '[]',
+        'excludes_es'        => get_post_meta( $post_id, '_amir_excludes_es', true ) ?: '[]',
+        'excludes_en'        => get_post_meta( $post_id, '_amir_excludes_en', true ) ?: '[]',
+        'content_i18n'       => get_post_meta( $post_id, '_amir_content_i18n', true ) ?: '{}',
+    ];
+    $name_en        = $tour_i18n_obj->name_en;
     $duration       = (int) get_post_meta( $post_id, '_amir_duration_minutes', true );
     $min_age        = (int) get_post_meta( $post_id, '_amir_min_age',    true );
     $max_capacity   = (int) get_post_meta( $post_id, '_amir_max_capacity', true );
     $languages_str  = get_post_meta( $post_id, '_amir_languages',        true );
     $languages      = json_decode( $languages_str ?: '[]', true );
-    $meeting_es     = get_post_meta( $post_id, '_amir_meeting_point_es', true );
-    $meeting_en     = get_post_meta( $post_id, '_amir_meeting_point_en', true );
-    $meeting        = $is_en ? ($meeting_en ?: $meeting_es) : $meeting_es;
+    $meeting        = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'meeting_point', $lang );
     $lat            = get_post_meta( $post_id, '_amir_meeting_lat',      true );
     $lng            = get_post_meta( $post_id, '_amir_meeting_lng',      true );
-    $what_to_expect = get_post_meta( $post_id, $is_en ? '_amir_what_to_expect_en' : '_amir_what_to_expect_es', true );
-    $includes       = json_decode( get_post_meta( $post_id, $is_en ? '_amir_includes_en' : '_amir_includes_es', true ) ?: '[]', true );
-    $excludes       = json_decode( get_post_meta( $post_id, $is_en ? '_amir_excludes_en' : '_amir_excludes_es', true ) ?: '[]', true );
+    $what_to_expect = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'what_to_expect', $lang );
+    $includes_raw   = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'includes', $lang );
+    $excludes_raw   = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'excludes', $lang );
+    $includes       = is_array( $includes_raw ) ? $includes_raw : ( json_decode( $includes_raw ?: '[]', true ) ?: [] );
+    $excludes       = is_array( $excludes_raw ) ? $excludes_raw : ( json_decode( $excludes_raw ?: '[]', true ) ?: [] );
     $gallery_ids    = json_decode( get_post_meta( $post_id, '_amir_gallery_ids', true ) ?: '[]', true );
     $price_model    = get_post_meta( $post_id, '_amir_price_model',      true );
 
@@ -75,7 +92,7 @@ while ( have_posts() ) :
         ) );
     }
 
-    $title        = $is_en ? ($name_en ?: get_the_title()) : get_the_title();
+    $title        = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'name', $lang ) ?: get_the_title();
     $description  = get_the_content();
     $cover        = get_the_post_thumbnail_url( $post_id, 'full' );
     $duration_fmt = $duration >= 60
@@ -83,25 +100,65 @@ while ( have_posts() ) :
         : $duration . ($is_en?' min':' min');
 ?>
 
-<!-- Schema.org TouristAttraction -->
+<!-- Schema.org TouristTrip — datos ricos para rich results de Google y para
+     motores de búsqueda con IA (ChatGPT, Perplexity, Google AI Overview),
+     armados con los mismos datos estructurados que ya tiene el tour
+     (precio, duración, imágenes, ubicación) — ver Core\StructuredData. -->
 <script type="application/ld+json">
-<?php echo json_encode([
-    '@context'    => 'https://schema.org',
-    '@type'       => 'TouristAttraction',
-    'name'        => $title,
-    'description' => wp_strip_all_tags($description),
-    'url'         => get_permalink(),
-    'image'       => $cover,
-    'touristType' => 'Adventure',
-    'geo'         => $lat ? ['@type'=>'GeoCoordinates','latitude'=>$lat,'longitude'=>$lng] : null,
-    'offers'      => $price_from > 0 ? [
-        '@type'         => 'Offer',
-        'price'         => $price_from,
-        'priceCurrency' => \AmirBooking\Core\Currency::code(),
-        'availability'  => 'https://schema.org/InStock',
-    ] : null,
-], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT); ?>
+<?php
+$gallery_urls = array_values( array_filter( array_map(
+    fn( $img_id ) => wp_get_attachment_image_url( $img_id, 'large' ),
+    $gallery_ids
+) ) );
+if ( $cover ) {
+    array_unshift( $gallery_urls, $cover );
+}
+
+echo json_encode( \AmirBooking\Core\StructuredData::tour_schema( [
+    'name'             => $title,
+    'description'      => wp_strip_all_tags( $description ),
+    'url'              => get_permalink(),
+    'images'           => $gallery_urls,
+    'duration_minutes' => $duration,
+    'min_age'          => $min_age,
+    'languages'        => $languages,
+    'lat'              => $lat,
+    'lng'              => $lng,
+    'meeting_point'    => $meeting,
+    'price_from'       => $price_from,
+    'currency'         => \AmirBooking\Core\Currency::code(),
+    'provider_name'    => get_bloginfo( 'name' ),
+    'provider_url'     => home_url( '/' ),
+] ), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT );
+?>
 </script>
+
+<?php
+// ViewContent/view_item — solo si hay algún píxel configurado (los scripts
+// base de fbq/gtag ya se imprimieron en wp_head vía Core\Marketing). El
+// resto del embudo (InitiateCheckout, Purchase) lo dispara el widget de
+// React — ver react-src/src/marketing.js.
+$has_pixels = get_option( 'amir_meta_pixel_id' ) || get_option( 'amir_gads_conversion_id' ) || get_option( 'amir_ga4_id' );
+if ( $has_pixels && $db_id ) :
+    $view_event_data = [
+        'id'       => $db_id,
+        'name'     => $title,
+        'price'    => $price_from,
+        'currency' => \AmirBooking\Core\Currency::code(),
+    ];
+?>
+<script>
+(function(){
+  var t = <?php echo wp_json_encode( $view_event_data, JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
+  if (window.fbq) {
+    fbq('track', 'ViewContent', { content_ids: [String(t.id)], content_type: 'product', value: t.price, currency: t.currency });
+  }
+  if (window.gtag) {
+    gtag('event', 'view_item', { currency: t.currency, value: t.price, items: [{ item_id: String(t.id), item_name: t.name, price: t.price }] });
+  }
+})();
+</script>
+<?php endif; ?>
 
 <div class="amir-single-tour">
 

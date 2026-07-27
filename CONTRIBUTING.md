@@ -63,6 +63,7 @@ Trabajo ya en curso, en este orden:
 | 11 | Mejoras mobile (touch targets, font-size inputs) | ✅ Hecho, portado a `react-src/` |
 | 12 | Multi-idioma más allá de ES/EN | ⏳ Pendiente — requiere refactor real: hoy varios archivos PHP (emails, voucher, verificación) y el JS asumen literalmente 2 idiomas con `idioma==='en'?X:Y`, no una iteración sobre N idiomas. Agregar italiano/francés bien hecho es cambiar ese patrón, no solo sumar traducciones |
 | 13 | Dos plantillas de detalle de tour + colores de reserva configurables | ⏳ Pendiente — bajo riesgo: `templates/single-amir_tour.php` es PHP normal (agregar una segunda plantilla + selector en Configuración), y los colores del widget ya son variables CSS (`--ab-teal`, etc.) — se pueden volcar desde una opción de Configuración sin tocar `react-src/` |
+| 15 | Meta Pixel + Google Ads/Analytics + descuento vía URL para partners | ✅ Hecho — ver § 5.3 |
 | 14 | GDPR (mercado europeo) + evaluar Redsys u otra pasarela europea | ⏳ Backlog, sin diseñar todavía |
 
 Para agregar una pasarela nueva: implementar `PaymentGatewayInterface` (en `includes/payments/`), registrarla en `PaymentGatewayFactory::make()`. El controlador (`class-booking-controller.php`) no necesita cambios — ya está escrito contra la interfaz, no contra Stripe directamente.
@@ -93,6 +94,25 @@ Implementa `PaymentGatewayInterface` igual que Stripe — el controlador (`class
 - **Tests**: `tests/unit/MercadoPagoGatewayTest.php` cubre la verificación de firma del webhook (HMAC real, sin red) y el mapeo de estados (`approved`/`rejected`/`pending` → `PaymentEvent`), mockeando `wp_remote_get()` a nivel de namespace para no pegarle a la API real.
 - **No probado en vivo todavía** — hace falta cargar credenciales de test de una cuenta de Mercado Pago real en Configuración para probar el flujo de punta a punta en el sandbox.
 
+### 5.3 Meta Pixel + Google Ads/Analytics + descuento vía URL para partners (Tarea 15)
+
+Pedido del cliente para poder correr campañas medibles (Meta/Google Ads) y links de partner que además den descuento al cliente final, no solo comisión. Implementado en v2.0.1.
+
+**Píxeles (Meta Pixel + Google Ads/GA4)** — `Core\Marketing` (`includes/core/class-marketing.php`).
+- **Configuración → Marketing**: Meta Pixel ID, Google Ads Conversion ID + Conversion Label, GA4 Measurement ID — todos opcionales; sin ningún ID cargado no se imprime ningún script (`Marketing::print_base_scripts()` corta temprano).
+- Scripts base (`fbq`/`gtag`) se inyectan en `wp_head`, sitio entero — igual que cualquier instalación estándar de estos píxeles (remarketing/audiencias necesitan verlos en todas las páginas, no solo en la del tour).
+- Tres eventos del embudo, mapeados al estándar de e-commerce de cada plataforma:
+  1. **Vista de tour** → `ViewContent` (Meta) / `view_item` (GA4) — disparado server-side desde `templates/single-amir_tour.php`, ya tiene `$db_id`/`$title`/`$price_from` a mano, no depende del widget.
+  2. **Widget de reserva montado** → `InitiateCheckout` / `begin_checkout` — `BookingFlow` en `BookingWidget.jsx`, un solo `useEffect` sin deps.
+  3. **Reserva confirmada** → `Purchase` (Meta) / `purchase` (GA4) / evento `conversion` de Google Ads (con `send_to: "{gadsConversionId}/{gadsConversionLabel}"`) — `StepConfirm`, usa `quote.total_mxn` y `Currency::code()` como valor/moneda reales, con un `useRef` para que un re-render no lo dispare dos veces.
+  - Funciones auxiliares en `react-src/src/marketing.js` (`trackInitiateCheckout`, `trackPurchase`, `getCouponFromUrl`) — todas chequean `window.fbq`/`window.gtag` antes de llamar, así que si no hay píxeles configurados no truena nada, simplemente no hacen nada.
+  - Los IDs que el JS necesita (`gadsConversionId`/`gadsConversionLabel`, para el `send_to` de la conversión) viajan en `window.amirBooking.marketing`, agregado al `wp_localize_script` que ya arma `class-shortcodes.php`.
+  - **Pendiente, no cubierto todavía**: `PayBooking.jsx` (pago de una reserva de wishlist/awaiting_payment ya cargada, ver § 5.1) no dispara `Purchase` — no tiene a mano el `tour.id`/monto sin una llamada extra, quedó fuera de alcance de este cierre para no mandar datos de conversión incompletos/incorrectos.
+
+**Descuento vía URL para partners** — no confundir con el sistema de partners que ya existía (`includes/partners/class-partner-tracker.php`): ese `?ref=TOKEN` trackea atribución + **comisión para el partner** (cookie 30 días, `amir_partners.commission_type/value`), eso sigue igual, no se tocó.
+- Lo nuevo es independiente: `?coupon=CODE` en la URL del tour precarga el campo de cupón que **ya existía** en el checkout (`couponCode` en `BookingWidget.jsx`, antes 100% manual) — `getCouponFromUrl()` en `marketing.js` lee el query param al inicializar el estado del formulario. Así "reservá con 10% con este link" queda en un solo clic, sin que el cliente escriba nada.
+- Se descartó a propósito la opción de atar el cupón al partner (`amir_partners.coupon_code`, columna nueva) — no había una decisión tomada sobre si el cliente quiere reportar conversión por partner o solo repartir códigos sueltos, y el camino de `?coupon=` directo no bloquea sumar eso después si hace falta.
+
 ## 6. Convenciones del código
 
 - PHP 8.1 mínimo real (lo exige `endroid/qr-code` como dependencia — no es un capricho).
@@ -106,3 +126,75 @@ Implementa `PaymentGatewayInterface` igual que Stripe — el controlador (`class
 
 - ¿Multisite real para varios operadores (plataforma) o queda como plugin independiente por operador? Se decidió no comprometerse todavía — el `LicenseManager` (stub) ya deja la puerta abierta sin complicar el resto.
 - Un cupón que cubra el 100% del total deja el cobro en $0, y Stripe no puede procesar eso — pendiente decidir si vale la pena un flujo de "reserva gratuita sin pasarela".
+
+## 8. Personalización visual del widget de reserva (Tarea 19)
+
+El widget (`react-src/src/styles/widget.css`) está construido casi enteramente sobre variables CSS — nunca hace falta tocar colores/tamaños a mano en el CSS, se ajustan desde **Configuración → 🎨 Widget de reserva** (`amir_widget_color`, `amir_widget_font`, `amir_widget_font_scale`, `amir_widget_radius`). `includes/core/class-widget-theme.php` (`WidgetTheme`) lee esas opciones y arma el bloque `:root{...}` que `Shortcodes::enqueue_widget_assets()` inyecta vía `wp_add_inline_style()` — el CSS compilado por el build de React (`assets/css/booking-widget.css`) nunca se toca, el override cae en cascada después.
+
+**Variables disponibles** (todas en `:root` de `widget.css`):
+
+| Variable | Qué controla | Origen |
+|---|---|---|
+| `--ab-teal` | Color principal (botones, acentos, selección) | Configuración → color principal |
+| `--ab-teal-dark` / `--ab-teal-light` / `--ab-teal-mid` | Variantes oscuro/claro/medio del color principal | Calculadas automáticamente por `WidgetTheme` (nunca se editan a mano — mismo criterio que `[amir_tour_list]`, para que no se pueda elegir una combinación ilegible) |
+| `--ab-text` / `--ab-muted` / `--ab-border` / `--ab-bg` / `--ab-bg2` | Texto, texto secundario, bordes, fondos | Fijos (no expuestos en Configuración todavía) |
+| `--ab-red` / `--ab-amber` | Estados de error / advertencia | Fijos |
+| `--ab-font` | Familia tipográfica | Configuración → tipografía (lista curada: Sistema, Inter, Poppins, Nunito, Roboto, Lato — no texto libre, para no cargar una fuente que no se lea bien en el ancho chico del widget) |
+| `--ab-font-scale` | Multiplicador de tamaño de texto (0.92 / 1 / 1.08) | Configuración → tamaño de texto. **Los campos de formulario (`.ab-input`/`.ab-textarea`/`.ab-select`) nunca bajan de 16px reales** aunque se elija "Compacto" — es el mínimo que evita el zoom automático de iOS Safari al enfocar un input. Los touch targets (contadores +/-, navegación del calendario, toggle de idioma — todos de 44×44px) tampoco escalan con el texto: son medidas de accesibilidad, no tipografía. |
+| `--ab-radius` / `--ab-radius-sm` | Radio de esquinas (tarjetas / botones-inputs) | Configuración → radio de esquinas |
+| `--ab-shadow` | Sombra del contenedor principal | Fijo |
+
+**Para agregar un control nuevo** (ej. exponer `--ab-text` en Configuración): agregar la opción en `class-settings-page.php`, un caso en `WidgetTheme::render_inline_css()`, y listo — no hace falta tocar `widget.css` salvo que la variable todavía no exista ahí.
+
+### Arquitectura de pasos de `BookingWidget.jsx`
+
+El wizard es una lista de pasos en el array `STEPS` (línea ~9), filtrada dinámicamente en `activeSteps` según el tour:
+
+```
+StepDate → StepSchedule* → StepPeople → StepExtras† → StepDetails → StepSummary → StepPayment/StepPaymentMP‡ → StepConfirm
+```
+
+- **`*` StepSchedule** se salta si el tour tiene un solo horario (`needsScheduleStep()`).
+- **`†` StepExtras** se salta si el tour no tiene servicios extra cargados (`needsExtrasStep()`, agregada junto con la Tarea 18/add-ons).
+- **`‡` StepPayment` vs `StepPaymentMP`**: cuál se monta depende de `gateway` (estado de `BookingFlow`), no de la pasarela configurada globalmente — se decide con la respuesta de `POST /bookings` (campo `gateway`).
+
+Cada `Step*` es una función de nivel de módulo (no anidada dentro de otro componente — ver el comentario de `CustomerField` en el mismo archivo sobre por qué eso importa para no perder el foco de los inputs en mobile) y recibe todo su estado compartido (`form`, `patchForm`, `quote`, `t`, etc.) como props vía el objeto `stepProps` armado en `BookingFlow`. Para agregar un paso nuevo: sumarlo a `STEPS`, un filtro condicional en `activeSteps` si corresponde saltarlo, una rama de render en el JSX de `BookingFlow`, y su componente `function StepNuevo(...)` — mismo patrón que `StepExtras`.
+
+## 9. Idea de producto: Afiliados externos ("TourFlow Affiliate Hub")
+
+Disparada por un proyecto nuevo, **Visit Sicily Experiences** (instalación de WordPress separada de Amir Adventours, público internacional EN/DE) — no es parte del roadmap acordado con Amir Adventours (§5), pero si se construye, se construye como feature genérica del plugin, no como customización de un solo sitio, porque funciona igual en la versión multisite.
+
+**Aclaración clave de alcance**: estos afiliados son proveedores **externos** (Booking.com, GetYourGuide, Viator, Discover Cars, etc.) — TourFlow no es dueño de esa cuenta ni de la relación comercial con el cliente final, y no reparte ingresos con el operador. El plugin únicamente **administra la configuración y la muestra en el sitio** (credenciales, visualización, redirect al proveedor en el paso de pago). Cada instalación carga sus propias credenciales de partner, igual que ya hace con Stripe/Mercado Pago.
+
+Spec propuesto (mismo patrón que `PaymentGatewayInterface`):
+
+| Pieza | Qué hace |
+|---|---|
+| `AffiliateProviderInterface` | Contrato común: credenciales, tipo de servicio (hoteles/autos/actividades/seguros), método para generar el link o el embed |
+| Implementaciones v1 | `BookingComAffiliate`, `DiscoverCarsAffiliate`, `GetYourGuideAffiliate`, `ViatorAffiliate`, `TiqetsAffiliate`, `WorldNomadsAffiliate` |
+| Configuración | Nueva pestaña "Afiliados" en Ajustes, per-site (mismo patrón `wp_N_options` que ya usan Stripe/Mercado Pago) — nada a nivel de red multisite |
+| Frontend | Shortcode nuevo con estética de TourFlow, redirect al proveedor solo en el paso de checkout, atribución visible ("en alianza con X") — casi todos los TOS de estos programas lo exigen y evita reclamos de soporte cuando el operador no gestiona esa reserva. **Uso libre en cualquier post/página, no solo en la plantilla de tour** — el tráfico que hay que monetizar entra sobre todo por contenido/blog SEO ("cómo moverse en Sicilia"), así que el shortcode tiene que poder insertarse dentro de un artículo, no solo en la ficha de un tour puntual |
+| Fuera de alcance v1 | Vuelos (Amadeus self-service se dio de baja en jul-2026, sin alternativa simple hoy), traslados (comisiones sin validar todavía), liquidación compartida entre TourFlow y el operador |
+| Opcional, no bloqueante | Log propio de clics por proveedor/artículo (sin datos personales, no es conversión — eso lo trackea cada red por su cuenta) para que el operador vea qué contenido genera intención de compra. Reutilizaría el patrón de `class-payment-log-page.php` |
+
+Verificar comisiones/condiciones vigentes de cada proveedor antes de implementar — cambian con frecuencia y lo relevado en jul-2026 puede haber variado.
+
+### 9.1 Plan de contenido/SEO/GEO para Visit Sicily Experiences
+
+El modelo de negocio depende de tráfico de contenido (no solo de fichas de tour), así que conviene planear la estructura de clusters desde el arranque del sitio, cada uno mapeado a qué monetiza:
+
+| Cluster | Artículos tipo | Qué monetiza |
+|---|---|---|
+| Cómo moverte en Sicilia | "Car rental vs. transporte público", "Alquilar auto en Sicilia" (peajes A18/A20, ZTL en centros históricos), "Ruta en auto 7/10/14 días" | Widget de **alquiler de autos** (Discover Cars/Rentalcars) insertado directo en el texto — el cluster más alineado con la realidad de Sicilia (transporte público limitado) |
+| Itinerarios por región | Sudeste (Taormina, Catania, Siracusa, Etna, Agrigento), Oeste (Palermo, Erice, Trapani), Barroco UNESCO (Ragusa, Modica, Noto) | Tours propios primero, **GetYourGuide/Viator** para lo que Visit Sicily no ofrece en esa zona, widget de **hoteles** para dónde alojarse |
+| Etna (alta intención de búsqueda) | Guía de senderismo/teleférico/jeep tours, comparativa de tours desde Taormina/Catania, cata de vinos en las laderas | Tour propio destacado primero, alternativas de Viator/GetYourGuide debajo |
+| Logística de llegada | Guías de aeropuerto de Catania y Palermo, "Dónde alojarse según tu itinerario" | Widget de **traslados** + **hoteles** |
+| FAQ prácticas | "Mejor época para visitar", "¿Necesito seguro de viaje?", "Reglas de manejo para turistas" | Formato ideal para citación por IA (ver GEO abajo) + **seguros** (World Nomads) |
+
+**Keywords orientativas** (sin acceso a datos reales de volumen, dirección validada por volumen de contenido competidor): EN — "sicily itinerary 7/10 days", "should I rent a car in sicily", "mount etna day trip from taormina", "sicily road trip", "best time to visit sicily"; DE — "Sizilien Rundreise Mietwagen", "Ätna Tagesausflug Taormina", "Sizilien beste Reisezeit", "Flughafen Catania Transfer".
+
+**GEO (citación por buscadores de IA)**: combinación de mayor impacto es **estadísticas concretas + redacción fluida** (precios reales de peajes, distancias, horarios) en vez de generalidades; `FAQPage` schema en todo el cluster de preguntas prácticas (mayor tasa de citación en Perplexity/Google AI Overview); `robots.txt` debe permitir explícitamente `PerplexityBot`, `ClaudeBot`, `GPTBot`, `Bingbot` desde el lanzamiento — algunos plugins de seguridad de WordPress los bloquean por defecto.
+
+## 10. Idea de producto: schema markup automático para tours (TourFlow en general, no solo Sicilia)
+
+Ya que `amir_tours` tiene estructurados precio, duración, imágenes y ubicación de cada tour propio, generar automáticamente el JSON-LD `TouristTrip`/`Product`/`Offer` desde esos datos —sin que el operador toque nada— sería una mejora barata y **genérica** de TourFlow: cualquier instalación (Amir Adventours incluido) gana visibilidad en Google/buscadores de IA en sus fichas de tour existentes, gratis, porque el dato ya está en la base. Bajo esfuerzo, no depende de Visit Sicily ni de ningún módulo de afiliados — se puede construir independientemente.
