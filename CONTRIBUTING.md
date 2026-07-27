@@ -224,3 +224,40 @@ El modelo de negocio depende de tráfico de contenido (no solo de fichas de tour
 ## 10. Idea de producto: schema markup automático para tours (TourFlow en general, no solo Sicilia)
 
 Ya que `amir_tours` tiene estructurados precio, duración, imágenes y ubicación de cada tour propio, generar automáticamente el JSON-LD `TouristTrip`/`Product`/`Offer` desde esos datos —sin que el operador toque nada— sería una mejora barata y **genérica** de TourFlow: cualquier instalación (Amir Adventours incluido) gana visibilidad en Google/buscadores de IA en sus fichas de tour existentes, gratis, porque el dato ya está en la base. Bajo esfuerzo, no depende de Visit Sicily ni de ningún módulo de afiliados — se puede construir independientemente.
+
+## 11. Marketplace de proveedores externos (tours de terceros) — spec acordado, sin construir
+
+Planteado por el cliente el 2026-07-27, dialogado y cerrado en la misma sesión. **No confundir con §9 (Afiliados externos)**: ahí TourFlow solo redirige al proveedor (Booking.com, GetYourGuide) y nunca es dueño de la venta; acá TourFlow **sí es el vendedor de registro** — el cliente paga a TourFlow a un precio propio, y TourFlow le liquida después al proveedor su costo. La diferencia es de negocio, no de detalle técnico: comisión de referido vs. reventa con margen propio.
+
+**Por qué es distinto de `amir_partners` (ya existente)**: un partner de hoy *refiere* clientes a tours *nuestros* y cobra comisión (`PartnerTracker`, `?ref=TOKEN`). Acá el proveedor *es dueño* del tour — se modela aparte, `amir_providers`, aunque el criterio de "liquidación pendiente/pagada" se pueda reusar de forma similar.
+
+### Decisiones cerradas en el diálogo
+
+| Punto | Decisión |
+|---|---|
+| Quién carga el tour del proveedor | **El equipo de TourFlow, a mano** — el proveedor manda los datos (WhatsApp/email/planilla), previamente acordado con él, y se carga con el editor de tours actual. Un portal de autogestión ("Vendé tus experiencias en nuestro portal") queda documentado como visión a futuro, no en esta etapa — no bloquea nada de lo de abajo si se construye después |
+| Aprobación de cada reserva | **Link por email, sin login** — mismo patrón que `verify_url()` de wishlist (token en la URL, sin cuenta de usuario). Panel/calendario propio del proveedor para bloquear disponibilidad de antemano queda para v2 — para v1, el propio paso de aprobación ya cumple esa función: si el proveedor está lleno, rechaza esa reserva puntual |
+| Plazo de respuesta | Recordatorio a las **24h**, cancelación automática + reembolso a las **48h** sin respuesta — configurable en Configuración (no hardcodeado), para poder ajustarlo por acuerdo comercial sin tocar código |
+| Precio/margen | Costo del proveedor separado del precio de venta (no una comisión %) — `amir_prices` suma una columna de costo junto al `price_mxn` que ya existe por tipo de persona/grupo. Margen = venta − costo |
+| Liquidación | **Manual para v1** — ledger simple de "liquidado/pendiente", igual que quedó anotado para partners. Un payout automático tipo transferencia desde Stripe (Stripe Connect u similar) quedó explícitamente como "lujo, no necesario ahora" — no bloquea la v1 si se suma después |
+| Transparencia al cliente | Aviso **discreto** en la ficha del tour (no en el email de confirmación) — algo como "sujeto a confirmación del operador local", **sin nombrar al proveedor** ni invitar a buscarlo por fuera de TourFlow (riesgo de que el cliente reserve directo con el proveedor la próxima vez, salteando la plataforma) |
+
+### Flujo de reserva
+
+1. Cliente reserva y paga normal, al precio de TourFlow (nada cambia en el checkout).
+2. Si el tour tiene `provider_id`, la reserva no pasa a `confirmed` directo — entra en un estado nuevo, `pending_provider_approval`.
+3. Email al proveedor ("Recibiste una nueva reserva desde TourFlow") con botones Aprobar/Rechazar vía link tokenizado, y con los datos de contacto del cliente (nombre, teléfono/email, fecha, personas, pedidos especiales) — el proveedor puede necesitar contactar al cliente directo con info adicional (punto de encuentro puntual, etc.), más allá de la confirmación estándar de TourFlow.
+4. **Aprueba** → pasa a `confirmed`, dispara el email de confirmación y voucher de siempre — para el cliente no cambia nada.
+5. **Rechaza**, o pasan 48h sin respuesta → se cancela y se reembolsa automático (reusa `PaymentGatewayInterface::refund()`, ya integrado).
+6. Cron (mismo mecanismo que ya libera `pending` vencidos): recordatorio a las 24h, auto-cancelación a las 48h.
+
+### Modelo de datos (sketch, sin implementar)
+
+- `amir_providers`: id, nombre, contacto, email, teléfono, notas, activo.
+- `amir_tours.provider_id` (NULL = tour propio, como hoy).
+- `amir_prices`: + `provider_cost_mxn` junto al `price_mxn` existente, por tipo de persona/grupo.
+- `amir_bookings`: nuevo status `pending_provider_approval` en el ENUM, + `provider_response_token`, `provider_notified_at`, `provider_reminder_sent_at`, `provider_responded_at`.
+- `amir_provider_payouts`: ledger manual (proveedor, monto, nota, fecha) — igual de simple que lo pendiente para `amir_partners`.
+- Configuración nueva: `amir_provider_reminder_hours` (24), `amir_provider_response_hours` (48).
+
+Sin empezar a construir — queda documentado para cuando se priorice.
