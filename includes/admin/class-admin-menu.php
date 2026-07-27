@@ -98,6 +98,7 @@ class AdminMenu {
             [ 'amir-reports',        __( 'Reportes',       'amir-booking' ), [ $this, 'page_reports'     ] ],
             [ 'amir-payment-log',    __( 'Log de pagos',   'amir-booking' ), [ $this, 'page_payment_log' ] ],
             [ 'amir-coupons',        __( 'Cupones',        'amir-booking' ), [ $this, 'page_coupons'     ] ],
+            [ 'amir-email-test',     __( '✉️ Probar emails','amir-booking' ), [ $this, 'page_email_test' ] ],
             [ 'amir-settings',       __( 'Configuración',  'amir-booking' ), [ $this, 'page_settings'    ] ],
         ];
 
@@ -159,6 +160,9 @@ class AdminMenu {
     }
     public function page_coupons(): void {
         ( new \AmirBooking\Admin\CouponsPage() )->render();
+    }
+    public function page_email_test(): void {
+        ( new \AmirBooking\Admin\EmailTestPage() )->render();
     }
     public function page_settings(): void {
         ( new \AmirBooking\Admin\SettingsPage() )->render();

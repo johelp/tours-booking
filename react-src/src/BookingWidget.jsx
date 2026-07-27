@@ -85,6 +85,10 @@ function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
   const [ bookingId,    setBookingId    ] = useState( null );
   const [ mpData,       setMpData       ] = useState( null ); // { preference_id, init_point, sandbox_init_point }
   const [ gateway,      setGateway      ] = useState( 'stripe' );
+  // Monto real que devolvió el backend al crear la reserva (POST /bookings),
+  // no el último `quote` del cliente — evita reportar a los píxeles un valor
+  // desactualizado si el cupón/precio cambió justo antes de confirmar.
+  const [ finalTotalMxn, setFinalTotalMxn ] = useState( 0 );
 
   const [ form, setForm ] = useState({
     date:            '',
@@ -164,7 +168,8 @@ function BookingFlow({ tour, lang, setLang, stripePromise, t }) {
   const stepProps = { tour, form, patchForm, lang, setLang, t, goNext, goBack,
     availability, setAvailability, schedules, setSchedules,
     quote, clientSecret, setClientSecret, bookingRef, setBookingRef,
-    bookingId, setBookingId, mpData, setMpData, gateway, setGateway, step, activeSteps };
+    bookingId, setBookingId, mpData, setMpData, gateway, setGateway, step, activeSteps,
+    finalTotalMxn, setFinalTotalMxn };
 
   const stepLabels = activeSteps.map( s => t( `step_${s}` ) );
 
@@ -673,7 +678,8 @@ function StepDetails({ form, patchForm, lang, setLang, t, goNext, goBack }) {
 
 // ── Step 5: Summary + Policy ──────────────────────────────────────────────────
 function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
-                        setClientSecret, setBookingId, setMpData, setGateway, schedules }) {
+                        setClientSecret, setBookingId, setMpData, setGateway, schedules,
+                        setFinalTotalMxn }) {
   const [ creating, setCreating ] = useState( false );
   const [ error,    setError    ] = useState( '' );
 
@@ -728,6 +734,7 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
       });
 
       setBookingId( result.booking_id );
+      setFinalTotalMxn( result.total_mxn ?? 0 );
 
       if ( result.gateway === 'mercadopago' ) {
         // MP: redirigir al checkout de MercadoPago
@@ -1045,12 +1052,14 @@ export function StepPaymentMP({ t, goBack, goNext, setBookingRef, bookingId, mpD
 }
 
 // ── Step 7: Confirmation ──────────────────────────────────────────────────────
-function StepConfirm({ tour, form, bookingRef, t, lang, quote }) {
+function StepConfirm({ tour, form, bookingRef, t, lang, finalTotalMxn }) {
   const waPhone  = window.amirBooking?.waPhone ?? '5219831649541';
 
   // Purchase/purchase + conversión de Google Ads — una sola vez por reserva
   // (el ref evita que un re-render por cambio de idioma, etc. lo dispare de
-  // nuevo con la misma referencia).
+  // nuevo con la misma referencia). Usa finalTotalMxn (lo que devolvió el
+  // backend al crear la reserva), no el último `quote` del cliente — evita
+  // reportar un valor desactualizado si el precio cambió justo al confirmar.
   const purchaseFired = useRef( false );
   useEffect( () => {
     if ( purchaseFired.current || ! bookingRef ) return;
@@ -1059,7 +1068,7 @@ function StepConfirm({ tour, form, bookingRef, t, lang, quote }) {
       tourId:     tour?.id,
       tourName:   tour?.name,
       bookingRef,
-      value:      quote?.total_mxn ?? 0,
+      value:      finalTotalMxn ?? 0,
       currency:   window.amirBooking?.currency ?? 'USD',
     });
   }, [ bookingRef ] );

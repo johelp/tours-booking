@@ -952,11 +952,13 @@ class TourPostType {
         // Sincronizar regla base de disponibilidad (días activos)
         $this->sync_base_availability_rule( $post_id, $db_id );
 
-        // Invalidar caches
-        delete_transient( "amir_tour_{$db_id}_es" );
-        delete_transient( "amir_tour_{$db_id}_en" );
-        delete_transient( 'amir_tours_list_es' );
-        delete_transient( 'amir_tours_list_en' );
+        // Invalidar caches — un idioma por cada uno activo, no solo es/en
+        // (si no, un tour editado queda con datos viejos hasta 10 min para
+        // cualquier idioma 3+ que el operador haya activado).
+        foreach ( \AmirBooking\Core\Languages::active() as $active_lang ) {
+            delete_transient( "amir_tour_{$db_id}_{$active_lang}" );
+            delete_transient( "amir_tours_list_{$active_lang}" );
+        }
     }
 
     /**

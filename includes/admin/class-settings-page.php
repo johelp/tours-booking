@@ -659,9 +659,10 @@ class SettingsPage {
             }
         }
 
-        // Limpiar caché de transients
-        delete_transient( 'amir_tours_list_es' );
-        delete_transient( 'amir_tours_list_en' );
+        // Limpiar caché de transients — todos los idiomas activos, no solo es/en
+        foreach ( \AmirBooking\Core\Languages::active() as $active_lang ) {
+            delete_transient( "amir_tours_list_{$active_lang}" );
+        }
 
         return $count;
     }

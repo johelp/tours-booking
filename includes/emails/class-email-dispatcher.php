@@ -691,14 +691,23 @@ class CancellationEmail extends BaseEmail {
 
 class TourOpenedEmail extends BaseEmail {
 
+    /**
+     * Sin emoji ni "completá tu pago" en el asunto — la combinación
+     * entusiasmo + pedido de pago + link es un patrón clásico que Gmail
+     * suele filtrar como spam en plantillas nuevas sin historial de envío,
+     * aunque wp_mail() devuelva éxito (confirmado: el mismo mecanismo que
+     * confirmación/reprogramación, que sí llegan, con este único cambio
+     * de contenido). El CTA de pago queda solo en el cuerpo, como en el
+     * resto de los emails transaccionales del sistema.
+     */
     protected function get_subject(): string {
-        return sprintf( __( '🎉 ¡%s ya está disponible — completá tu pago', 'amir-booking' ), $this->booking->tour_name );
+        return sprintf( __( '%s ya tiene fecha confirmada', 'amir-booking' ), $this->booking->tour_name );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
 
-        $intro = '<h1>' . __( '¡Buenas noticias! 🎉', 'amir-booking' ) . '</h1>'
+        $intro = '<h1>' . __( '¡Buenas noticias!', 'amir-booking' ) . '</h1>'
                . '<p>' . sprintf(
                    __( 'Hola <strong>%1$s</strong>,<br>Nos pediste que te avisáramos cuando <strong>%2$s</strong> abriera — y ya está disponible. Tu lugar para el %3$s está reservado — completá el pago para confirmarlo.', 'amir-booking' ),
                    esc_html( $b->customer_name ), esc_html( $b->tour_name ), esc_html( $this->fmt_date( $b->tour_date ) )

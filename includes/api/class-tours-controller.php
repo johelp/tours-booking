@@ -184,8 +184,9 @@ class ToursController {
             }
         }
 
-        delete_transient( 'amir_tours_list_es' );
-        delete_transient( 'amir_tours_list_en' );
+        foreach ( \AmirBooking\Core\Languages::active() as $active_lang ) {
+            delete_transient( "amir_tours_list_{$active_lang}" );
+        }
     }
 
     // ── GET /tours/{id}/schedules ─────────────────────────────────────────
