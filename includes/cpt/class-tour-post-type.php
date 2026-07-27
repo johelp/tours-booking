@@ -192,6 +192,32 @@ class TourPostType {
           </div>
         </div>
 
+        <div class="amir-section-title">👶 Restricciones de edad</div>
+        <p style="font-size:12px;color:#666;margin:0 0 12px;">
+          La <strong>edad mínima</strong> de arriba ya se muestra en la ficha del tour y en las tarjetas del listado.
+          Acá además controlás si el widget de reserva deja elegir niños/bebés — por ejemplo, para un tour
+          <strong>solo para adultos</strong>, destildá ambos y esos contadores directamente desaparecen del paso de personas.
+        </p>
+        <div class="amir-meta-grid amir-meta-grid-3">
+          <div class="amir-field">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
+              <input type="checkbox" name="amir_allow_children" value="1" <?php checked( $m['allow_children'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+              <?php _e('Admite niños', 'amir-booking'); ?>
+            </label>
+          </div>
+          <div class="amir-field">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
+              <input type="checkbox" name="amir_allow_babies" value="1" <?php checked( $m['allow_babies'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+              <?php _e('Admite bebés', 'amir-booking'); ?>
+            </label>
+          </div>
+          <div class="amir-field">
+            <label><?php _e('Edad mínima "niño" (vs. bebé)', 'amir-booking'); ?></label>
+            <input type="number" name="amir_min_age_child" value="<?php echo esc_attr($m['min_age_child']); ?>" min="0" placeholder="4" />
+            <p class="amir-hint">Por debajo de esta edad cuenta como bebé, no como niño</p>
+          </div>
+        </div>
+
         <div class="amir-section-title">📋 Lista de interés ("Próximamente")</div>
         <p style="font-size:12px;color:#666;margin:0 0 12px;">
           Mientras este tour esté en <strong>borrador</strong>, se puede mostrar en la sección "Próximamente" del sitio
@@ -715,6 +741,7 @@ class TourPostType {
             '_amir_price_model'      => 'sanitize_key',
             '_amir_duration_minutes' => 'absint',
             '_amir_min_age'          => 'absint',
+            '_amir_min_age_child'    => 'absint',
             '_amir_max_capacity'     => 'absint',
             '_amir_min_passengers'   => 'absint',
             '_amir_sort_order'       => 'absint',
@@ -739,6 +766,7 @@ class TourPostType {
             '_amir_price_model'       => 'amir_price_model',
             '_amir_duration_minutes'  => 'amir_duration_minutes',
             '_amir_min_age'           => 'amir_min_age',
+            '_amir_min_age_child'     => 'amir_min_age_child',
             '_amir_max_capacity'      => 'amir_max_capacity',
             '_amir_min_passengers'    => 'amir_min_passengers',
             '_amir_sort_order'        => 'amir_sort_order',
@@ -766,6 +794,8 @@ class TourPostType {
 
         // Checkbox: ausente en $_POST cuando está destildado
         update_post_meta( $post_id, '_amir_wishlist_enabled', ! empty( $_POST['amir_wishlist_enabled'] ) ? '1' : '0' );
+        update_post_meta( $post_id, '_amir_allow_children', ! empty( $_POST['amir_allow_children'] ) ? '1' : '0' );
+        update_post_meta( $post_id, '_amir_allow_babies', ! empty( $_POST['amir_allow_babies'] ) ? '1' : '0' );
 
         // Activos/days de la semana
         $weekdays = array_map( 'intval', $_POST['amir_active_weekdays'] ?? [] );
@@ -857,6 +887,18 @@ class TourPostType {
             'what_to_expect_en'  => get_post_meta( $post_id, '_amir_what_to_expect_en', true ) ?: '',
             'duration_minutes'   => (int) get_post_meta( $post_id, '_amir_duration_minutes', true ),
             'min_age'            => (int) get_post_meta( $post_id, '_amir_min_age', true ),
+            // '' (nunca guardado, tours creados antes de esta opción) debe
+            // seguir admitiendo niños/bebés como siempre — solo un '0'
+            // explícito (guardado por save_meta() cuando se destilda el
+            // checkbox) los deshabilita. No usar `(int) get_post_meta(...)`
+            // a secas acá: '' se castea a 0 y desactivaría por default
+            // cualquier tour que todavía no pasó por el editor con esta
+            // sección nueva.
+            'allow_children'     => ( get_post_meta( $post_id, '_amir_allow_children', true ) === '' )
+                ? 1 : (int) get_post_meta( $post_id, '_amir_allow_children', true ),
+            'allow_babies'       => ( get_post_meta( $post_id, '_amir_allow_babies', true ) === '' )
+                ? 1 : (int) get_post_meta( $post_id, '_amir_allow_babies', true ),
+            'min_age_child'      => (int) get_post_meta( $post_id, '_amir_min_age_child', true ) ?: 4,
             'max_capacity'       => (int) get_post_meta( $post_id, '_amir_max_capacity', true ),
             'min_passengers'     => (int) get_post_meta( $post_id, '_amir_min_passengers', true ) ?: 1,
             'languages'          => json_encode( array_values($langs_arr) ),
@@ -1161,11 +1203,21 @@ class TourPostType {
     private function get_meta( int $post_id ): array {
         $get = fn($k) => get_post_meta( $post_id, "_amir_{$k}", true ) ?: '';
         $langs_str = $get('languages');
+        // Booleanos con default "activado" para tours nuevos (nunca guardados
+        // todavía): a diferencia de $get() de arriba, acá NO se puede usar
+        // `?: '1'` — un checkbox desmarcado guarda '0', que es falsy en PHP,
+        // así que `'0' ?: '1'` volvería a mostrarlo tildado en cada carga.
+        // Solo el meta realmente ausente (string vacío) cae al default.
+        $bool_default_on = fn( string $k ) => ( get_post_meta( $post_id, "_amir_{$k}", true ) === '' )
+            ? '1' : get_post_meta( $post_id, "_amir_{$k}", true );
         return [
             'name_en'          => $get('name_en'),
             'price_model'      => $get('price_model') ?: 'percapita',
             'duration_minutes' => $get('duration_minutes') ?: '',
             'min_age'          => $get('min_age') ?: '',
+            'allow_children'   => $bool_default_on('allow_children'),
+            'allow_babies'     => $bool_default_on('allow_babies'),
+            'min_age_child'    => $get('min_age_child') ?: '4',
             'max_capacity'     => $get('max_capacity') ?: '',
             'min_passengers'   => $get('min_passengers') ?: '1',
             'sort_order'       => $get('sort_order') ?: '0',

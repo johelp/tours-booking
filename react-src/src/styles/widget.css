@@ -143,6 +143,15 @@
   color: var(--ab-text);
 }
 
+.ab-age-notice {
+  font-size: calc(13px * var(--ab-font-scale));
+  color: var(--ab-muted);
+  background: var(--ab-bg2);
+  border-radius: var(--ab-radius-sm);
+  padding: 8px 12px;
+  margin: -8px 0 16px;
+}
+
 /* ── Calendario ──────────────────────────────────────────────────────────── */
 .ab-cal-header {
   display: flex;

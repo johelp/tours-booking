@@ -40,6 +40,16 @@ class BookingManager {
         }
         $data['schedule_id'] = $schedule_id;
 
+        // El widget ya oculta los contadores de niños/bebés cuando el tour
+        // no los admite (ver StepPeople en BookingWidget.jsx) — esto es la
+        // validación real, por si alguien llama la API directo.
+        $policy_error = $this->child_baby_policy_error(
+            (int) $data['tour_id'], (int) ( $data['children'] ?? 0 ), (int) ( $data['babies'] ?? 0 )
+        );
+        if ( $policy_error ) {
+            return BookingResult::error( $policy_error );
+        }
+
         // Validar disponibilidad
         $avail = $this->availability->check(
             (int) $data['tour_id'],
@@ -225,6 +235,11 @@ class BookingManager {
         }
         if ( ! is_email( $data['customer_email'] ) ) {
             return BookingResult::error( 'Email no válido.' );
+        }
+
+        $policy_error = $this->child_baby_policy_error( $tour_id, $children, $babies );
+        if ( $policy_error ) {
+            return BookingResult::error( $policy_error );
         }
 
         // Sin schedule_id explícito, tomar el primero configurado del tour
@@ -793,6 +808,37 @@ class BookingManager {
         );
 
         return sprintf( '%s-%s-%05d', $prefix, $year, $last + 1 );
+    }
+
+    /**
+     * Rechaza niños/bebés en un tour que no los admite (`amir_tours.allow_children`/
+     * `allow_babies`) — el widget ya oculta esos contadores en ese caso, esto
+     * cubre el caso de alguien llamando la API directo con esos valores igual.
+     * Devuelve el mensaje de error, o null si no hay problema.
+     */
+    private function child_baby_policy_error( int $tour_id, int $children, int $babies ): ?string {
+        if ( $children <= 0 && $babies <= 0 ) {
+            return null;
+        }
+        global $wpdb;
+        $tour = $wpdb->get_row( $wpdb->prepare(
+            "SELECT allow_children, allow_babies FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+            $tour_id
+        ) );
+        if ( ! $tour ) {
+            return null; // Tour inexistente: lo va a rechazar la validación de disponibilidad/precio de todas formas.
+        }
+        // `?? 1`, no solo un fallback de fila ausente: si por lo que sea la
+        // columna no viene en el resultado, admite por default — igual que
+        // el DEFAULT real de la columna en la base — para nunca bloquear
+        // una reserva real por un dato faltante.
+        if ( $children > 0 && ! (int) ( $tour->allow_children ?? 1 ) ) {
+            return 'Este tour no admite niños.';
+        }
+        if ( $babies > 0 && ! (int) ( $tour->allow_babies ?? 1 ) ) {
+            return 'Este tour no admite bebés.';
+        }
+        return null;
     }
 
     private function resolve_partner_id( string $token ): ?int {

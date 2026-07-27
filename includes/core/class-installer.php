@@ -173,6 +173,9 @@ class Installer {
             what_to_expect_en  TEXT,
             duration_minutes   SMALLINT UNSIGNED NOT NULL DEFAULT 0,
             min_age            TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            allow_children     TINYINT(1) NOT NULL DEFAULT 1,
+            allow_babies       TINYINT(1) NOT NULL DEFAULT 1,
+            min_age_child      TINYINT UNSIGNED NOT NULL DEFAULT 4,
             max_capacity       SMALLINT UNSIGNED NOT NULL DEFAULT 0,
             min_passengers     TINYINT UNSIGNED NOT NULL DEFAULT 1,
             languages          VARCHAR(255) DEFAULT '[]',
@@ -700,6 +703,24 @@ class Installer {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN content_i18n LONGTEXT" );
         }
         add_option( 'amir_active_languages', wp_json_encode( [ 'es', 'en' ] ) );
+
+        // 1.8.8: permitir marcar tours que no admiten niños/bebés (ej. tours
+        // solo para adultos) — el widget de reserva (StepPeople en
+        // BookingWidget.jsx) ya tenía la lógica lista para ocultar esos
+        // contadores, esperando estos tres campos desde la API. Default 1/1
+        // (admite ambos) para no cambiar el comportamiento de ningún tour
+        // existente. `min_age_child` es el piso de la franja "niño" que se
+        // muestra junto al contador (ej. "4–12 años") — por debajo de eso
+        // cuenta como bebé.
+        if ( ! in_array( 'allow_children', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN allow_children TINYINT(1) NOT NULL DEFAULT 1" );
+        }
+        if ( ! in_array( 'allow_babies', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN allow_babies TINYINT(1) NOT NULL DEFAULT 1" );
+        }
+        if ( ! in_array( 'min_age_child', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN min_age_child TINYINT UNSIGNED NOT NULL DEFAULT 4" );
+        }
 
         self::create_tables();
         self::create_verify_page();

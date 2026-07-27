@@ -87,6 +87,53 @@ final class BookingManagerWishlistTest extends TestCase {
         $this->assertFalse( $result->success );
     }
 
+    public function test_rejects_children_when_tour_does_not_allow_them(): void {
+        $GLOBALS['wpdb']->tour_row = (object) [ 'id' => 3, 'price_model' => 'percapita', 'allow_children' => 0, 'allow_babies' => 1 ];
+
+        $manager = new BookingManager();
+        $result  = $manager->create_wishlist( $this->validData( [ 'children' => 1, 'babies' => 0 ] ) );
+
+        $this->assertFalse( $result->success );
+        $this->assertStringContainsString( 'niños', $result->error );
+    }
+
+    public function test_rejects_babies_when_tour_does_not_allow_them(): void {
+        $GLOBALS['wpdb']->tour_row = (object) [ 'id' => 3, 'price_model' => 'percapita', 'allow_children' => 1, 'allow_babies' => 0 ];
+
+        $manager = new BookingManager();
+        $result  = $manager->create_wishlist( $this->validData( [ 'children' => 0, 'babies' => 1 ] ) );
+
+        $this->assertFalse( $result->success );
+        $this->assertStringContainsString( 'bebés', $result->error );
+    }
+
+    public function test_allows_children_when_tour_does_not_restrict_them(): void {
+        $GLOBALS['wpdb']->tour_row   = (object) [ 'id' => 3, 'price_model' => 'percapita', 'allow_children' => 1, 'allow_babies' => 1 ];
+        $GLOBALS['wpdb']->price_rows = [
+            (object) [ 'person_type' => 'adult', 'group_min' => null, 'group_max' => null, 'price_mxn' => 500.00 ],
+            (object) [ 'person_type' => 'child', 'group_min' => null, 'group_max' => null, 'price_mxn' => 250.00 ],
+        ];
+        $GLOBALS['wpdb']->var_result = null;
+
+        $manager = new BookingManager();
+        $result  = $manager->create_wishlist( $this->validData( [ 'children' => 1, 'babies' => 0 ] ) );
+
+        $this->assertTrue( $result->success );
+    }
+
+    public function test_adults_only_is_never_blocked_regardless_of_tour_policy(): void {
+        $GLOBALS['wpdb']->tour_row   = (object) [ 'id' => 3, 'price_model' => 'percapita', 'allow_children' => 0, 'allow_babies' => 0 ];
+        $GLOBALS['wpdb']->price_rows = [
+            (object) [ 'person_type' => 'adult', 'group_min' => null, 'group_max' => null, 'price_mxn' => 500.00 ],
+        ];
+        $GLOBALS['wpdb']->var_result = null;
+
+        $manager = new BookingManager();
+        $result  = $manager->create_wishlist( $this->validData( [ 'children' => 0, 'babies' => 0 ] ) );
+
+        $this->assertTrue( $result->success );
+    }
+
     public function test_repeat_signup_updates_instead_of_duplicating(): void {
         $GLOBALS['wpdb']->tour_row    = (object) [ 'id' => 3, 'price_model' => 'percapita' ];
         $GLOBALS['wpdb']->price_rows  = [

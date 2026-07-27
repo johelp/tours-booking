@@ -437,6 +437,9 @@ function StepPeople({ tour, form, patchForm, t, goNext, goBack, quote }) {
     return (
       <div className="ab-panel">
         <p className="ab-panel-title">{t('group_people')}</p>
+        {tour.min_age > 0 && (
+          <p className="ab-age-notice">👤 {t('min_age_label')}: {tour.min_age}+</p>
+        )}
 
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'20px 0'}}>
           <div>
@@ -482,6 +485,9 @@ function StepPeople({ tour, form, patchForm, t, goNext, goBack, quote }) {
   return (
     <div className="ab-panel">
       <p className="ab-panel-title">{t('step_people')}</p>
+      {tour.min_age > 0 && (
+        <p className="ab-age-notice">👤 {t('min_age_label')}: {tour.min_age}+</p>
+      )}
 
       <div className="ab-people-list">
         {rows.map( r => (

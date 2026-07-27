@@ -61,9 +61,11 @@ Trabajo ya en curso, en este orden:
 | 9 | Cupón: campo en el checkout | ✅ Hecho (backend y frontend) |
 | 10 | Fix `lang_pref_hint` visible como texto crudo | ✅ Hecho |
 | 11 | Mejoras mobile (touch targets, font-size inputs) | ✅ Hecho, portado a `react-src/` |
-| 12 | Multi-idioma más allá de ES/EN | ⏳ Pendiente — requiere refactor real: hoy varios archivos PHP (emails, voucher, verificación) y el JS asumen literalmente 2 idiomas con `idioma==='en'?X:Y`, no una iteración sobre N idiomas. Agregar italiano/francés bien hecho es cambiar ese patrón, no solo sumar traducciones |
-| 13 | Dos plantillas de detalle de tour + colores de reserva configurables | ⏳ Pendiente — bajo riesgo: `templates/single-amir_tour.php` es PHP normal (agregar una segunda plantilla + selector en Configuración), y los colores del widget ya son variables CSS (`--ab-teal`, etc.) — se pueden volcar desde una opción de Configuración sin tocar `react-src/` |
+| 12 | Multi-idioma más allá de ES/EN | ✅ Hecho — `Core\Languages` + `content_i18n`, ver README/CLAUDE.md § "Qué ya está hecho". Traducciones base cargadas: it_IT, fr_FR, pt_PT (`languages/`) |
+| 13 | Dos plantillas de detalle de tour + colores de reserva configurables | ⏳ **Parcial** — los colores/tipografía/radio del widget ya son configurables (`Core\WidgetTheme`, Configuración → 🎨 Widget de reserva). Falta la parte de la segunda plantilla: hoy solo existe `templates/single-amir_tour.php`, no hay selector de plantilla en Configuración |
 | 15 | Meta Pixel + Google Ads/Analytics + descuento vía URL para partners | ✅ Hecho — ver § 5.3 |
+| 16 | Tours que no admiten niños/bebés (ej. solo adultos) | ✅ Hecho — ver § 5.4 |
+| 17 | Plantillas de email editables + contenido extra por tour | ⏳ Pedido del cliente, sin priorizar todavía — ver § 5.5 para el spec |
 | 14 | GDPR (mercado europeo) + evaluar Redsys u otra pasarela europea | ⏳ Backlog, sin diseñar todavía |
 
 Para agregar una pasarela nueva: implementar `PaymentGatewayInterface` (en `includes/payments/`), registrarla en `PaymentGatewayFactory::make()`. El controlador (`class-booking-controller.php`) no necesita cambios — ya está escrito contra la interfaz, no contra Stripe directamente.
@@ -112,6 +114,30 @@ Pedido del cliente para poder correr campañas medibles (Meta/Google Ads) y link
 **Descuento vía URL para partners** — no confundir con el sistema de partners que ya existía (`includes/partners/class-partner-tracker.php`): ese `?ref=TOKEN` trackea atribución + **comisión para el partner** (cookie 30 días, `amir_partners.commission_type/value`), eso sigue igual, no se tocó.
 - Lo nuevo es independiente: `?coupon=CODE` en la URL del tour precarga el campo de cupón que **ya existía** en el checkout (`couponCode` en `BookingWidget.jsx`, antes 100% manual) — `getCouponFromUrl()` en `marketing.js` lee el query param al inicializar el estado del formulario. Así "reservá con 10% con este link" queda en un solo clic, sin que el cliente escriba nada.
 - Se descartó a propósito la opción de atar el cupón al partner (`amir_partners.coupon_code`, columna nueva) — no había una decisión tomada sobre si el cliente quiere reportar conversión por partner o solo repartir códigos sueltos, y el camino de `?coupon=` directo no bloquea sumar eso después si hace falta.
+
+### 5.4 Tours que no admiten niños/bebés (Tarea 16)
+
+El frontend (`StepPeople` en `BookingWidget.jsx`) ya tenía la lógica lista desde antes (`tour.allow_children !== false`, etc., default admite ambos) pero esperaba datos que la API nunca mandaba. Implementado en v2.1.0:
+
+- **Columnas nuevas en `amir_tours`**: `allow_children TINYINT(1) DEFAULT 1`, `allow_babies TINYINT(1) DEFAULT 1`, `min_age_child TINYINT UNSIGNED DEFAULT 4` (el piso de la franja "niño" que se muestra junto al contador, ej. "4–12 años" — por debajo cuenta como bebé). Migración en `Installer::maybe_update()` + `create_tables()`, `AMIR_DB_VERSION` → 1.8.8.
+- **Editor del tour**: sección nueva "👶 Restricciones de edad" en `class-tour-post-type.php` (checkboxes "Admite niños"/"Admite bebés" + edad mínima "niño"), junto al campo de Edad mínima que ya existía. **Cuidado si tocás este código**: los checkboxes desmarcados no llegan en `$_POST`, y como PHP trata `'0'` como falsy, un `?: '1'` ingenuo en `get_meta()`/`sync_to_db()` volvería a mostrar/guardar "admite" aunque el operador lo haya desmarcado — hay que distinguir explícitamente `''` (meta nunca guardado, default admite) de `'0'` (guardado como no admite) comparando con `===`, no con `?:`.
+- **API**: `ToursController::format_tour_full()` expone los tres campos — `get_tour()` ya hacía `SELECT *`, no hizo falta tocar la query.
+- **Validación server-side**: `BookingManager::child_baby_policy_error()`, llamada desde `create_pending()` y `create_wishlist()` — rechaza la reserva si pide niños/bebés en un tour que no los admite, sin depender de que el frontend los haya ocultado. `create_manual()` (reservas cargadas por el admin, por teléfono/WhatsApp) queda sin esta restricción a propósito — un admin puede tener motivo para hacer una excepción puntual.
+- **Visibilidad de la edad mínima**: ya se mostraba en las tarjetas de listado y en la ficha del tour (`amir-chip`), pero no durante el flujo de reserva en sí — se agregó un aviso (`.ab-age-notice`) en `StepPeople` mismo, junto al título del paso, para que quede visible justo donde el cliente elige cuántos niños/bebés lleva.
+
+### 5.5 Plantillas de email editables + contenido extra por tour (Tarea 17, sin construir)
+
+Pedido del cliente: hoy el contenido de los emails (confirmación, recordatorio, "tu tour abrió", etc. — `EmailDispatcher`) ya sale en el idioma correcto del cliente (`Core\Languages`, ver § "Qué ya está hecho"), pero el *contenido* en sí es fijo en código PHP, más allá de las secciones ya configurables (recomendaciones de Configuración → Contenido del email). El cliente quiere:
+
+1. **Ver y editar las plantillas de email desde el admin** — no solo las listas de recomendaciones que ya existen en Configuración, sino el cuerpo completo de cada tipo de email (confirmación, recordatorio, cancelación, tour abierto, etc.).
+2. **Contenido extra personalizado por tour** — ej. "este tour requiere llevar pasaporte" o cualquier requisito puntual de un tour específico, que se sume al email de confirmación de ESE tour sin tocar la plantilla general.
+
+**Bug real confirmado al investigar el pedido del cliente sobre emails "incompletos" en el idioma seleccionado**: el motor central de traducción de emails (`EmailDispatcher::send()` corre `get_subject()`/`get_body_content()` dentro de `Languages::run_in( $this->lang, ... )`, que hace `switch_to_locale()` — cualquier `__()`/`_e()` adentro traduce bien a it/fr/pt) **funciona correctamente**. El hueco real es la sección "Recomendaciones" (`EmailDispatcher::recs_html()`, línea ~358) y su equivalente en el voucher PDF (`VoucherGenerator`, líneas ~247 y ~534): ambas usan `$is_en = $this->lang === 'en'` y leen directo de `amir_email_recs_es`/`amir_email_recs_en` (u homólogos de voucher) — **hardcodeado a solo 2 idiomas**, sin pasar por `Languages`. Para un cliente en it/fr/pt, esa sección específica cae en silencio al español mientras el resto del email ya está bien traducido. Arreglar esto (agregar `amir_email_recs_{lang}` dinámico por idioma activo, como ya hace `Core\Languages` para el contenido de tours) debería ir junto con el resto de este ítem, no aparte — mismo tipo de cambio.
+
+Sin diseñar el resto todavía. Puntos a resolver antes de construirlo:
+- Qué tan editable: ¿un editor de texto simple con placeholders (`{{customer_name}}`, `{{tour_name}}`, etc., como hacen la mayoría de los plugins de email transaccional) o control total sobre el HTML? Un editor con placeholders es mucho más simple de construir y más seguro (no hay forma de romper el layout), pero menos flexible.
+- El contenido extra por tour probablemente sea un campo nuevo en el meta box del tour (`class-tour-post-type.php`, similar a `what_to_expect`) — multi-idioma igual que el resto (`content_i18n`), inyectado en `EmailDispatcher::send_confirmation()` si no está vacío.
+- Si se permite editar el HTML/diseño de las plantillas, hay que decidir si eso vive en `amir_options` (como el resto de la configuración) o si conviene una tabla dedicada tipo `amir_email_templates` — más limpio para versionar cambios, pero es una tabla nueva y una migración más.
 
 ## 6. Convenciones del código
 
