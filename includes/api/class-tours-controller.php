@@ -26,7 +26,7 @@ class ToursController {
             'callback'            => [ $this, 'get_tour' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'lang' => [ 'default' => 'es', 'enum' => [ 'es', 'en' ] ],
+                'lang' => [ 'default' => 'es', 'enum' => \AmirBooking\Core\Languages::active() ],
             ],
         ] );
 
@@ -53,6 +53,11 @@ class ToursController {
             return rest_ensure_response( $cached );
         }
 
+        // content_i18n a propósito NO está en este SELECT: el resumen solo
+        // necesita name/description, que para es/en (el 99% de las vistas)
+        // ni siquiera lo tocan — y así esta lista no depende de que esa
+        // columna exista para funcionar (ver Languages::tour_field(), cae
+        // a español si content_i18n falta).
         global $wpdb;
         $rows = $wpdb->get_results(
             "SELECT id, slug, price_model, sort_order,
@@ -125,9 +130,10 @@ class ToursController {
 
         $data = $this->format_tour_full( $row, $lang );
 
-        // Incluir horarios y precios en la respuesta completa
+        // Incluir horarios, precios y servicios extra en la respuesta completa
         $data['schedules'] = $this->fetch_schedules( $id, $lang );
         $data['prices']    = $this->fetch_prices( $id );
+        $data['addons']    = $this->fetch_addons( $id, $lang );
 
         set_transient( "amir_tour_{$id}_{$lang}", $data, 10 * MINUTE_IN_SECONDS );
 
@@ -242,15 +248,35 @@ class ToursController {
         ], $rows );
     }
 
+    private function fetch_addons( int $tour_id, string $lang ): array {
+        global $wpdb;
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, pricing_type, name_es, name_en, content_i18n, price_mxn
+                 FROM {$wpdb->prefix}amir_addons
+                 WHERE tour_id = %d AND active = 1
+                 ORDER BY sort_order ASC, id ASC",
+                $tour_id
+            )
+        ) ?? [];
+
+        return array_map( fn( $a ) => [
+            'id'           => (int) $a->id,
+            'name'         => \AmirBooking\Core\Languages::tour_field( $a, 'name', $lang ),
+            'price_mxn'    => (float) $a->price_mxn,
+            'pricing_type' => $a->pricing_type,
+        ], $rows );
+    }
+
     private function format_tour_summary( object $r, string $lang ): array {
         $gallery    = json_decode( $r->gallery_images ?: '[]', true );
-        $desc_raw   = $lang === 'en' ? ( $r->description_en ?: $r->description_es ) : $r->description_es;
+        $desc_raw   = \AmirBooking\Core\Languages::tour_field( $r, 'description', $lang );
         $short_desc = mb_substr( wp_strip_all_tags( $desc_raw ?: '' ), 0, 120 );
         return [
             'id'                => (int) $r->id,
             'slug'              => $r->slug,
             'price_model'       => $r->price_model,
-            'name'              => $lang === 'en' ? $r->name_en : $r->name_es,
+            'name'              => \AmirBooking\Core\Languages::tour_field( $r, 'name', $lang ),
             'short_description' => $short_desc,
             'duration_minutes'  => (int) $r->duration_minutes,
             'min_age'           => (int) $r->min_age,
@@ -259,21 +285,26 @@ class ToursController {
         ];
     }
 
+    /** includes/excludes vienen como JSON string (columnas es/en) o array nativo (content_i18n) — normaliza a array. */
+    private function as_array( $value ): array {
+        return is_array( $value ) ? $value : ( json_decode( $value ?: '[]', true ) ?: [] );
+    }
+
     private function format_tour_full( object $r, string $lang ): array {
-        $l = $lang === 'en' ? 'en' : 'es';
+        $L = \AmirBooking\Core\Languages::class;
         return [
             'id'               => (int) $r->id,
             'slug'             => $r->slug,
             'price_model'      => $r->price_model,
-            'name'             => $r->{"name_{$l}"},
-            'description'      => $r->{"description_{$l}"},
-            'what_to_expect'   => $r->{"what_to_expect_{$l}"},
-            'itinerary'        => $r->{"itinerary_{$l}"},
-            'meeting_point'    => $r->{"meeting_point_{$l}"},
+            'name'             => $L::tour_field( $r, 'name', $lang ),
+            'description'      => $L::tour_field( $r, 'description', $lang ),
+            'what_to_expect'   => $L::tour_field( $r, 'what_to_expect', $lang ),
+            'itinerary'        => $L::tour_field( $r, 'itinerary', $lang ),
+            'meeting_point'    => $L::tour_field( $r, 'meeting_point', $lang ),
             'meeting_lat'      => $r->meeting_lat  ? (float) $r->meeting_lat  : null,
             'meeting_lng'      => $r->meeting_lng  ? (float) $r->meeting_lng  : null,
-            'includes'         => json_decode( $r->{"includes_{$l}"} ?: '[]', true ),
-            'excludes'         => json_decode( $r->{"excludes_{$l}"} ?: '[]', true ),
+            'includes'         => $this->as_array( $L::tour_field( $r, 'includes', $lang ) ),
+            'excludes'         => $this->as_array( $L::tour_field( $r, 'excludes', $lang ) ),
             'duration_minutes' => (int) $r->duration_minutes,
             'min_age'          => (int) $r->min_age,
             'max_capacity'     => (int) $r->max_capacity,

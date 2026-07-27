@@ -25,7 +25,7 @@ class WishlistController {
             'callback'            => [ $this, 'get_upcoming' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'lang' => [ 'default' => 'es', 'enum' => [ 'es', 'en' ] ],
+                'lang' => [ 'default' => 'es', 'enum' => \AmirBooking\Core\Languages::active() ],
             ],
         ] );
 
@@ -46,6 +46,7 @@ class WishlistController {
     public function get_upcoming( \WP_REST_Request $req ): \WP_REST_Response {
         $lang = sanitize_key( $req->get_param( 'lang' ) ?: 'es' );
 
+        // content_i18n a propósito NO está acá — ver misma nota en ToursController::get_tours().
         global $wpdb;
         $rows = $wpdb->get_results(
             "SELECT id, slug, name_es, name_en, description_es, description_en,
@@ -63,12 +64,12 @@ class WishlistController {
                 $r->id
             ) );
             $gallery  = json_decode( $r->gallery_images ?: '[]', true );
-            $desc_raw = $lang === 'en' ? ( $r->description_en ?: $r->description_es ) : $r->description_es;
+            $desc_raw = \AmirBooking\Core\Languages::tour_field( $r, 'description', $lang );
 
             return [
                 'id'                => (int) $r->id,
                 'slug'              => $r->slug,
-                'name'              => $lang === 'en' ? ( $r->name_en ?: $r->name_es ) : $r->name_es,
+                'name'              => \AmirBooking\Core\Languages::tour_field( $r, 'name', $lang ),
                 'short_description' => mb_substr( wp_strip_all_tags( $desc_raw ?: '' ), 0, 140 ),
                 'duration_minutes'  => (int) $r->duration_minutes,
                 'min_age'           => (int) $r->min_age,
@@ -92,7 +93,7 @@ class WishlistController {
         }
 
         $tour_id = (int) $req->get_param( 'id' );
-        $lang    = in_array( $req->get_param( 'lang' ), [ 'es', 'en' ], true ) ? $req->get_param( 'lang' ) : 'es';
+        $lang    = \AmirBooking\Core\Languages::is_active( (string) $req->get_param( 'lang' ) ) ? $req->get_param( 'lang' ) : \AmirBooking\Core\Languages::default_lang();
 
         global $wpdb;
         $tour = $wpdb->get_row( $wpdb->prepare(

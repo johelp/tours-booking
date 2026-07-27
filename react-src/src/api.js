@@ -74,10 +74,13 @@ export function getDaySchedules( tourId, date ) {
 
 // ── Precios ───────────────────────────────────────────────────────────────────
 
-export function getQuote( { tourId, scheduleId, date, adults, children, babies, couponCode } ) {
+export function getQuote( { tourId, scheduleId, date, adults, children, babies, couponCode, addons, lang } ) {
   return request( 'bookings/quote', {
     method: 'POST',
-    body: JSON.stringify( { tour_id: tourId, schedule_id: scheduleId, date, adults, children, babies, coupon_code: couponCode ?? '' } ),
+    body: JSON.stringify( {
+      tour_id: tourId, schedule_id: scheduleId, date, adults, children, babies,
+      coupon_code: couponCode ?? '', addons: addons ?? [], lang: lang ?? 'es',
+    } ),
   } );
 }
 

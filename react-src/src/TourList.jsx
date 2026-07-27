@@ -7,11 +7,17 @@ import { useT }     from './i18n.js';
  *
  * Shortcode atributos:
  *   columns="3"           columnas (1-3)
- *   accent="#1D9E75"      color de acento hex
+ *   accent="#1D9E75"      color de acento (precio, chips, CTA)
+ *   bg_color="#ffffff"    color de fondo de la tarjeta
+ *   text_color="#1a2e24"  color del título
+ *   radius="16"           radio de borde en px
+ *   image_ratio="4/3"     proporción de la imagen (ej. "16/9", "1/1")
  *   show_excerpt="yes"    mostrar descripción
  *   show_price="yes"      mostrar precio
  *   show_age="yes"        mostrar edad mínima
  *   show_duration="yes"   mostrar duración
+ *   show_languages="yes"  mostrar chip de idiomas del tour
+ *   show_capacity="yes"   mostrar badge de capacidad máxima
  *   cta_text_es="..."     texto botón ES
  *   cta_text_en="..."     texto botón EN
  *   ids="1,2,3"           filtrar tours por ID
@@ -25,10 +31,16 @@ export default function TourList({ lang = 'es', rootEl = null }) {
   const cfg = {
     columns      : Math.min( 3, Math.max( 1, parseInt( rootEl?.dataset?.columns || '3', 10 ) ) ),
     accent       : rootEl?.dataset?.accent       || '#1D9E75',
+    bgColor      : rootEl?.dataset?.bgColor      || '#ffffff',
+    textColor    : rootEl?.dataset?.textColor    || '#1a2e24',
+    radius       : parseInt( rootEl?.dataset?.radius, 10 ) || 16,
+    imageRatio   : rootEl?.dataset?.imageRatio   || '4/3',
     showExcerpt  : rootEl?.dataset?.showExcerpt  !== 'no',
     showPrice    : rootEl?.dataset?.showPrice    !== 'no',
     showAge      : rootEl?.dataset?.showAge      !== 'no',
     showDuration : rootEl?.dataset?.showDuration !== 'no',
+    showLanguages: rootEl?.dataset?.showLanguages !== 'no',
+    showCapacity : rootEl?.dataset?.showCapacity !== 'no',
     ctaEs        : rootEl?.dataset?.ctaEs        || 'Reservar ahora',
     ctaEn        : rootEl?.dataset?.ctaEn        || 'Book now',
     ids          : rootEl?.dataset?.ids
@@ -110,7 +122,7 @@ export default function TourList({ lang = 'es', rootEl = null }) {
 
         /* Card */
         .al-card {
-          background:#fff; border-radius:16px; overflow:hidden;
+          background:${cfg.bgColor}; border-radius:${cfg.radius}px; overflow:hidden;
           border:1px solid #eef6f2; box-shadow:0 2px 14px rgba(0,0,0,.055);
           display:flex; flex-direction:column;
           transition:transform .22s ease,box-shadow .22s ease;
@@ -121,9 +133,9 @@ export default function TourList({ lang = 'es', rootEl = null }) {
         /* Imagen */
         .al-img-wrap { position:relative; overflow:hidden; }
         .al-img-wrap a { display:block; }
-        .al-img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; transition:transform .38s ease; }
+        .al-img { width:100%; aspect-ratio:${cfg.imageRatio}; object-fit:cover; display:block; transition:transform .38s ease; }
         .al-card:hover .al-img { transform:scale(1.07); }
-        .al-img-ph { width:100%; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; font-size:52px; background:${accentLight}; }
+        .al-img-ph { width:100%; aspect-ratio:${cfg.imageRatio}; display:flex; align-items:center; justify-content:center; font-size:52px; background:${accentLight}; }
 
         /* Badges */
         .al-badges { position:absolute; top:10px; left:10px; right:10px; display:flex; justify-content:space-between; gap:6px; pointer-events:none; }
@@ -133,7 +145,7 @@ export default function TourList({ lang = 'es', rootEl = null }) {
 
         /* Cuerpo */
         .al-body { padding:18px 20px 20px; display:flex; flex-direction:column; flex:1; }
-        .al-title { font-size:17px; font-weight:800; color:#1a2e24; margin:0 0 8px; line-height:1.25; }
+        .al-title { font-size:17px; font-weight:800; color:${cfg.textColor}; margin:0 0 8px; line-height:1.25; }
         .al-title a { color:inherit; text-decoration:none; transition:color .15s; }
         .al-title a:hover { color:${cfg.accent}; }
         .al-excerpt { font-size:13px; color:#556760; line-height:1.6; margin:0 0 14px; flex:1;
@@ -186,8 +198,8 @@ export default function TourList({ lang = 'es', rootEl = null }) {
                   )}
                 </div>
                 <div style={{ display:'flex', gap:'6px' }}>
-                  { tour.max_capacity > 0 && (
-                    <span className="al-badge al-bdg-light">👥 {lang==='en'?'Max':'Máx'} {tour.max_capacity}</span>
+                  { cfg.showCapacity && tour.max_capacity > 0 && (
+                    <span className="al-badge al-bdg-light">👥 {t('max_short')} {tour.max_capacity}</span>
                   )}
                 </div>
               </div>
@@ -206,17 +218,17 @@ export default function TourList({ lang = 'es', rootEl = null }) {
               <div className="al-chips">
                 { cfg.showAge && tour.min_age > 0 && (
                   <span className="al-chip">
-                    👤 {lang==='en'?'Age':'Edad'} {tour.min_age}+
+                    👤 {t('age_short')} {tour.min_age}+
                   </span>
                 )}
-                { tour.languages?.length > 0 && (
+                { cfg.showLanguages && tour.languages?.length > 0 && (
                   <span className="al-chip">
                     🌐 {tour.languages.join(' · ')}
                   </span>
                 )}
                 { tour.price_model === 'group' && (
                   <span className="al-chip al-chip-group">
-                    🎯 {lang==='en'?'Private group':'Grupo privado'}
+                    🎯 {t('private_group')}
                   </span>
                 )}
               </div>
@@ -239,6 +251,7 @@ export default function TourList({ lang = 'es', rootEl = null }) {
 function PriceTag({ tourId, lang, priceModel }) {
   const [ price,  setPrice  ] = useState( null );
   const [ loaded, setLoaded ] = useState( false );
+  const t = useT( lang );
 
   useEffect( () => {
     const base = window.amirBooking?.apiUrl ?? '/wp-json/amir/v1/';
@@ -258,9 +271,7 @@ function PriceTag({ tourId, lang, priceModel }) {
   if ( price === null ) return <div style={{ height:'16px' }} />;
 
   const fmt = n => '$' + n.toLocaleString('es-MX', { minimumFractionDigits:0, maximumFractionDigits:0 });
-  const label = priceModel === 'group'
-    ? ( lang === 'en' ? 'From' : 'Desde' )
-    : ( lang === 'en' ? 'From' : 'Desde' );
+  const label = t('from_label');
 
   return (
     <div className="al-price">

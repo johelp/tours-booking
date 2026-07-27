@@ -1,0 +1,573 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: TourFlow (Amir Booking) 1.7.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-25 00:00+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Domain: amir-booking\n"
+msgid "3–6 días antes: %s"
+msgstr ""
+
+msgid "3–6 días antes: reembolso del 50%"
+msgstr ""
+
+msgid "7+ días antes: %s"
+msgstr ""
+
+msgid "7+ días antes: reembolso completo"
+msgstr ""
+
+msgid "Abril"
+msgstr ""
+
+msgid "Agosto"
+msgstr ""
+
+msgid "Agregar al calendario"
+msgstr ""
+
+msgid "Cancelaciones por clima o mínimo de pasajeros: reembolso completo."
+msgstr ""
+
+msgid "Cancelación de reserva — %s"
+msgstr ""
+
+msgid "Cancelación solicitada"
+msgstr ""
+
+msgid "Cancelada"
+msgstr ""
+
+msgid "Cancelada (clima)"
+msgstr ""
+
+msgid "Cancelada (cupo)"
+msgstr ""
+
+msgid "Completada"
+msgstr ""
+
+msgid "Confirmada"
+msgstr ""
+
+msgid "Consulta tu reserva"
+msgstr ""
+
+msgid "De acuerdo con nuestra política, no aplica reembolso para cancelaciones dentro de los 2 días previos al tour."
+msgstr ""
+
+msgid "Demasiados intentos. Intenta de nuevo en unos minutos."
+msgstr ""
+
+msgid "Descargar mi voucher PDF"
+msgstr ""
+
+msgid "Detalle del tour"
+msgstr ""
+
+msgid "Diciembre"
+msgstr ""
+
+msgid "Email con el que reservaste"
+msgstr ""
+
+msgid "Enero"
+msgstr ""
+
+msgid "Escanea para verificar"
+msgstr ""
+
+msgid "Ese email no coincide con esta reserva."
+msgstr ""
+
+msgid "Experiencias en Bacalar · Quintana Roo, México"
+msgstr ""
+
+msgid "Febrero"
+msgstr ""
+
+msgid "Fecha"
+msgstr ""
+
+msgid "Hola <strong>%1$s</strong>,<br>Nos pediste que te avisáramos cuando <strong>%2$s</strong> abriera — y ya está disponible. Tu lugar para el %3$s está reservado — completá el pago para confirmarlo."
+msgstr ""
+
+msgid "Hola <strong>%s</strong>,<br>Esperamos que hayas tenido una experiencia increíble con nosotros en <em>%s</em>."
+msgstr ""
+
+msgid "Hola <strong>%s</strong>,<br>Lamentamos informarte que tu reserva <strong>%s</strong> ha sido cancelada. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles."
+msgstr ""
+
+msgid "Hola <strong>%s</strong>,<br>Todo está listo para tu aventura en Bacalar. Aquí están los detalles de tu reserva:"
+msgstr ""
+
+msgid "Hola <strong>%s</strong>,<br>Tu reserva <strong>%s</strong> ha sido cancelada. %s"
+msgstr ""
+
+msgid "Hola <strong>%s</strong>,<br>Un recordatorio de tu reserva para mañana:"
+msgstr ""
+
+msgid "Hora de salida"
+msgstr ""
+
+msgid "Imprimir / Guardar PDF"
+msgstr ""
+
+msgid "Ingresa tu referencia de reserva y el email con el que reservaste."
+msgstr ""
+
+msgid "Julio"
+msgstr ""
+
+msgid "Junio"
+msgstr ""
+
+msgid "Lista de interés"
+msgstr ""
+
+msgid "Lista para pagar"
+msgstr ""
+
+msgid "Marzo"
+msgstr ""
+
+msgid "Mayo"
+msgstr ""
+
+msgid "Menos de 3 días: %s"
+msgstr ""
+
+msgid "Menos de 3 días: sin reembolso"
+msgstr ""
+
+msgid "Nombre"
+msgstr ""
+
+msgid "Nota del operador:"
+msgstr ""
+
+msgid "Noviembre"
+msgstr ""
+
+msgid "Número de reserva"
+msgstr ""
+
+msgid "Octubre"
+msgstr ""
+
+msgid "Pagar ahora"
+msgstr ""
+
+msgid "Para guardar como PDF, haz clic en"
+msgstr ""
+
+msgid "Pasajero"
+msgstr ""
+
+msgid "Pasajeros"
+msgstr ""
+
+msgid "Pendiente de pago"
+msgstr ""
+
+msgid "Personas"
+msgstr ""
+
+msgid "Política de cancelación"
+msgstr ""
+
+msgid "Política de cancelación:"
+msgstr ""
+
+msgid "Por clima o mínimo de pasajeros: reembolso completo."
+msgstr ""
+
+msgid "Punto de encuentro"
+msgstr ""
+
+msgid "RESERVA CONFIRMADA"
+msgstr ""
+
+msgid "Recomendaciones"
+msgstr ""
+
+msgid "Recuerda llevar"
+msgstr ""
+
+msgid "Referencia"
+msgstr ""
+
+msgid "Referencia (ej. %s)"
+msgstr ""
+
+msgid "Reprogramada"
+msgstr ""
+
+msgid "Reserva cancelada"
+msgstr ""
+
+msgid "Reserva no encontrada"
+msgstr ""
+
+msgid "Reserva verificada"
+msgstr ""
+
+msgid "Reservado el"
+msgstr ""
+
+msgid "Reseña en Google"
+msgstr ""
+
+msgid "Reseña en TripAdvisor"
+msgstr ""
+
+msgid "Salida"
+msgstr ""
+
+msgid "Se ha procesado un reembolso completo que aparecerá en tu cuenta en 3–5 días hábiles."
+msgstr ""
+
+msgid "Se ha procesado un reembolso del 50%% por %s."
+msgstr ""
+
+msgid "Septiembre"
+msgstr ""
+
+msgid "Total"
+msgstr ""
+
+msgid "Total pagado"
+msgstr ""
+
+msgid "Tour"
+msgstr ""
+
+msgid "Tour cancelado por condiciones climáticas ⛈"
+msgstr ""
+
+msgid "Tour cancelado — mínimo de pasajeros no alcanzado"
+msgstr ""
+
+msgid "Tu opinión nos ayuda a seguir mejorando y a que más viajeros descubran la magia de Bacalar. Si tienes un minuto, nos encantaría que compartieras tu experiencia:"
+msgstr ""
+
+msgid "Ver en Google Maps"
+msgstr ""
+
+msgid "Ver en mapa"
+msgstr ""
+
+msgid "Ver estado de mi reserva"
+msgstr ""
+
+msgid "Ver mi reserva"
+msgstr ""
+
+msgid "adultos"
+msgstr ""
+
+msgid "bebés"
+msgstr ""
+
+msgid "niños"
+msgstr ""
+
+msgid "reembolso completo"
+msgstr ""
+
+msgid "reembolso del 50%"
+msgstr ""
+
+msgid "sin reembolso"
+msgstr ""
+
+msgid "y selecciona \"Guardar como PDF\""
+msgstr ""
+
+msgid "¡Buenas noticias! 🎉"
+msgstr ""
+
+msgid "¡Gracias por elegirnos! Esperamos verte de nuevo pronto. 🐊"
+msgstr ""
+
+msgid "¡Tu aventura es mañana! ⛵"
+msgstr ""
+
+msgid "¡Tu reserva está confirmada! 🎉"
+msgstr ""
+
+msgid "¿Disfrutaste tu aventura en Bacalar? 🌊"
+msgstr ""
+
+msgid "¿Dudas? Escríbenos cuando quieras."
+msgstr ""
+
+msgid "¿Necesitas ayuda? Escríbenos por WhatsApp"
+msgstr ""
+
+msgid "⏰ ¡Tu tour es mañana! — %s"
+msgstr ""
+
+msgid "✅ Tu reserva está confirmada — %s"
+msgstr ""
+
+msgid "⭐ ¿Cómo fue tu experiencia? — Amir Adventours"
+msgstr ""
+
+msgid "🎉 ¡%s ya está disponible — completá tu pago"
+msgstr ""
+
+msgid "+52 983 000 0000"
+msgstr ""
+
+msgid "0–3 años"
+msgstr ""
+
+msgid "13+ años"
+msgstr ""
+
+msgid "4–12 años"
+msgstr ""
+
+msgid "Adultos"
+msgstr ""
+
+msgid "Alergias, movilidad reducida, celebración especial…"
+msgstr ""
+
+msgid "Anterior"
+msgstr ""
+
+msgid "Aplicar"
+msgstr ""
+
+msgid "Atrás"
+msgstr ""
+
+msgid "Bebés"
+msgstr ""
+
+msgid "Cargando…"
+msgstr ""
+
+msgid "Compartir por WhatsApp"
+msgstr ""
+
+msgid "Confirmar y pagar"
+msgstr ""
+
+msgid "Continuar"
+msgstr ""
+
+msgid "Correo electrónico"
+msgstr ""
+
+msgid "Cupón aplicado"
+msgstr ""
+
+msgid "Código de cupón"
+msgstr ""
+
+msgid "Descargar voucher PDF"
+msgstr ""
+
+msgid "Disponible"
+msgstr ""
+
+msgid "Duración"
+msgstr ""
+
+msgid "Edad mínima"
+msgstr ""
+
+msgid "Elige tu fecha"
+msgstr ""
+
+msgid "English"
+msgstr ""
+
+msgid "Error al procesar el pago. Por favor intenta de nuevo."
+msgstr ""
+
+msgid "Español"
+msgstr ""
+
+msgid "Este campo es obligatorio"
+msgstr ""
+
+msgid "Fecha del tour"
+msgstr ""
+
+msgid "Fecha pasada"
+msgstr ""
+
+msgid "Gratis"
+msgstr ""
+
+msgid "He leído y acepto la política de cancelación"
+msgstr ""
+
+msgid "Idioma para tu email de confirmación"
+msgstr ""
+
+msgid "Idioma preferido"
+msgstr ""
+
+msgid "Idiomas"
+msgstr ""
+
+msgid "Incluye"
+msgstr ""
+
+msgid "Ingresa un correo válido"
+msgstr ""
+
+msgid "Máximo {n} personas"
+msgstr ""
+
+msgid "Niños"
+msgstr ""
+
+msgid "No disponible"
+msgstr ""
+
+msgid "No hay cupos disponibles para esta fecha"
+msgstr ""
+
+msgid "No incluye"
+msgstr ""
+
+msgid "Nombre completo"
+msgstr ""
+
+msgid "Ocurrió un error. Por favor intenta de nuevo."
+msgstr ""
+
+msgid "Pago"
+msgstr ""
+
+msgid "Pago seguro con Stripe"
+msgstr ""
+
+msgid "Personas del grupo"
+msgstr ""
+
+msgid "Procesando…"
+msgstr ""
+
+msgid "Resumen"
+msgstr ""
+
+msgid "Se excede el máximo de {n} personas"
+msgstr ""
+
+msgid "Selecciona horario"
+msgstr ""
+
+msgid "Selecciona una fecha en el calendario"
+msgstr ""
+
+msgid "Siguiente"
+msgstr ""
+
+msgid "Sin cupos"
+msgstr ""
+
+msgid "Sin salidas disponibles para esta fecha."
+msgstr ""
+
+msgid "Solicitudes especiales (opcional)"
+msgstr ""
+
+msgid "Subtotal"
+msgstr ""
+
+msgid "Tarjeta, Apple Pay, Google Pay"
+msgstr ""
+
+msgid "Te enviamos todos los detalles a tu correo."
+msgstr ""
+
+msgid "Total personas"
+msgstr ""
+
+msgid "Tu nombre y apellido"
+msgstr ""
+
+msgid "Tus datos"
+msgstr ""
+
+msgid "WhatsApp / Teléfono"
+msgstr ""
+
+msgid "años"
+msgstr ""
+
+msgid "min"
+msgstr ""
+
+msgid "por persona"
+msgstr ""
+
+msgid "tu@correo.com"
+msgstr ""
+
+msgid "{n} lugares disponibles"
+msgstr ""
+
+msgid "¡Reservado!"
+msgstr ""
+
+msgid "¡Tu reserva está confirmada!"
+msgstr ""
+
+msgid "¿Tienes un cupón de descuento?"
+msgstr ""
+
+msgid "≈ USD {amount} (referencia)"
+msgstr ""
+
+msgid "▸ 3–6 días antes: reembolso del 50 %"
+msgstr ""
+
+msgid "✓ 7+ días antes: reembolso completo"
+msgstr ""
+
+msgid "✕ Menos de 3 días: sin reembolso"
+msgstr ""
+
+msgid "Extras"
+msgstr ""
+
+msgid "Incluir"
+msgstr ""
+
+msgid "¿Querés sumar algún servicio extra?"
+msgstr ""
+
+msgid "Servicios extra"
+msgstr ""
+
+msgid "Completá el pago de tu reserva — %s"
+msgstr ""
+
+msgid "Hola <strong>%1$s</strong>,<br>Tu reserva <strong>%2$s</strong> fue reprogramada. Estos son los nuevos detalles:"
+msgstr ""
+
+msgid "Hola <strong>%1$s</strong>,<br>Ya armamos tu reserva para <strong>%2$s</strong> el %3$s — solo falta completar el pago para confirmarla."
+msgstr ""
+
+msgid "Tu reserva cambió de fecha"
+msgstr ""
+
+msgid "Tu reserva está lista 🎉"
+msgstr ""
+
+msgid "¿La nueva fecha no te sirve? Escribinos y lo resolvemos."
+msgstr ""
+
+msgid "🔄 Tu reserva fue reprogramada — %s"
+msgstr ""
+

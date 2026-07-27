@@ -22,6 +22,9 @@ class FakeWpdb {
     /** @var array Filas que devuelve get_results() si la consulta menciona amir_prices */
     public array $price_rows = [];
 
+    /** @var array Filas que devuelve get_results() si la consulta menciona amir_addons */
+    public array $addon_rows = [];
+
     /** @var mixed Valor que devuelve get_var() */
     public $var_result = null;
 
@@ -57,6 +60,9 @@ class FakeWpdb {
     public function get_results( string $query ): array {
         if ( str_contains( $query, 'amir_prices' ) ) {
             return $this->price_rows;
+        }
+        if ( str_contains( $query, 'amir_addons' ) ) {
+            return $this->addon_rows;
         }
         return [];
     }

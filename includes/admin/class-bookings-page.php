@@ -144,7 +144,7 @@ class BookingsPage {
                 <?php echo $b->adults + $b->children + $b->babies; ?> pax
                 <br><span style="font-size:11px;color:#5a7068;"><?php echo $b->adults; ?>A <?php echo $b->children; ?>N <?php echo $b->babies; ?>B</span>
               </td>
-              <td style="font-weight:700;">$<?php echo number_format($b->total_mxn,0,'.',','); ?><br><span style="font-size:11px;font-weight:400;color:#5a7068;">MXN</span></td>
+              <td style="font-weight:700;"><?php echo \AmirBooking\Core\Currency::format((float)$b->total_mxn, 0); ?></td>
               <td><?php echo $this->status_badge($b->status); ?></td>
               <td><?php echo $this->source_badge($b->booking_source); ?></td>
               <td style="font-size:12px;color:#5a7068;"><?php echo date('d/m/y', strtotime($b->created_at)); ?></td>
@@ -204,6 +204,12 @@ class BookingsPage {
             echo '<div class="wrap"><div class="notice notice-error"><p>Reserva no encontrada.</p></div></div>';
             return;
         }
+
+        $addons = $wpdb->get_results( $wpdb->prepare(
+            "SELECT name_snapshot, qty, unit_price_mxn, total_mxn
+             FROM {$wpdb->prefix}amir_booking_addons WHERE booking_id = %d ORDER BY id",
+            $booking_id
+        ) ) ?? [];
 
         ?>
         <div class="wrap ab-admin-wrap">
@@ -266,7 +272,7 @@ class BookingsPage {
             <div class="ab-detail-card">
               <div class="ab-detail-card-title">💳 Pago</div>
               <div class="ab-detail-grid">
-                <div class="ab-detail-row"><span>Total pagado</span><strong style="font-size:18px;">$<?php echo number_format($b->total_mxn,2); ?> MXN</strong></div>
+                <div class="ab-detail-row"><span><?php echo $b->confirmed_at ? 'Total pagado' : 'Total a cobrar'; ?></span><strong style="font-size:18px;"><?php echo \AmirBooking\Core\Currency::format((float)$b->total_mxn); ?></strong></div>
                 <?php if ($b->usd_reference) : ?>
                 <div class="ab-detail-row"><span>Referencia USD</span><span>≈ $<?php echo number_format($b->usd_reference,2); ?> USD (tipo <?php echo $b->exchange_rate; ?>)</span></div>
                 <?php endif; ?>
@@ -282,6 +288,21 @@ class BookingsPage {
                 <?php endif; ?>
               </div>
             </div>
+
+            <!-- Servicios extra -->
+            <?php if ( ! empty( $addons ) ) : ?>
+            <div class="ab-detail-card">
+              <div class="ab-detail-card-title">🎁 Servicios extra</div>
+              <div class="ab-detail-grid">
+                <?php foreach ( $addons as $ad ) : ?>
+                <div class="ab-detail-row">
+                  <span><?php echo esc_html( $ad->name_snapshot ); ?><?php echo $ad->qty > 1 ? ' × ' . (int) $ad->qty : ''; ?></span>
+                  <strong><?php echo \AmirBooking\Core\Currency::format( (float) $ad->total_mxn ); ?></strong>
+                </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+            <?php endif; ?>
 
             <!-- Notas internas -->
             <div class="ab-detail-card">
@@ -322,6 +343,14 @@ class BookingsPage {
                 <?php wp_nonce_field('amir_booking_action_'.$booking_id); ?>
                 <input type="hidden" name="amir_action" value="resend_confirmation" />
                 <button type="submit" class="button" style="width:100%;">📧 Reenviar email de confirmación</button>
+              </form>
+              <?php endif; ?>
+
+              <?php if ( $b->status === 'awaiting_payment' ) : ?>
+              <form method="post" style="margin-bottom:10px;">
+                <?php wp_nonce_field('amir_booking_action_'.$booking_id); ?>
+                <input type="hidden" name="amir_action" value="resend_payment_link" />
+                <button type="submit" class="button" style="width:100%;">💳 Reenviar link de pago</button>
               </form>
               <?php endif; ?>
 
@@ -411,10 +440,14 @@ class BookingsPage {
             <div class="ab-detail-card">
               <div class="ab-detail-card-title">📨 Emails enviados</div>
               <div style="font-size:13px;color:#5a7068;">
-                <?php if ($b->confirmed_at)         : ?><div style="padding:5px 0;border-bottom:1px solid #f5f5f5;">✅ Confirmación — <?php echo date('d/m/Y H:i', strtotime($b->confirmed_at)); ?></div><?php endif; ?>
-                <?php if ($b->reminder_sent_at)     : ?><div style="padding:5px 0;border-bottom:1px solid #f5f5f5;">⏰ Recordatorio — <?php echo date('d/m/Y H:i', strtotime($b->reminder_sent_at)); ?></div><?php endif; ?>
-                <?php if ($b->review_email_sent_at) : ?><div style="padding:5px 0;">⭐ Solicitud reseña — <?php echo date('d/m/Y H:i', strtotime($b->review_email_sent_at)); ?></div><?php endif; ?>
-                <?php if (!$b->confirmed_at && !$b->reminder_sent_at && !$b->review_email_sent_at) : ?>
+                <?php if ($b->confirmed_at)          : ?><div style="padding:5px 0;border-bottom:1px solid #f5f5f5;">✅ Confirmación — <?php echo date('d/m/Y H:i', strtotime($b->confirmed_at)); ?></div><?php endif; ?>
+                <?php if ($b->wishlist_notice_sent_at) : ?><div style="padding:5px 0;border-bottom:1px solid #f5f5f5;">🔔 Tour abierto (link de pago) — <?php echo date('d/m/Y H:i', strtotime($b->wishlist_notice_sent_at)); ?></div><?php endif; ?>
+                <?php if ($b->reminder_sent_at)      : ?><div style="padding:5px 0;border-bottom:1px solid #f5f5f5;">⏰ Recordatorio — <?php echo date('d/m/Y H:i', strtotime($b->reminder_sent_at)); ?></div><?php endif; ?>
+                <?php if ($b->review_email_sent_at)  : ?><div style="padding:5px 0;">⭐ Solicitud reseña — <?php echo date('d/m/Y H:i', strtotime($b->review_email_sent_at)); ?></div><?php endif; ?>
+                <?php if (!empty($b->wishlist_notice_error)) : ?>
+                  <div style="padding:5px 0;border-bottom:1px solid #f5f5f5;color:#e24b4a;">⚠️ Falló el email de "tour abierto" — <?php echo esc_html($b->wishlist_notice_error); ?></div>
+                <?php endif; ?>
+                <?php if (!$b->confirmed_at && !$b->reminder_sent_at && !$b->review_email_sent_at && !$b->wishlist_notice_sent_at && empty($b->wishlist_notice_error)) : ?>
                   <span>No se han enviado emails aún.</span>
                 <?php endif; ?>
               </div>
@@ -478,6 +511,17 @@ class BookingsPage {
                     return 'Email de confirmación reenviado.';
                 }
                 break;
+
+            case 'resend_payment_link':
+                $dispatcher = new \AmirBooking\Emails\EmailDispatcher();
+                $b = $dispatcher->get_booking_with_tour($booking_id);
+                if ($b && $b->status === 'awaiting_payment') {
+                    $result = $dispatcher->send_payment_link_notice($b);
+                    return $result['success']
+                        ? 'Link de pago reenviado al cliente.'
+                        : 'No se pudo enviar el email — revisa el log de errores del servidor.';
+                }
+                return 'La reserva no está en estado "esperando pago".';
 
             case 'approve_cancellation':
                 $note = sanitize_textarea_field($_POST['cancel_note'] ?? '');
@@ -679,7 +723,7 @@ class BookingsPage {
         $tour_date = new \DateTime($b->tour_date);
         $days      = (int)$today->diff($tour_date)->days;
         if ($days >= 7) return '7+ días de anticipación → Reembolso 100%.';
-        if ($days >= 3) return "3-6 días de anticipación → Reembolso 50% ($".number_format($b->total_mxn*0.5,2)." MXN).";
+        if ($days >= 3) return "3-6 días de anticipación → Reembolso 50% (" . \AmirBooking\Core\Currency::format($b->total_mxn*0.5) . ").";
         return 'Menos de 3 días → Sin reembolso según política.';
     }
 
@@ -861,9 +905,9 @@ class BookingsPage {
                 <input type="number" name="total_mxn" value="0" min="0" step="0.01"
                        style="<?php echo $this->input_style(); ?> width:100%;" />
               </div>
-              <div>
+              <div id="amir-payment-method-wrap">
                 <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Método de pago</label>
-                <select name="payment_method_note" style="<?php echo $this->input_style(); ?> width:100%;">
+                <select name="payment_method_note" id="amir-payment-method" style="<?php echo $this->input_style(); ?> width:100%;">
                   <option value="Efectivo">Efectivo</option>
                   <option value="Transferencia">Transferencia</option>
                   <option value="Tarjeta (presencial)">Tarjeta (presencial)</option>
@@ -873,7 +917,36 @@ class BookingsPage {
                 </select>
               </div>
             </div>
+
+            <div style="margin-top:14px;padding:12px 16px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a;">
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;">
+                <input type="checkbox" name="awaiting_payment" id="amir-awaiting-payment" value="1"
+                       style="width:16px;height:16px;accent-color:#BA7517;" />
+                <span>
+                  <strong>El cliente todavía no pagó — enviarle un link de pago</strong>
+                  <span style="display:block;font-size:12px;color:#5a7068;margin-top:1px;">
+                    La reserva queda reservada pero sin confirmar. Se manda un email con el link para que el cliente pague online (Stripe/Mercado Pago) — mismo mecanismo que la lista de interés. El "Método de pago" de arriba no aplica en este caso.
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
+
+          <script>
+          (function(){
+            var toggle  = document.getElementById('amir-awaiting-payment');
+            var methodSelect = document.getElementById('amir-payment-method');
+            var sendEmailCheckbox = document.querySelector('input[name="send_email"]');
+            if (!toggle) return;
+            toggle.addEventListener('change', function(){
+              methodSelect.disabled = this.checked;
+              if (sendEmailCheckbox) {
+                sendEmailCheckbox.disabled = this.checked;
+                if (this.checked) sendEmailCheckbox.checked = false;
+              }
+            });
+          })();
+          </script>
 
           <!-- ── Notas y correo ── -->
           <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">

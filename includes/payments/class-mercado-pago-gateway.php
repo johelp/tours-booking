@@ -115,6 +115,14 @@ class MercadoPagoGateway implements PaymentGatewayInterface {
             return false;
         }
 
+        // Rechazar si el timestamp supera 300 s — mismo margen que ya usa
+        // StripeGateway::verify_webhook_signature() para evitar replay de un
+        // payload+firma capturado (defensa en profundidad; BookingManager::confirm()
+        // ya es idempotente, pero no hay razón para aceptar firmas indefinidamente).
+        if ( ! ctype_digit( $ts ) || abs( time() - (int) $ts ) > 300 ) {
+            return false;
+        }
+
         $data    = json_decode( $payload, true );
         $data_id = $data['data']['id'] ?? '';
         if ( $data_id === '' ) {

@@ -39,7 +39,7 @@ class PaymentLogPage {
 
           <form method="get" style="margin:16px 0;display:flex;gap:8px;max-width:420px;">
             <input type="hidden" name="page" value="amir-payment-log" />
-            <input type="text" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="Buscar por referencia (ej. AMIR-2026-00001)" style="flex:1;border:1px solid #c3d9d0;border-radius:6px;padding:8px 11px;font-size:13px;" />
+            <input type="text" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="Buscar por referencia (ej. <?php echo esc_attr( ( get_option( 'amir_booking_ref_prefix', 'BK' ) ?: 'BK' ) . '-' . date( 'Y' ) . '-00001' ); ?>)" style="flex:1;border:1px solid #c3d9d0;border-radius:6px;padding:8px 11px;font-size:13px;" />
             <button type="submit" class="button">Buscar</button>
           </form>
 

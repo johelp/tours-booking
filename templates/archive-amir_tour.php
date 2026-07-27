@@ -8,6 +8,7 @@
 defined( 'ABSPATH' ) || exit;
 
 $lang  = function_exists('pll_current_language') ? pll_current_language('slug') : 'es';
+$lang  = \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
 $is_en = $lang === 'en';
 
 // Capturar token de partner de la URL
@@ -45,7 +46,12 @@ get_header();
         $name_en    = get_post_meta($pid,'_amir_name_en',true);
         $duration   = (int) get_post_meta($pid,'_amir_duration_minutes',true);
         $min_age    = (int) get_post_meta($pid,'_amir_min_age',true);
-        $title      = $is_en ? ($name_en ?: get_the_title()) : get_the_title();
+        // Nombre multi-idioma: es/en desde post meta de siempre, 3+ desde content_i18n.
+        $title      = \AmirBooking\Core\Languages::tour_field( (object) [
+            'name_es'      => get_the_title(),
+            'name_en'      => $name_en,
+            'content_i18n' => get_post_meta( $pid, '_amir_content_i18n', true ) ?: '{}',
+        ], 'name', $lang ) ?: get_the_title();
         $cover      = get_the_post_thumbnail_url($pid,'large');
         $link       = $ref ? add_query_arg('ref',$ref,get_permalink()) : get_permalink();
         $dur_fmt    = $duration >= 60 ? round($duration/60,1).'h' : $duration.'min';

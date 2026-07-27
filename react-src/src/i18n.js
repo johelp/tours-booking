@@ -7,10 +7,15 @@ const translations = {
     step_date:      'Elige tu fecha',
     step_schedule:  'Selecciona horario',
     step_people:    'Personas',
+    step_extras:    'Extras',
     step_details:   'Tus datos',
     step_summary:   'Resumen',
     step_payment:   'Pago',
     step_confirm:   '¡Reservado!',
+
+    // Servicios extra
+    extras_title:    '¿Querés sumar algún servicio extra?',
+    extras_included: 'Incluir',
 
     // Calendar
     cal_prev:         'Anterior',
@@ -107,16 +112,42 @@ const translations = {
     languages:        'Idiomas',
     min:              'min',
     years:            'años',
+
+    // Wishlist ("Próximamente")
+    coming_soon:      'Próximamente',
+    interest_one:     '{n} persona ya se anotó',
+    interest_other:   '{n} personas ya se anotaron',
+    im_interested:    'Me interesa',
+    choose_time:      'Elegí un horario',
+    your_name:        'Tu nombre',
+    your_email:       'Tu email',
+    phone_optional:   'Teléfono (opcional)',
+    sending:          'Enviando…',
+    signup_no_payment:'Anotarme — sin pagar ahora',
+    estimated_total:  'Total estimado',
+    signed_up_msg:    'Listo, quedaste anotado — si se abre, te mandamos el link de pago por email.',
+    something_wrong:  'Algo salió mal.',
+
+    // TourList
+    max_short:        'Máx',
+    age_short:        'Edad',
+    private_group:    'Grupo privado',
+    from_label:       'Desde',
   },
 
   en: {
     step_date:      'Choose your date',
     step_schedule:  'Select time',
     step_people:    'People',
+    step_extras:    'Extras',
     step_details:   'Your details',
     step_summary:   'Summary',
     step_payment:   'Payment',
     step_confirm:   'Booked!',
+
+    // Add-ons
+    extras_title:    'Want to add any extra services?',
+    extras_included: 'Include',
 
     cal_prev:         'Previous',
     cal_next:         'Next',
@@ -205,13 +236,38 @@ const translations = {
     languages:        'Languages',
     min:              'min',
     years:            'years',
+
+    coming_soon:      'Coming soon',
+    interest_one:     '{n} person is already interested',
+    interest_other:   '{n} people are already interested',
+    im_interested:    "I'm interested",
+    choose_time:      'Choose a time',
+    your_name:        'Your name',
+    your_email:       'Your email',
+    phone_optional:   'Phone (optional)',
+    sending:          'Sending…',
+    signup_no_payment:'Sign me up — no payment now',
+    estimated_total:  'Estimated total',
+    signed_up_msg:    "You're on the list — we'll email you a payment link if this tour opens.",
+    something_wrong:  'Something went wrong.',
+
+    max_short:        'Max',
+    age_short:        'Age',
+    private_group:    'Private group',
+    from_label:       'From',
   },
 };
 
 export function useT( lang = 'es' ) {
+  // es/en: diccionario estático de siempre, sin cambios. Cualquier otro
+  // idioma activo (agregado por el operador en Configuración → Idiomas):
+  // primero busca la traducción que PHP arma vía gettext (window.amirBooking.i18n,
+  // ver class-shortcodes.php::widget_i18n_map()) y si falta la clave cae al
+  // español — así un idioma recién agregado sin .po todavía no rompe nada.
   const dict = translations[ lang ] ?? translations.es;
+  const remote = ( typeof window !== 'undefined' && window.amirBooking?.i18n?.[ lang ] ) || null;
   return ( key, vars = {} ) => {
-    let str = dict[ key ] ?? key;
+    let str = remote?.[ key ] ?? dict[ key ] ?? key;
     Object.entries( vars ).forEach( ( [ k, v ] ) => {
       str = str.replace( `{${k}}`, v );
     } );

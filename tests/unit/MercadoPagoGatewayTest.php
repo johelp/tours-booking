@@ -49,13 +49,28 @@ final class MercadoPagoGatewayTest extends TestCase {
     public function test_verify_webhook_signature_accepts_a_valid_signature(): void {
         update_option( 'amir_mp_webhook_secret', 'test-secret' );
         $payload    = json_encode( [ 'type' => 'payment', 'data' => [ 'id' => '123456' ] ] );
-        $ts         = '1700000000';
+        $ts         = (string) time(); // debe ser reciente: verify_webhook_signature() rechaza firmas de más de 300s
         $request_id = 'req-abc';
         $manifest   = "id:123456;request-id:{$request_id};ts:{$ts};";
         $v1         = hash_hmac( 'sha256', $manifest, 'test-secret' );
 
         $gateway = new MercadoPagoGateway();
         $this->assertTrue( $gateway->verify_webhook_signature( $payload, [
+            'x-signature'  => "ts={$ts},v1={$v1}",
+            'x-request-id' => $request_id,
+        ] ) );
+    }
+
+    public function test_verify_webhook_signature_rejects_an_expired_timestamp(): void {
+        update_option( 'amir_mp_webhook_secret', 'test-secret' );
+        $payload    = json_encode( [ 'type' => 'payment', 'data' => [ 'id' => '123456' ] ] );
+        $ts         = (string) ( time() - 301 ); // justo fuera de la ventana de 300s
+        $request_id = 'req-abc';
+        $manifest   = "id:123456;request-id:{$request_id};ts:{$ts};";
+        $v1         = hash_hmac( 'sha256', $manifest, 'test-secret' ); // firma matemáticamente válida, pero vieja
+
+        $gateway = new MercadoPagoGateway();
+        $this->assertFalse( $gateway->verify_webhook_signature( $payload, [
             'x-signature'  => "ts={$ts},v1={$v1}",
             'x-request-id' => $request_id,
         ] ) );

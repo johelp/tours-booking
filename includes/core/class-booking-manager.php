@@ -59,7 +59,7 @@ class BookingManager {
             );
         }
 
-        // Calcular precio (con cupón si se envió uno)
+        // Calcular precio (con cupón y add-ons si se enviaron)
         $quote = $this->pricing->quote(
             (int) $data['tour_id'],
             (int) $data['schedule_id'],
@@ -67,7 +67,9 @@ class BookingManager {
             (int) $data['adults'],
             (int) $data['children'],
             (int) $data['babies'],
-            sanitize_text_field( $data['coupon_code'] ?? '' )
+            sanitize_text_field( $data['coupon_code'] ?? '' ),
+            is_array( $data['addons'] ?? null ) ? $data['addons'] : [],
+            $data['lang'] ?? 'es'
         );
 
         if ( ! $quote->is_valid() ) {
@@ -146,6 +148,33 @@ class BookingManager {
         }
 
         $booking_id = $wpdb->insert_id;
+
+        // Persistir los add-ons ya validados/tarifados por el quote — a
+        // diferencia del cupón (que se marca usado fuera de la transacción
+        // a propósito, ver abajo), esto SÍ va dentro: es parte de lo
+        // cobrado, si falla debe revertirse la reserva completa.
+        foreach ( $quote->breakdown as $item ) {
+            if ( ( $item['type'] ?? '' ) !== 'addon' ) {
+                continue;
+            }
+            $addon_inserted = $wpdb->insert(
+                "{$wpdb->prefix}amir_booking_addons",
+                [
+                    'booking_id'     => $booking_id,
+                    'addon_id'       => (int) $item['addon_id'],
+                    'qty'            => (int) $item['qty'],
+                    'unit_price_mxn' => (float) $item['unit_mxn'],
+                    'total_mxn'      => (float) $item['total_mxn'],
+                    'name_snapshot'  => (string) $item['name'],
+                ],
+                [ '%d', '%d', '%d', '%f', '%f', '%s' ]
+            );
+            if ( ! $addon_inserted ) {
+                $wpdb->query( 'ROLLBACK' );
+                return BookingResult::error( 'Error al guardar los servicios extra. Por favor intenta de nuevo.' );
+            }
+        }
+
         $wpdb->query( 'COMMIT' );
 
         // Marcar el cupón como usado (fuera de la transacción de cupos —
@@ -329,10 +358,11 @@ class BookingManager {
             $total_mxn = $quote->is_valid() ? $quote->total_mxn : 0.0;
         }
 
-        $booking_ref  = $this->generate_ref();
-        $access_token = self::generate_access_token();
-        $partner_id   = ! empty( $data['partner_id'] ) ? (int) $data['partner_id'] : null;
-        $now          = current_time( 'mysql' );
+        $booking_ref     = $this->generate_ref();
+        $access_token    = self::generate_access_token();
+        $partner_id      = ! empty( $data['partner_id'] ) ? (int) $data['partner_id'] : null;
+        $now             = current_time( 'mysql' );
+        $awaiting_payment = ! empty( $data['awaiting_payment'] );
 
         $inserted = $wpdb->insert(
             $wpdb->prefix . 'amir_bookings',
@@ -343,7 +373,7 @@ class BookingManager {
                 'schedule_id'       => $schedule_id,
                 'partner_id'        => $partner_id,
                 'tour_date'         => $date,
-                'status'            => 'confirmed',
+                'status'            => $awaiting_payment ? 'awaiting_payment' : 'confirmed',
                 'booking_source'    => 'manual',
                 'lang'              => in_array( $data['lang'] ?? '', array('es','en'), true ) ? $data['lang'] : 'es',
                 'customer_name'     => sanitize_text_field( $data['customer_name'] ),
@@ -355,11 +385,11 @@ class BookingManager {
                 'total_mxn'         => $total_mxn,
                 'special_requests'  => sanitize_textarea_field( $data['special_requests'] ?? '' ),
                 'internal_notes'    => sanitize_textarea_field(
-                    ( ! empty( $data['payment_method_note'] ) ? 'Pago: ' . $data['payment_method_note'] . "\n" : '' )
+                    ( $awaiting_payment ? '' : ( ! empty( $data['payment_method_note'] ) ? 'Pago: ' . $data['payment_method_note'] . "\n" : '' ) )
                     . ( $data['internal_notes'] ?? '' )
                 ),
                 'custom_email_note' => sanitize_textarea_field( $data['custom_email_note'] ?? '' ),
-                'confirmed_at'      => $now,
+                'confirmed_at'      => $awaiting_payment ? null : $now,
             ),
             array( '%s','%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%s','%s','%s','%s' )
         );
@@ -376,6 +406,18 @@ class BookingManager {
         $date_parts = explode( '-', $date );
         if ( count( $date_parts ) === 3 ) {
             delete_transient( "amir_avail_{$tour_id}_{$date_parts[0]}_{$date_parts[1]}" );
+        }
+
+        if ( $awaiting_payment ) {
+            // Sin voucher/QR todavía — recién existen una vez que el pago
+            // se confirma de verdad (mismo criterio que wishlist/confirm()).
+            $dispatcher = new \AmirBooking\Emails\EmailDispatcher();
+            $booking    = $dispatcher->get_booking_with_tour( $booking_id );
+            if ( $booking ) {
+                $dispatcher->send_payment_link_notice( $booking );
+            }
+
+            return new BookingResult( true, $booking_id, $booking_ref, $total_mxn );
         }
 
         // Generar PDF y QR en shutdown (no bloquea la respuesta)
@@ -735,19 +777,22 @@ class BookingManager {
 
     private function generate_ref(): string {
         global $wpdb;
-        $year = date( 'Y' );
+        $year   = date( 'Y' );
+        $prefix = get_option( 'amir_booking_ref_prefix', 'BK' ) ?: 'BK';
 
-        // Usar MAX en lugar de COUNT para evitar colisiones tras cancelaciones/borrados
+        // Usar MAX en lugar de COUNT para evitar colisiones tras cancelaciones/borrados.
+        // Cuenta solo dentro del prefijo actual — si el operador lo cambia, arranca de
+        // nuevo desde 00001 con el prefijo nuevo (las referencias viejas no se tocan).
         $last = (int) $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(booking_ref, '-', -1) AS UNSIGNED)), 0)
                  FROM {$wpdb->prefix}amir_bookings
                  WHERE booking_ref LIKE %s",
-                "AMIR-{$year}-%"
+                "{$prefix}-{$year}-%"
             )
         );
 
-        return sprintf( 'AMIR-%s-%05d', $year, $last + 1 );
+        return sprintf( '%s-%s-%05d', $prefix, $year, $last + 1 );
     }
 
     private function resolve_partner_id( string $token ): ?int {

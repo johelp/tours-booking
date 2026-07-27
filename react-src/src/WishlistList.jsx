@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getUpcomingTours, registerInterest, getTourSchedules, getQuote } from './api.js';
+import translations, { useT } from './i18n.js';
 
 /**
  * Grilla de tours "Próximamente" — [amir_wishlist]
@@ -27,7 +28,15 @@ export default function WishlistList({ lang = 'es', rootEl = null }) {
       .catch( () => setLoading( false ) );
   }, [ lang ] );
 
-  if ( loading || ! tours.length ) return null;
+  if ( loading ) return null;
+
+  if ( ! tours.length ) {
+    return (
+      <p style={{ fontFamily:'inherit', fontSize:14, color:'#5a7068', textAlign:'center', padding:'24px 12px' }}>
+        { lang === 'en' ? 'No upcoming tours yet — check back soon.' : 'Por ahora no hay tours próximamente — volvé a mirar pronto.' }
+      </p>
+    );
+  }
 
   return (
     <div style={{ fontFamily:'inherit' }}>
@@ -74,15 +83,12 @@ export default function WishlistList({ lang = 'es', rootEl = null }) {
 function fmtDate( dateStr, lang ) {
   if ( ! dateStr ) return '';
   const [ y, m, d ] = dateStr.split('-');
-  const months = {
-    es: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'],
-    en: ['January','February','March','April','May','June','July','August','September','October','November','December'],
-  };
-  return `${parseInt(d)} ${months[lang]?.[parseInt(m)-1]} ${y}`;
+  const months = ( translations[ lang ] ?? translations.es ).months;
+  return `${parseInt(d)} ${months?.[parseInt(m)-1]} ${y}`;
 }
 
 function WishlistCard({ tour, lang }) {
-  const isEn    = lang === 'en';
+  const t       = useT( lang );
   const isGroup = tour.price_model === 'group';
 
   const [ open,      setOpen      ] = useState( false );
@@ -138,7 +144,7 @@ function WishlistCard({ tour, lang }) {
       lang,
     } )
       .then( () => setDone( true ) )
-      .catch( err => setError( err.message || ( isEn ? 'Something went wrong.' : 'Algo salió mal.' ) ) )
+      .catch( err => setError( err.message || t('something_wrong') ) )
       .finally( () => setSending( false ) );
   };
 
@@ -148,7 +154,7 @@ function WishlistCard({ tour, lang }) {
         { tour.cover_image
           ? <img src={tour.cover_image} alt={tour.name} className="wl-img" loading="lazy" />
           : <div className="wl-img-ph">⛵</div> }
-        <span className="wl-soon">{ isEn ? 'Coming soon' : 'Próximamente' }</span>
+        <span className="wl-soon">{ t('coming_soon') }</span>
       </div>
       <div className="wl-body">
         <h3 className="wl-title">{tour.name}</h3>
@@ -157,25 +163,23 @@ function WishlistCard({ tour, lang }) {
 
         { tour.interest_count > 0 && (
           <p className="wl-count">
-            { isEn
-              ? `${tour.interest_count} ${tour.interest_count === 1 ? 'person is' : 'people are'} already interested`
-              : `${tour.interest_count} ${tour.interest_count === 1 ? 'persona ya se anotó' : 'personas ya se anotaron'}` }
+            { t( tour.interest_count === 1 ? 'interest_one' : 'interest_other', { n: tour.interest_count } ) }
           </p>
         )}
 
         { done ? (
-          <p className="wl-ok">✓ { isEn ? 'You\'re on the list — we\'ll email you a payment link if this tour opens.' : 'Listo, quedaste anotado — si se abre, te mandamos el link de pago por email.' }</p>
+          <p className="wl-ok">✓ { t('signed_up_msg') }</p>
         ) : ! open ? (
           <button type="button" className="wl-toggle" onClick={() => setOpen(true)}>
-            { isEn ? 'I\'m interested' : 'Me interesa' }
+            { t('im_interested') }
           </button>
         ) : (
           <form className="wl-form" onSubmit={submit}>
-            { schedules === null && <span style={{fontSize:12,color:'#5a7068'}}>{isEn?'Loading…':'Cargando…'}</span> }
+            { schedules === null && <span style={{fontSize:12,color:'#5a7068'}}>{t('loading')}</span> }
 
             { schedules && schedules.length > 1 && (
               <select value={scheduleId ?? ''} onChange={e => setScheduleId(Number(e.target.value))} required>
-                <option value="" disabled>{isEn ? 'Choose a time' : 'Elegí un horario'}</option>
+                <option value="" disabled>{t('choose_time')}</option>
                 { schedules.map( s => (
                   <option key={s.id} value={s.id}>{s.label || s.time_start}</option>
                 ) ) }
@@ -183,7 +187,7 @@ function WishlistCard({ tour, lang }) {
             ) }
 
             <div>
-              <div className="wl-people-label">{ isEn ? 'People' : 'Personas' }</div>
+              <div className="wl-people-label">{ t('step_people') }</div>
               { isGroup ? (
                 <div className="wl-counter">
                   <button type="button" onClick={() => setAdults(v => Math.max(1, v-1))} disabled={adults<=1}>−</button>
@@ -193,7 +197,7 @@ function WishlistCard({ tour, lang }) {
               ) : (
                 <div className="wl-row">
                   <div>
-                    <div style={{fontSize:11,color:'#5a7068'}}>{isEn?'Adults':'Adultos'}</div>
+                    <div style={{fontSize:11,color:'#5a7068'}}>{t('adults')}</div>
                     <div className="wl-counter">
                       <button type="button" onClick={() => setAdults(v => Math.max(1, v-1))} disabled={adults<=1}>−</button>
                       <span>{adults}</span>
@@ -201,7 +205,7 @@ function WishlistCard({ tour, lang }) {
                     </div>
                   </div>
                   <div>
-                    <div style={{fontSize:11,color:'#5a7068'}}>{isEn?'Children':'Niños'}</div>
+                    <div style={{fontSize:11,color:'#5a7068'}}>{t('children')}</div>
                     <div className="wl-counter">
                       <button type="button" onClick={() => setChildren(v => Math.max(0, v-1))} disabled={children<=0}>−</button>
                       <span>{children}</span>
@@ -209,7 +213,7 @@ function WishlistCard({ tour, lang }) {
                     </div>
                   </div>
                   <div>
-                    <div style={{fontSize:11,color:'#5a7068'}}>{isEn?'Babies':'Bebés'}</div>
+                    <div style={{fontSize:11,color:'#5a7068'}}>{t('babies')}</div>
                     <div className="wl-counter">
                       <button type="button" onClick={() => setBabies(v => Math.max(0, v-1))} disabled={babies<=0}>−</button>
                       <span>{babies}</span>
@@ -222,18 +226,18 @@ function WishlistCard({ tour, lang }) {
 
             { quote?.total_mxn > 0 && (
               <p className="wl-price">
-                { isEn ? 'Estimated total' : 'Total estimado' }: <strong>${quote.total_mxn.toLocaleString('es-MX')}</strong>
+                { t('estimated_total') }: <strong>${quote.total_mxn.toLocaleString('es-MX')}</strong>
               </p>
             ) }
 
-            <input type="text" placeholder={isEn ? 'Your name' : 'Tu nombre'} value={name} onChange={e => setName(e.target.value)} required />
-            <input type="email" placeholder={isEn ? 'Your email' : 'Tu email'} value={email} onChange={e => setEmail(e.target.value)} required />
-            <input type="tel" placeholder={isEn ? 'Phone (optional)' : 'Teléfono (opcional)'} value={phone} onChange={e => setPhone(e.target.value)} />
+            <input type="text" placeholder={t('your_name')} value={name} onChange={e => setName(e.target.value)} required />
+            <input type="email" placeholder={t('your_email')} value={email} onChange={e => setEmail(e.target.value)} required />
+            <input type="tel" placeholder={t('phone_optional')} value={phone} onChange={e => setPhone(e.target.value)} />
 
             { error && <span className="wl-err">{error}</span> }
 
             <button type="submit" className="wl-submit" disabled={!canSubmit}>
-              { sending ? ( isEn ? 'Sending…' : 'Enviando…' ) : ( isEn ? 'Sign me up — no payment now' : 'Anotarme — sin pagar ahora' ) }
+              { sending ? t('sending') : t('signup_no_payment') }
             </button>
           </form>
         )}

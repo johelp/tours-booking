@@ -227,6 +227,11 @@ class VoucherGenerator {
      * Diseñado para imprimirse bien en A4.
      */
     private function get_full_html_document( object $b ): string {
+        $lang = isset( $b->lang ) ? $b->lang : 'es';
+        return Languages::run_in( $lang, fn() => $this->render_html_document( $b, $lang ) );
+    }
+
+    private function render_html_document( object $b, string $lang ): string {
         $qr_path      = $this->generate_qr((int)$b->id, $b->booking_ref);
         $qr_src       = $qr_path ? $this->path_to_data_uri($qr_path) : '';
         $logo_url_opt = get_option( 'amir_brand_logo_url', '' );
@@ -239,13 +244,15 @@ class VoucherGenerator {
         $brand_color  = get_option( 'amir_brand_color', '#1D9E75' );
         $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
 
-        $lang       = isset($b->lang) ? $b->lang : 'es';
-        $is_en      = $lang === 'en';
+        $is_en       = $lang === 'en';
         $tagline_opt = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
-        $tagline     = $tagline_opt ?: ( $is_en ? 'Experiences in Bacalar · Quintana Roo, Mexico' : 'Experiencias en Bacalar · Quintana Roo, México' );
-        $months     = $is_en
-            ? ['January','February','March','April','May','June','July','August','September','October','November','December']
-            : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+        $tagline     = $tagline_opt ?: __( 'Experiencias en Bacalar · Quintana Roo, México', 'amir-booking' );
+        $months      = [
+            __( 'Enero', 'amir-booking' ), __( 'Febrero', 'amir-booking' ), __( 'Marzo', 'amir-booking' ),
+            __( 'Abril', 'amir-booking' ), __( 'Mayo', 'amir-booking' ), __( 'Junio', 'amir-booking' ),
+            __( 'Julio', 'amir-booking' ), __( 'Agosto', 'amir-booking' ), __( 'Septiembre', 'amir-booking' ),
+            __( 'Octubre', 'amir-booking' ), __( 'Noviembre', 'amir-booking' ), __( 'Diciembre', 'amir-booking' ),
+        ];
         [$y,$m,$d]  = explode('-', $b->tour_date);
         $date_fmt   = (int)$d . ' ' . $months[(int)$m-1] . ' ' . $y;
 
@@ -256,12 +263,13 @@ class VoucherGenerator {
         };
 
         $pax_es  = [];
-        if ($b->adults)   $pax_es[] = $b->adults.' '.($is_en?'adults':'adultos');
-        if ($b->children) $pax_es[] = $b->children.' '.($is_en?'children':'niños');
-        if ($b->babies)   $pax_es[] = $b->babies.' '.($is_en?'babies':'bebés');
+        if ($b->adults)   $pax_es[] = $b->adults.' '.__( 'adultos', 'amir-booking' );
+        if ($b->children) $pax_es[] = $b->children.' '.__( 'niños', 'amir-booking' );
+        if ($b->babies)   $pax_es[] = $b->babies.' '.__( 'bebés', 'amir-booking' );
         $pax_str = implode(', ', $pax_es);
 
-        $meeting = $is_en ? ($b->meeting_point_en ?: $b->meeting_point_es) : $b->meeting_point_es;
+        $meeting  = Languages::tour_field( $b, 'meeting_point', $lang );
+        $tour_name = Languages::tour_field( $b, 'name', $lang );
         $maps_url = $b->meeting_lat
             ? "https://maps.google.com/?q={$b->meeting_lat},{$b->meeting_lng}"
             : 'https://maps.google.com/?q=Bacalar,Quintana+Roo,Mexico';
@@ -323,11 +331,11 @@ class VoucherGenerator {
 <body>
 <!-- Barra de impresión (no se imprime) -->
 <div class="no-print" style="background:<?php echo esc_attr($brand_color); ?>;color:#fff;text-align:center;padding:10px 16px;font-family:Arial,sans-serif;font-size:13px;position:sticky;top:0;z-index:99;">
-  📄 <?php echo $is_en ? 'To save as PDF, click' : 'Para guardar como PDF, haz clic en'; ?>
+  📄 <?php esc_html_e( 'Para guardar como PDF, haz clic en', 'amir-booking' ); ?>
   <button onclick="window.print()" style="background:#fff;color:<?php echo esc_attr($brand_color); ?>;border:none;border-radius:5px;padding:5px 14px;font-weight:700;cursor:pointer;margin:0 8px;">
-    <?php echo $is_en ? '🖨 Print / Save PDF' : '🖨 Imprimir / Guardar PDF'; ?>
+    🖨 <?php esc_html_e( 'Imprimir / Guardar PDF', 'amir-booking' ); ?>
   </button>
-  <?php echo $is_en ? 'and select "Save as PDF"' : 'y selecciona "Guardar como PDF"'; ?>
+  <?php esc_html_e( 'y selecciona "Guardar como PDF"', 'amir-booking' ); ?>
 </div>
 <div class="page">
 
@@ -340,12 +348,12 @@ class VoucherGenerator {
         <h1><?php echo esc_html($company_name); ?></h1>
       <?php endif; ?>
       <p><?php echo esc_html($tagline); ?></p>
-      <span class="status-ok">✓ <?php echo $is_en ? 'CONFIRMED BOOKING' : 'RESERVA CONFIRMADA'; ?></span>
+      <span class="status-ok">✓ <?php esc_html_e( 'RESERVA CONFIRMADA', 'amir-booking' ); ?></span>
     </div>
     <div class="qr-block">
       <?php if ($qr_src) : ?>
         <img src="<?php echo $qr_src; ?>" alt="QR" />
-        <div class="qr-label"><?php echo $is_en ? 'Scan to verify' : 'Escanea para verificar'; ?></div>
+        <div class="qr-label"><?php esc_html_e( 'Escanea para verificar', 'amir-booking' ); ?></div>
       <?php endif; ?>
     </div>
   </div>
@@ -353,36 +361,36 @@ class VoucherGenerator {
   <!-- Número de reserva -->
   <div class="ref-box">
     <div>
-      <div class="ref-label"><?php echo $is_en ? 'Booking reference' : 'Número de reserva'; ?></div>
+      <div class="ref-label"><?php esc_html_e( 'Número de reserva', 'amir-booking' ); ?></div>
       <div class="ref-value"><?php echo esc_html($b->booking_ref); ?></div>
     </div>
     <div class="ref-date">
-      <?php echo $is_en ? 'Booked on' : 'Reservado el'; ?><br>
+      <?php esc_html_e( 'Reservado el', 'amir-booking' ); ?><br>
       <?php echo date('d/m/Y', strtotime($b->created_at)); ?>
     </div>
   </div>
 
   <!-- Detalle del tour -->
   <div class="section">
-    <div class="section-title"><?php echo $is_en ? 'Tour details' : 'Detalle del tour'; ?></div>
-    <div class="info-row"><span class="label"><?php echo $is_en ? 'Tour' : 'Tour'; ?></span><span class="value"><?php echo esc_html($b->tour_name); ?></span></div>
-    <div class="info-row"><span class="label"><?php echo $is_en ? 'Date' : 'Fecha'; ?></span><span class="value"><?php echo $date_fmt; ?></span></div>
-    <div class="info-row"><span class="label"><?php echo $is_en ? 'Departure' : 'Hora de salida'; ?></span><span class="value"><?php echo $fmtTime($b->time_start??'00:00'); ?></span></div>
-    <div class="info-row"><span class="label"><?php echo $is_en ? 'People' : 'Personas'; ?></span><span class="value"><?php echo esc_html($pax_str); ?></span></div>
-    <div class="info-row"><span class="label"><?php echo $is_en ? 'Total paid' : 'Total pagado'; ?></span><span class="value" style="font-size:14px;color:<?php echo esc_attr($brand_color); ?>;">$<?php echo number_format($b->total_mxn,2); ?> MXN</span></div>
+    <div class="section-title"><?php esc_html_e( 'Detalle del tour', 'amir-booking' ); ?></div>
+    <div class="info-row"><span class="label"><?php esc_html_e( 'Tour', 'amir-booking' ); ?></span><span class="value"><?php echo esc_html($tour_name); ?></span></div>
+    <div class="info-row"><span class="label"><?php esc_html_e( 'Fecha', 'amir-booking' ); ?></span><span class="value"><?php echo $date_fmt; ?></span></div>
+    <div class="info-row"><span class="label"><?php esc_html_e( 'Hora de salida', 'amir-booking' ); ?></span><span class="value"><?php echo $fmtTime($b->time_start??'00:00'); ?></span></div>
+    <div class="info-row"><span class="label"><?php esc_html_e( 'Personas', 'amir-booking' ); ?></span><span class="value"><?php echo esc_html($pax_str); ?></span></div>
+    <div class="info-row"><span class="label"><?php esc_html_e( 'Total pagado', 'amir-booking' ); ?></span><span class="value" style="font-size:14px;color:<?php echo esc_attr($brand_color); ?>;"><?php echo Currency::format((float)$b->total_mxn); ?></span></div>
   </div>
 
   <!-- Punto de encuentro -->
   <div class="section">
-    <div class="section-title"><?php echo $is_en ? 'Meeting point' : 'Punto de encuentro'; ?></div>
+    <div class="section-title"><?php esc_html_e( 'Punto de encuentro', 'amir-booking' ); ?></div>
     <p style="font-size:12px;color:#3d3d3a;margin-bottom:6px;"><?php echo esc_html($meeting ?? ''); ?></p>
-    <p style="font-size:11px;color:<?php echo esc_attr($brand_color); ?>;">📍 <a href="<?php echo esc_url($maps_url); ?>" style="color:<?php echo esc_attr($brand_color); ?>;"><?php echo $is_en ? 'Open in Google Maps' : 'Ver en Google Maps'; ?> → <?php echo $maps_url; ?></a></p>
+    <p style="font-size:11px;color:<?php echo esc_attr($brand_color); ?>;">📍 <a href="<?php echo esc_url($maps_url); ?>" style="color:<?php echo esc_attr($brand_color); ?>;"><?php esc_html_e( 'Ver en Google Maps', 'amir-booking' ); ?> → <?php echo $maps_url; ?></a></p>
   </div>
 
   <!-- Datos del pasajero -->
   <div class="section">
-    <div class="section-title"><?php echo $is_en ? 'Passenger' : 'Pasajero'; ?></div>
-    <div class="info-row"><span class="label"><?php echo $is_en ? 'Name' : 'Nombre'; ?></span><span class="value"><?php echo esc_html($b->customer_name); ?></span></div>
+    <div class="section-title"><?php esc_html_e( 'Pasajero', 'amir-booking' ); ?></div>
+    <div class="info-row"><span class="label"><?php esc_html_e( 'Nombre', 'amir-booking' ); ?></span><span class="value"><?php echo esc_html($b->customer_name); ?></span></div>
     <div class="info-row"><span class="label">Email</span><span class="value"><?php echo esc_html($b->customer_email); ?></span></div>
     <?php if ($b->customer_phone) : ?>
     <div class="info-row"><span class="label">WhatsApp</span><span class="value"><?php echo esc_html($b->customer_phone); ?></span></div>
@@ -391,9 +399,13 @@ class VoucherGenerator {
 
   <!-- Recomendaciones -->
   <div class="section">
-    <div class="section-title"><?php echo $is_en ? 'Remember to bring' : 'Recuerda llevar'; ?></div>
+    <div class="section-title"><?php esc_html_e( 'Recuerda llevar', 'amir-booking' ); ?></div>
     <ul class="recs-list">
       <?php
+      // Las recomendaciones las escribe el operador por idioma (opción,
+      // no string fijo) — solo existen es/en hoy, un idioma 3+ cae al
+      // listado en español (mismo criterio que el resto del contenido
+      // de operador sin traducir todavía).
       $recs_raw_v = get_option( $is_en ? 'amir_voucher_recs_en' : 'amir_voucher_recs_es', '' );
       $recs_items_v = $recs_raw_v
           ? array_filter( array_map( 'trim', explode( "\n", $recs_raw_v ) ) )
@@ -411,11 +423,11 @@ class VoucherGenerator {
   <!-- Política de cancelación -->
   <div class="section">
     <div class="policy-box">
-      <p><strong><?php echo $is_en ? 'Cancellation policy' : 'Política de cancelación'; ?></strong></p>
-      <p><?php echo $is_en ? '✓ 7+ days before: full refund' : '✓ 7+ días antes: reembolso completo'; ?></p>
-      <p><?php echo $is_en ? '▸ 3–6 days before: 50% refund' : '▸ 3–6 días antes: reembolso del 50%'; ?></p>
-      <p><?php echo $is_en ? '✕ Less than 3 days: no refund' : '✕ Menos de 3 días: sin reembolso'; ?></p>
-      <p style="margin-top:4px;font-style:italic;"><?php echo $is_en ? 'Cancellations due to weather or minimum passengers: full refund.' : 'Cancelaciones por clima o mínimo de pasajeros: reembolso completo.'; ?></p>
+      <p><strong><?php esc_html_e( 'Política de cancelación', 'amir-booking' ); ?></strong></p>
+      <p>✓ <?php esc_html_e( '7+ días antes: reembolso completo', 'amir-booking' ); ?></p>
+      <p>▸ <?php esc_html_e( '3–6 días antes: reembolso del 50%', 'amir-booking' ); ?></p>
+      <p>✕ <?php esc_html_e( 'Menos de 3 días: sin reembolso', 'amir-booking' ); ?></p>
+      <p style="margin-top:4px;font-style:italic;"><?php esc_html_e( 'Cancelaciones por clima o mínimo de pasajeros: reembolso completo.', 'amir-booking' ); ?></p>
     </div>
   </div>
 
@@ -427,7 +439,7 @@ class VoucherGenerator {
     </div>
     <div>
       <p class="wa">💬 WhatsApp: +<?php echo esc_html($wa); ?></p>
-      <p style="font-size:10px;color:#5a7068;"><?php echo $is_en ? 'Questions? Message us anytime.' : '¿Dudas? Escríbenos cuando quieras.'; ?></p>
+      <p style="font-size:10px;color:#5a7068;"><?php esc_html_e( '¿Dudas? Escríbenos cuando quieras.', 'amir-booking' ); ?></p>
     </div>
   </div>
 
@@ -443,9 +455,9 @@ class VoucherGenerator {
     private function get_booking( int $booking_id ): ?object {
         global $wpdb;
         // LEFT JOIN para que reservas sin schedule_id (=0) también puedan generar voucher
-        return $wpdb->get_row( $wpdb->prepare(
+        $booking = $wpdb->get_row( $wpdb->prepare(
             "SELECT b.*,
-                    CASE WHEN b.lang='en' THEN t.name_en ELSE t.name_es END as tour_name,
+                    t.name_es, t.name_en,
                     t.meeting_point_es, t.meeting_point_en, t.meeting_lat, t.meeting_lng,
                     s.time_start, s.time_end
              FROM {$wpdb->prefix}amir_bookings b
@@ -454,6 +466,13 @@ class VoucherGenerator {
              WHERE b.id = %d",
             $booking_id
         ) );
+
+        if ( $booking ) {
+            // Antes se resolvía en SQL con un CASE WHEN que solo conocía es/en.
+            $booking->tour_name = Languages::tour_field( $booking, 'name', $booking->lang ?? 'es' );
+        }
+
+        return $booking;
     }
 
     /**
@@ -507,11 +526,18 @@ class VoucherGenerator {
      * Construido con concatenación de strings (sin ob_start, sin arrow functions).
      */
     private function build_voucher_html( object $b, bool $for_pdf = false ): string {
-        $lang   = $b->lang ? $b->lang : 'es';
+        $lang = $b->lang ? $b->lang : 'es';
+        return Languages::run_in( $lang, fn() => $this->render_pdf_html( $b, $lang ) );
+    }
+
+    private function render_pdf_html( object $b, string $lang ): string {
         $is_en  = ( $lang === 'en' );
-        $months = $is_en
-            ? array('January','February','March','April','May','June','July','August','September','October','November','December')
-            : array('Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre');
+        $months = [
+            __( 'Enero', 'amir-booking' ), __( 'Febrero', 'amir-booking' ), __( 'Marzo', 'amir-booking' ),
+            __( 'Abril', 'amir-booking' ), __( 'Mayo', 'amir-booking' ), __( 'Junio', 'amir-booking' ),
+            __( 'Julio', 'amir-booking' ), __( 'Agosto', 'amir-booking' ), __( 'Septiembre', 'amir-booking' ),
+            __( 'Octubre', 'amir-booking' ), __( 'Noviembre', 'amir-booking' ), __( 'Diciembre', 'amir-booking' ),
+        ];
 
         $date_parts = explode('-', $b->tour_date);
         $date_fmt   = (int)$date_parts[2] . ' ' . $months[ (int)$date_parts[1] - 1 ] . ' ' . $date_parts[0];
@@ -522,14 +548,13 @@ class VoucherGenerator {
         $t_disp   = ( $t_h > 12 ? $t_h - 12 : ( $t_h ? $t_h : 12 ) ) . ':' . $t_parts[1] . ( $t_h >= 12 ? ' PM' : ' AM' );
 
         $pax_parts = array();
-        if ( $b->adults )   { $pax_parts[] = $b->adults   . ' ' . ( $is_en ? 'adults'   : 'adultos' ); }
-        if ( $b->children ) { $pax_parts[] = $b->children . ' ' . ( $is_en ? 'children' : 'ni&ntilde;os' ); }
-        if ( $b->babies )   { $pax_parts[] = $b->babies   . ' ' . ( $is_en ? 'babies'   : 'beb&eacute;s' ); }
+        if ( $b->adults )   { $pax_parts[] = $b->adults   . ' ' . __( 'adultos', 'amir-booking' ); }
+        if ( $b->children ) { $pax_parts[] = $b->children . ' ' . __( 'niños', 'amir-booking' ); }
+        if ( $b->babies )   { $pax_parts[] = $b->babies   . ' ' . __( 'bebés', 'amir-booking' ); }
         $pax_str = implode(', ', $pax_parts);
 
-        $meeting  = $is_en
-            ? ( isset($b->meeting_point_en) && $b->meeting_point_en ? $b->meeting_point_en : $b->meeting_point_es )
-            : $b->meeting_point_es;
+        $meeting   = Languages::tour_field( $b, 'meeting_point', $lang );
+        $tour_name = Languages::tour_field( $b, 'name', $lang );
         $maps_url = $b->meeting_lat
             ? 'https://maps.google.com/?q=' . $b->meeting_lat . ',' . $b->meeting_lng
             : 'https://maps.google.com/?q=Bacalar,Quintana+Roo,Mexico';
@@ -580,25 +605,27 @@ class VoucherGenerator {
 
         // ── Datos de tour ──────────────────────────────────────────────────
         $tour_rows = array(
-            array( $is_en ? 'Tour'      : 'Tour',          esc_html( $b->tour_name ) ),
-            array( $is_en ? 'Date'      : 'Fecha',         $date_fmt ),
-            array( $is_en ? 'Departure' : 'Hora de salida',$t_disp ),
-            array( $is_en ? 'People'    : 'Personas',       esc_html( $pax_str ) ),
+            array( __( 'Tour', 'amir-booking' ),          esc_html( $tour_name ) ),
+            array( __( 'Fecha', 'amir-booking' ),         $date_fmt ),
+            array( __( 'Hora de salida', 'amir-booking' ),$t_disp ),
+            array( __( 'Personas', 'amir-booking' ),      esc_html( $pax_str ) ),
             array(
-                $is_en ? 'Total paid' : 'Total pagado',
-                '<b style="color:' . $green . ';font-size:13pt;">$' . number_format( (float)$b->total_mxn, 2 ) . ' MXN</b>'
+                __( 'Total pagado', 'amir-booking' ),
+                '<b style="color:' . $green . ';font-size:13pt;">' . Currency::format( (float)$b->total_mxn ) . '</b>'
             ),
         );
 
         $pax_rows = array(
-            array( $is_en ? 'Name' : 'Nombre', esc_html( $b->customer_name ) ),
-            array( 'Email',                      esc_html( $b->customer_email ) ),
+            array( __( 'Nombre', 'amir-booking' ), esc_html( $b->customer_name ) ),
+            array( 'Email',                        esc_html( $b->customer_email ) ),
         );
         if ( $b->customer_phone ) {
             $pax_rows[] = array( 'WhatsApp', esc_html( $b->customer_phone ) );
         }
 
         // ── Recomendaciones ────────────────────────────────────────────────
+        // Las escribe el operador por idioma (opción, no string fijo) — solo
+        // existen es/en hoy, un idioma 3+ cae al listado en español.
         $recs_raw_b = get_option( $is_en ? 'amir_voucher_recs_en' : 'amir_voucher_recs_es', '' );
         if ( $recs_raw_b ) {
             $recs_plain = array_filter( array_map( 'trim', explode( "\n", $recs_raw_b ) ) );
@@ -617,11 +644,11 @@ class VoucherGenerator {
                     'Arrive 10 min before departure',
                   )
                 : array(
-                    'Ropa c&oacute;moda y traje de ba&ntilde;o',
+                    'Ropa cómoda y traje de baño',
                     'Protector solar biodegradable (obligatorio)',
                     'Agua y snacks ligeros',
                     'Documento de identidad',
-                    'C&aacute;mara en bolsa impermeable',
+                    'Cámara en bolsa impermeable',
                     'Llega 10 min antes a tu hora de salida',
                   );
         }
@@ -633,19 +660,12 @@ class VoucherGenerator {
         }
 
         // ── Política de cancelación ────────────────────────────────────────
-        $pol = $is_en
-            ? array(
-                '7+ days before: <b>full refund</b>',
-                '3-6 days before: <b>50% refund</b>',
-                'Less than 3 days: <b>no refund</b>',
-                '<i>Weather/minimum passengers: full refund.</i>',
-              )
-            : array(
-                '7+ d&iacute;as antes: <b>reembolso completo</b>',
-                '3-6 d&iacute;as antes: <b>reembolso del 50%</b>',
-                'Menos de 3 d&iacute;as: <b>sin reembolso</b>',
-                '<i>Por clima o m&iacute;nimo de pasajeros: reembolso completo.</i>',
-              );
+        $pol = array(
+            sprintf( __( '7+ días antes: %s', 'amir-booking' ), '<b>' . __( 'reembolso completo', 'amir-booking' ) . '</b>' ),
+            sprintf( __( '3–6 días antes: %s', 'amir-booking' ), '<b>' . __( 'reembolso del 50%', 'amir-booking' ) . '</b>' ),
+            sprintf( __( 'Menos de 3 días: %s', 'amir-booking' ), '<b>' . __( 'sin reembolso', 'amir-booking' ) . '</b>' ),
+            '<i>' . __( 'Por clima o mínimo de pasajeros: reembolso completo.', 'amir-booking' ) . '</i>',
+        );
         $pol_html = '';
         foreach ( $pol as $p ) {
             $pol_html .= '<div style="font-size:8.5pt;color:#78350f;padding:2px 0;">' . $p . '</div>';
@@ -660,24 +680,22 @@ class VoucherGenerator {
         $qr_html = $qr_uri
             ? '<img src="' . $qr_uri . '" width="72" height="72" alt="QR" style="border:1px solid #c8ead9;padding:3px;" /><br/>'
               . '<span style="font-size:7.5pt;color:' . $gray . ';">'
-              . ( $is_en ? 'Scan to verify' : 'Escanea para verificar' )
+              . esc_html__( 'Escanea para verificar', 'amir-booking' )
               . '</span>'
             : '';
 
-        $confirmed_label = $is_en ? 'CONFIRMED BOOKING' : 'RESERVA CONFIRMADA';
-        $booked_label    = $is_en ? 'Booking reference'  : 'N&uacute;mero de reserva';
-        $booked_on       = $is_en ? 'Booked on'          : 'Reservado el';
-        $loc_label       = $is_en ? 'Meeting point'      : 'Punto de encuentro';
-        $passenger_label = $is_en ? 'Passenger'          : 'Pasajero';
-        $bring_label     = $is_en ? 'Remember to bring'  : 'Recuerda llevar';
-        $policy_label    = $is_en ? 'Cancellation policy': 'Pol&iacute;tica de cancelaci&oacute;n';
-        $wa_label        = $is_en ? 'Questions? Message us anytime.' : '&iquest;Dudas? Escr&iacute;benos cuando quieras.';
+        $confirmed_label = esc_html__( 'RESERVA CONFIRMADA', 'amir-booking' );
+        $booked_label    = esc_html__( 'Número de reserva', 'amir-booking' );
+        $booked_on       = esc_html__( 'Reservado el', 'amir-booking' );
+        $loc_label       = esc_html__( 'Punto de encuentro', 'amir-booking' );
+        $passenger_label = esc_html__( 'Pasajero', 'amir-booking' );
+        $bring_label     = esc_html__( 'Recuerda llevar', 'amir-booking' );
+        $policy_label    = esc_html__( 'Política de cancelación', 'amir-booking' );
+        $wa_label        = esc_html__( '¿Dudas? Escríbenos cuando quieras.', 'amir-booking' );
         $tagline_opt_v    = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
         $experience_label = $tagline_opt_v
             ? esc_html( $tagline_opt_v )
-            : ( $is_en
-                ? 'Experiences in Bacalar &middot; Quintana Roo, Mexico'
-                : 'Experiencias en Bacalar &middot; Quintana Roo, M&eacute;xico' );
+            : esc_html__( 'Experiencias en Bacalar · Quintana Roo, México', 'amir-booking' );
 
         $html  = '<html><head><meta charset="UTF-8"></head>';
         $html .= '<body style="font-family:Helvetica,Arial,sans-serif;color:#1a2e24;font-size:10pt;margin:0;padding:0;">';
@@ -713,7 +731,7 @@ class VoucherGenerator {
         $html .= '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">'
                . '<tr valign="top">'
                . '<td width="49%" style="padding-right:8px;">'
-               . $sec( $is_en ? 'Tour details' : 'Detalle del tour' )
+               . $sec( esc_html__( 'Detalle del tour', 'amir-booking' ) )
                . '<table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e1f5ee;">'
                . $info_rows( $tour_rows )
                . '</table>'

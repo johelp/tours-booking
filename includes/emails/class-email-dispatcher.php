@@ -14,6 +14,7 @@ class EmailDispatcher {
         add_action( 'amir_send_reminder_email', [ $this, 'send_reminder'       ], 10, 1 );
         add_action( 'amir_send_review_email',   [ $this, 'send_review_request' ], 10, 1 );
         add_action( 'amir_booking_cancelled',   [ $this, 'send_cancellation'   ], 10, 2 );
+        add_action( 'amir_booking_rescheduled', [ $this, 'send_reschedule_notice' ], 10, 1 );
     }
 
     // ── Lista de interés: link de pago real ───────────────────────────────
@@ -23,9 +24,42 @@ class EmailDispatcher {
     // access_token, etc.) — el link de pago reutiliza verify_url() de
     // BaseEmail tal cual, sin armar nada a mano.
 
-    public function send_tour_opened_notice( object $booking ): bool {
-        $mailer = new TourOpenedEmail( $booking );
-        return $mailer->send();
+    /**
+     * @return array{success:bool,error:string}
+     */
+    public function send_tour_opened_notice( object $booking ): array {
+        $mailer  = new TourOpenedEmail( $booking );
+        $success = $mailer->send();
+        return [ 'success' => $success, 'error' => $success ? '' : $mailer->get_last_error() ];
+    }
+
+    /**
+     * Reserva manual cargada por el operador sin cobrar todavía (Amir
+     * Booking → Reservas → Nueva reserva manual → "El cliente todavía no
+     * pagó") — mismo mecanismo de link de pago que wishlist, pero el
+     * booking ya viene armado por BookingManager::create_manual() (con
+     * tour_name resuelto vía get_booking_with_tour()), así que se recibe
+     * el objeto directo en vez de un booking_id + action hook.
+     */
+    public function send_payment_link_notice( object $booking ): array {
+        $mailer  = new PaymentLinkEmail( $booking );
+        $success = $mailer->send();
+        return [ 'success' => $success, 'error' => $success ? '' : $mailer->get_last_error() ];
+    }
+
+    // ── Reprogramación ────────────────────────────────────────────────────
+    // Bug real encontrado probando en vivo: BookingManager::reschedule()
+    // ya disparaba amir_booking_rescheduled, pero nada estaba enganchado a
+    // ese hook — la reserva se reprogramaba en la base sin avisarle nunca
+    // al cliente. Mismo patrón que send_confirmation()/send_cancellation().
+
+    public function send_reschedule_notice( int $booking_id ): void {
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking ) {
+            return;
+        }
+        $mailer = new RescheduleEmail( $booking );
+        $mailer->send();
     }
 
     // ── Confirmación ──────────────────────────────────────────────────────
@@ -114,18 +148,19 @@ class EmailDispatcher {
 
     // ── Helper ────────────────────────────────────────────────────────────
 
-    private function get_booking_with_tour( int $booking_id ): ?object {
+    /** Público porque BookingManager::create_manual() también lo necesita
+     * para armar el email de link de pago con el nombre del tour ya resuelto. */
+    public function get_booking_with_tour( int $booking_id ): ?object {
         global $wpdb;
         // LEFT JOIN para que reservas sin schedule_id (=0) también se incluyan
-        return $wpdb->get_row(
+        $booking = $wpdb->get_row(
             $wpdb->prepare(
                 "SELECT b.*,
-                        t.name_es as tour_name_es, t.name_en as tour_name_en,
+                        t.name_es, t.name_en,
                         t.meeting_point_es, t.meeting_point_en,
                         t.meeting_lat, t.meeting_lng,
                         t.gallery_images,
-                        s.time_start, s.time_end, s.label_es, s.label_en,
-                        CASE WHEN b.lang = 'en' THEN t.name_en ELSE t.name_es END as tour_name
+                        s.time_start, s.time_end, s.label_es, s.label_en
                  FROM {$wpdb->prefix}amir_bookings b
                  JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
                  LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
@@ -133,6 +168,14 @@ class EmailDispatcher {
                 $booking_id
             )
         );
+
+        if ( $booking ) {
+            // El nombre del tour en el idioma de la reserva — antes se
+            // resolvía en SQL con un CASE WHEN que solo conocía es/en.
+            $booking->tour_name = \AmirBooking\Core\Languages::tour_field( $booking, 'name', $booking->lang ?? 'es' );
+        }
+
+        return $booking;
     }
 }
 
@@ -142,6 +185,7 @@ abstract class BaseEmail {
 
     protected object $booking;
     protected string $lang;
+    private string $last_error = '';
 
     public function __construct( object $booking ) {
         $this->booking = $booking;
@@ -154,29 +198,38 @@ abstract class BaseEmail {
     public function send(): bool {
         add_filter( 'wp_mail_content_type', [ $this, 'set_html' ] );
 
-        $result = wp_mail(
-            $this->booking->customer_email,
-            $this->get_subject(),
-            $this->wrap_template( $this->get_body_content() )
-        );
+        // Todo el contenido se arma dentro de run_in(): __()/_e() traducen
+        // al idioma de LA RESERVA (no al locale del sitio) mientras dure el callback.
+        $result = \AmirBooking\Core\Languages::run_in( $this->lang, function() {
+            return wp_mail(
+                $this->booking->customer_email,
+                $this->get_subject(),
+                $this->wrap_template( $this->get_body_content() )
+            );
+        } );
 
         remove_filter( 'wp_mail_content_type', [ $this, 'set_html' ] );
 
         // Log si falla
         if ( ! $result ) {
-            $last_error = '';
+            $this->last_error = '';
             if ( isset( $GLOBALS['phpmailer'] ) && $GLOBALS['phpmailer']->ErrorInfo ) {
-                $last_error = $GLOBALS['phpmailer']->ErrorInfo;
+                $this->last_error = $GLOBALS['phpmailer']->ErrorInfo;
             }
             error_log( sprintf(
                 'Amir Booking: wp_mail falló para %s — Asunto: %s — Error: %s',
                 $this->booking->customer_email,
                 $this->get_subject(),
-                $last_error
+                $this->last_error
             ) );
         }
 
         return $result;
+    }
+
+    /** Detalle del error si send() devolvió false — vacío si nunca falló. */
+    public function get_last_error(): string {
+        return $this->last_error;
     }
 
     public function set_html(): string {
@@ -196,9 +249,10 @@ abstract class BaseEmail {
         $wa           = get_option( 'amir_wa_phone', '5219831649541' );
         $year         = date( 'Y' );
 
-        $footer_links = $this->lang === 'en'
-            ? '<a href="' . $site . '/en/">Tours</a> &nbsp;·&nbsp; <a href="https://wa.me/' . $wa . '">WhatsApp</a>'
-            : '<a href="' . $site . '/tours/">Tours</a> &nbsp;·&nbsp; <a href="https://wa.me/' . $wa . '">WhatsApp</a>';
+        // Prefijo de URL por idioma: Polylang/WPML sirven cada idioma bajo
+        // /{lang}/ salvo el base (es), que no lleva prefijo.
+        $tours_path   = $this->lang === \AmirBooking\Core\Languages::default_lang() ? '/tours/' : "/{$this->lang}/";
+        $footer_links = '<a href="' . $site . $tours_path . '">Tours</a> &nbsp;·&nbsp; <a href="https://wa.me/' . $wa . '">WhatsApp</a>';
 
         return '<!DOCTYPE html><html lang="' . $this->lang . '">
 <head>
@@ -297,13 +351,18 @@ abstract class BaseEmail {
      * Si la opción está vacía usa el array de $defaults.
      */
     protected function recs_html( string $option_es, string $option_en, array $defaults_es, array $defaults_en ): string {
-        $raw  = get_option( $this->lang === 'en' ? $option_en : $option_es, '' );
+        // Las recomendaciones las escribe el operador a mano por idioma
+        // (opción separada, no un string fijo del código) — solo existen
+        // para es/en hoy. Un idioma 3+ cae al listado en español, igual
+        // que el contenido de tours sin traducir todavía en content_i18n.
+        $is_en = $this->lang === 'en';
+        $raw   = get_option( $is_en ? $option_en : $option_es, '' );
         $items = $raw
             ? array_filter( array_map( 'trim', explode( "\n", $raw ) ) )
-            : ( $this->lang === 'en' ? $defaults_en : $defaults_es );
+            : ( $is_en ? $defaults_en : $defaults_es );
 
         $style = 'font-size:14px;color:#3d3d3a;line-height:1.8;padding-left:20px;';
-        $title = $this->lang === 'en' ? '📋 Recommendations' : '📋 Recomendaciones';
+        $title = '📋 ' . __( 'Recomendaciones', 'amir-booking' );
         $lis   = '';
         foreach ( $items as $item ) {
             $lis .= '<li>' . esc_html( $item ) . '</li>';
@@ -314,42 +373,30 @@ abstract class BaseEmail {
 
     // ── Helpers compartidos ───────────────────────────────────────────────
 
+    /**
+     * Diccionario corto de UI para emails/voucher — msgid en español,
+     * traducido por __() al idioma activo dentro de Languages::run_in().
+     * Llamadas a __() literales (no una variable) a propósito, para que
+     * `wp i18n make-pot` las extraiga solo sin tener que listarlas a mano.
+     */
     protected function t( string $key ): string {
-        $strings = [
-            'es' => [
-                'booking_ref'    => 'Número de reserva',
-                'tour'           => 'Tour',
-                'date'           => 'Fecha',
-                'time'           => 'Hora de salida',
-                'meeting'        => 'Punto de encuentro',
-                'people'         => 'Personas',
-                'total'          => 'Total pagado',
-                'adults'         => 'adultos',
-                'children'       => 'niños',
-                'babies'         => 'bebés',
-                'maps_link'      => 'Ver en mapa',
-                'download_pdf'   => 'Descargar mi voucher PDF',
-                'add_cal'        => 'Agregar al calendario',
-                'wa_help'        => '¿Necesitas ayuda? Escríbenos por WhatsApp',
-            ],
-            'en' => [
-                'booking_ref'    => 'Booking reference',
-                'tour'           => 'Tour',
-                'date'           => 'Date',
-                'time'           => 'Departure time',
-                'meeting'        => 'Meeting point',
-                'people'         => 'People',
-                'total'          => 'Total paid',
-                'adults'         => 'adults',
-                'children'       => 'children',
-                'babies'         => 'babies',
-                'maps_link'      => 'Open in maps',
-                'download_pdf'   => 'Download my PDF voucher',
-                'add_cal'        => 'Add to calendar',
-                'wa_help'        => 'Need help? Message us on WhatsApp',
-            ],
-        ];
-        return $strings[ $this->lang ][ $key ] ?? $strings['es'][ $key ] ?? $key;
+        switch ( $key ) {
+            case 'booking_ref':  return __( 'Número de reserva', 'amir-booking' );
+            case 'tour':         return __( 'Tour', 'amir-booking' );
+            case 'date':         return __( 'Fecha', 'amir-booking' );
+            case 'time':         return __( 'Hora de salida', 'amir-booking' );
+            case 'meeting':      return __( 'Punto de encuentro', 'amir-booking' );
+            case 'people':       return __( 'Personas', 'amir-booking' );
+            case 'total':        return __( 'Total pagado', 'amir-booking' );
+            case 'adults':       return __( 'adultos', 'amir-booking' );
+            case 'children':     return __( 'niños', 'amir-booking' );
+            case 'babies':       return __( 'bebés', 'amir-booking' );
+            case 'maps_link':    return __( 'Ver en mapa', 'amir-booking' );
+            case 'download_pdf': return __( 'Descargar mi voucher PDF', 'amir-booking' );
+            case 'add_cal':      return __( 'Agregar al calendario', 'amir-booking' );
+            case 'wa_help':      return __( '¿Necesitas ayuda? Escríbenos por WhatsApp', 'amir-booking' );
+            default:             return $key;
+        }
     }
 
     protected function pax_summary(): string {
@@ -361,10 +408,44 @@ abstract class BaseEmail {
         return implode( ', ', $parts );
     }
 
+    /**
+     * Fila extra en la tabla de la reserva con los servicios extra elegidos
+     * (si hubo). Se busca acá y no en el JOIN de get_booking_with_tour()
+     * porque es una relación 1-N — un JOIN duplicaría filas de la reserva.
+     */
+    protected function addons_row(): string {
+        $booking_id = (int) ( $this->booking->id ?? 0 );
+        if ( ! $booking_id ) {
+            return '';
+        }
+        global $wpdb;
+        $addons = $wpdb->get_results( $wpdb->prepare(
+            "SELECT name_snapshot, qty, total_mxn FROM {$wpdb->prefix}amir_booking_addons WHERE booking_id = %d ORDER BY id",
+            $booking_id
+        ) ) ?? [];
+        if ( empty( $addons ) ) {
+            return '';
+        }
+
+        $lines = array_map( function ( $a ) {
+            $label = esc_html( $a->name_snapshot ) . ( $a->qty > 1 ? ' × ' . (int) $a->qty : '' );
+            return $label . ' — ' . \AmirBooking\Core\Currency::format( (float) $a->total_mxn );
+        }, $addons );
+
+        return '
+          <tr>
+            <td>' . esc_html__( 'Servicios extra', 'amir-booking' ) . '</td>
+            <td>' . implode( '<br>', $lines ) . '</td>
+          </tr>';
+    }
+
     protected function fmt_date( string $date ): string {
-        $months = $this->lang === 'en'
-            ? ['January','February','March','April','May','June','July','August','September','October','November','December']
-            : ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+        $months = [
+            __( 'Enero', 'amir-booking' ), __( 'Febrero', 'amir-booking' ), __( 'Marzo', 'amir-booking' ),
+            __( 'Abril', 'amir-booking' ), __( 'Mayo', 'amir-booking' ), __( 'Junio', 'amir-booking' ),
+            __( 'Julio', 'amir-booking' ), __( 'Agosto', 'amir-booking' ), __( 'Septiembre', 'amir-booking' ),
+            __( 'Octubre', 'amir-booking' ), __( 'Noviembre', 'amir-booking' ), __( 'Diciembre', 'amir-booking' ),
+        ];
         [ $y, $m, $d ] = explode( '-', $date );
         return (int)$d . ' ' . $months[ (int)$m - 1 ] . ' ' . $y;
     }
@@ -395,7 +476,7 @@ abstract class BaseEmail {
 
     protected function booking_info_table(): string {
         $b   = $this->booking;
-        $mp  = $this->lang === 'en' ? $b->meeting_point_en : $b->meeting_point_es;
+        $mp  = \AmirBooking\Core\Languages::tour_field( $b, 'meeting_point', $this->lang );
         $wa  = get_option( 'amir_wa_phone', '5219831649541' );
 
         return '
@@ -423,7 +504,7 @@ abstract class BaseEmail {
           <tr>
             <td>' . $this->t('total') . '</td>
             <td>' . \AmirBooking\Core\Currency::format( (float) $b->total_mxn ) . '</td>
-          </tr>
+          </tr>' . $this->addons_row() . '
           <tr>
             <td>' . $this->t('meeting') . '</td>
             <td>' . esc_html( $mp ?? '' ) . '<br>
@@ -439,9 +520,7 @@ abstract class BaseEmail {
 class ConfirmationEmail extends BaseEmail {
 
     protected function get_subject(): string {
-        return $this->lang === 'en'
-            ? '✅ Your booking is confirmed — ' . $this->booking->booking_ref
-            : '✅ Tu reserva está confirmada — ' . $this->booking->booking_ref;
+        return sprintf( __( '✅ Tu reserva está confirmada — %s', 'amir-booking' ), $this->booking->booking_ref );
     }
 
     protected function get_body_content(): string {
@@ -449,9 +528,8 @@ class ConfirmationEmail extends BaseEmail {
         $siteUrl = get_site_url();
         $wa      = get_option( 'amir_wa_phone', '5219831649541' );
 
-        $intro = $this->lang === 'en'
-            ? '<h1>Your booking is confirmed! 🎉</h1><p>Hi <strong>' . esc_html($b->customer_name) . '</strong>,<br>Everything is set for your adventure in Bacalar. Here are your booking details:</p>'
-            : '<h1>¡Tu reserva está confirmada! 🎉</h1><p>Hola <strong>' . esc_html($b->customer_name) . '</strong>,<br>Todo está listo para tu aventura en Bacalar. Aquí están los detalles de tu reserva:</p>';
+        $intro = '<h1>' . __( '¡Tu reserva está confirmada! 🎉', 'amir-booking' ) . '</h1>'
+               . '<p>' . sprintf( __( 'Hola <strong>%s</strong>,<br>Todo está listo para tu aventura en Bacalar. Aquí están los detalles de tu reserva:', 'amir-booking' ), esc_html( $b->customer_name ) ) . '</p>';
 
         $ref_box = '<div class="ref-box">
           <div class="ref-label">' . $this->t('booking_ref') . '</div>
@@ -464,8 +542,10 @@ class ConfirmationEmail extends BaseEmail {
             [ 'Arrive 10 minutes before departure.', 'Wear comfortable clothes and biodegradable sunscreen.', 'Bring water and light snacks.', 'Carry a photo ID.' ]
         );
 
-        $policy_es = '<div class="policy-box"><p><strong>Política de cancelación:</strong></p><p>✓ 7+ días antes: reembolso completo</p><p>▸ 3–6 días antes: reembolso del 50%</p><p>✕ Menos de 3 días: sin reembolso</p></div>';
-        $policy_en = '<div class="policy-box"><p><strong>Cancellation policy:</strong></p><p>✓ 7+ days before: full refund</p><p>▸ 3–6 days before: 50% refund</p><p>✕ Less than 3 days: no refund</p></div>';
+        $policy = '<div class="policy-box"><p><strong>' . __( 'Política de cancelación:', 'amir-booking' ) . '</strong></p>'
+                . '<p>✓ ' . __( '7+ días antes: reembolso completo', 'amir-booking' ) . '</p>'
+                . '<p>▸ ' . __( '3–6 días antes: reembolso del 50%', 'amir-booking' ) . '</p>'
+                . '<p>✕ ' . __( 'Menos de 3 días: sin reembolso', 'amir-booking' ) . '</p></div>';
 
         $pdf_url = rest_url( 'amir/v1/bookings/' . rawurlencode($b->booking_ref) . '/pdf' )
                    . '?token=' . rawurlencode( $b->access_token ?? '' );
@@ -477,7 +557,7 @@ class ConfirmationEmail extends BaseEmail {
           <a href="' . $this->calendar_url() . '" class="btn btn-outline">' . $this->t('add_cal') . '</a>
         </p>
         <p style="text-align:center;font-size:13px;margin-top:12px;">
-          <a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . ( $this->lang === 'en' ? 'View booking status' : 'Ver estado de mi reserva' ) . '</a>
+          <a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . esc_html__( 'Ver estado de mi reserva', 'amir-booking' ) . '</a>
         </p>
         <p style="text-align:center;font-size:13px;color:#5a7068;margin-top:8px;">
           ' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a>
@@ -485,11 +565,10 @@ class ConfirmationEmail extends BaseEmail {
 
         $custom_note = '';
         if ( ! empty( $b->custom_email_note ) ) {
-            $note_label  = $this->lang === 'en' ? 'Note from the operator:' : 'Nota del operador:';
             $custom_note = '<div style="background:#e8f5e9;border-left:4px solid #1D9E75;padding:12px 16px;'
                          . 'margin:16px 0;border-radius:0 8px 8px 0;">'
                          . '<p style="font-size:14px;color:#1a2e24;margin:0;">'
-                         . '<strong>' . $note_label . '</strong><br>'
+                         . '<strong>' . esc_html__( 'Nota del operador:', 'amir-booking' ) . '</strong><br>'
                          . nl2br( esc_html( $b->custom_email_note ) )
                          . '</p></div>';
         }
@@ -499,7 +578,7 @@ class ConfirmationEmail extends BaseEmail {
             . $this->booking_info_table()
             . $custom_note
             . $recs_block
-            . ( $this->lang === 'en' ? $policy_en : $policy_es )
+            . $policy
             . $actions;
     }
 }
@@ -509,18 +588,15 @@ class ConfirmationEmail extends BaseEmail {
 class ReminderEmail extends BaseEmail {
 
     protected function get_subject(): string {
-        return $this->lang === 'en'
-            ? '⏰ Your tour is tomorrow! — ' . $this->booking->tour_name
-            : '⏰ ¡Tu tour es mañana! — ' . $this->booking->tour_name;
+        return sprintf( __( '⏰ ¡Tu tour es mañana! — %s', 'amir-booking' ), $this->booking->tour_name );
     }
 
     protected function get_body_content(): string {
         $b  = $this->booking;
         $wa = get_option( 'amir_wa_phone', '5219831649541' );
 
-        $intro = $this->lang === 'en'
-            ? '<h1>Your adventure is tomorrow! ⛵</h1><p>Hi <strong>' . esc_html($b->customer_name) . '</strong>,<br>Just a quick reminder about your booking for tomorrow:</p>'
-            : '<h1>¡Tu aventura es mañana! ⛵</h1><p>Hola <strong>' . esc_html($b->customer_name) . '</strong>,<br>Un recordatorio de tu reserva para mañana:</p>';
+        $intro = '<h1>' . __( '¡Tu aventura es mañana! ⛵', 'amir-booking' ) . '</h1>'
+               . '<p>' . sprintf( __( 'Hola <strong>%s</strong>,<br>Un recordatorio de tu reserva para mañana:', 'amir-booking' ), esc_html( $b->customer_name ) ) . '</p>';
 
         $recs_block = $this->recs_html(
             'amir_email_recs_es', 'amir_email_recs_en',
@@ -542,9 +618,7 @@ class ReminderEmail extends BaseEmail {
 class ReviewEmail extends BaseEmail {
 
     protected function get_subject(): string {
-        return $this->lang === 'en'
-            ? '⭐ How was your experience? — Amir Adventours'
-            : '⭐ ¿Cómo fue tu experiencia? — Amir Adventours';
+        return __( '⭐ ¿Cómo fue tu experiencia? — Amir Adventours', 'amir-booking' );
     }
 
     protected function get_body_content(): string {
@@ -553,29 +627,15 @@ class ReviewEmail extends BaseEmail {
             'https://www.tripadvisor.com/Attraction_Review-g2369583-d23441870-Reviews-Amir_AdvenTours-Bacalar_Yucatan_Peninsula.html');
         $google_url = get_option('amir_google_review_url', '#');
 
-        $body_es = '<h1>¿Disfrutaste tu aventura en Bacalar? 🌊</h1>
-        <p>Hola <strong>' . esc_html($b->customer_name) . '</strong>,<br>
-        Esperamos que hayas tenido una experiencia increíble con nosotros en <em>' . esc_html($b->tour_name) . '</em>.</p>
-        <p>Tu opinión nos ayuda a seguir mejorando y a que más viajeros descubran la magia de Bacalar. Si tienes un minuto, nos encantaría que compartieras tu experiencia:</p>
+        return '<h1>' . __( '¿Disfrutaste tu aventura en Bacalar? 🌊', 'amir-booking' ) . '</h1>
+        <p>' . sprintf( __( 'Hola <strong>%s</strong>,<br>Esperamos que hayas tenido una experiencia increíble con nosotros en <em>%s</em>.', 'amir-booking' ), esc_html( $b->customer_name ), esc_html( $b->tour_name ) ) . '</p>
+        <p>' . __( 'Tu opinión nos ayuda a seguir mejorando y a que más viajeros descubran la magia de Bacalar. Si tienes un minuto, nos encantaría que compartieras tu experiencia:', 'amir-booking' ) . '</p>
         <p style="text-align:center;margin:24px 0;">
-          <a href="' . $tripadvisor_url . '" class="btn">⭐ Reseña en TripAdvisor</a>
+          <a href="' . $tripadvisor_url . '" class="btn">⭐ ' . __( 'Reseña en TripAdvisor', 'amir-booking' ) . '</a>
           &nbsp;&nbsp;
-          <a href="' . $google_url . '" class="btn btn-outline">⭐ Reseña en Google</a>
+          <a href="' . $google_url . '" class="btn btn-outline">⭐ ' . __( 'Reseña en Google', 'amir-booking' ) . '</a>
         </p>
-        <p style="font-size:13px;color:#5a7068;text-align:center;">¡Gracias por elegirnos! Esperamos verte de nuevo pronto. 🐊</p>';
-
-        $body_en = '<h1>How was your adventure in Bacalar? 🌊</h1>
-        <p>Hi <strong>' . esc_html($b->customer_name) . '</strong>,<br>
-        We hope you had an amazing experience with us on the <em>' . esc_html($b->tour_name) . '</em>.</p>
-        <p>Your feedback helps us keep improving and helps other travelers discover the magic of Bacalar. If you have a minute, we\'d love to hear about your experience:</p>
-        <p style="text-align:center;margin:24px 0;">
-          <a href="' . $tripadvisor_url . '" class="btn">⭐ Review on TripAdvisor</a>
-          &nbsp;&nbsp;
-          <a href="' . $google_url . '" class="btn btn-outline">⭐ Review on Google</a>
-        </p>
-        <p style="font-size:13px;color:#5a7068;text-align:center;">Thank you for choosing us! We hope to see you again soon. 🐊</p>';
-
-        return $this->lang === 'en' ? $body_en : $body_es;
+        <p style="font-size:13px;color:#5a7068;text-align:center;">' . __( '¡Gracias por elegirnos! Esperamos verte de nuevo pronto. 🐊', 'amir-booking' ) . '</p>';
     }
 }
 
@@ -591,47 +651,33 @@ class CancellationEmail extends BaseEmail {
     }
 
     protected function get_subject(): string {
-        return $this->lang === 'en'
-            ? 'Booking cancellation — ' . $this->booking->booking_ref
-            : 'Cancelación de reserva — ' . $this->booking->booking_ref;
+        return sprintf( __( 'Cancelación de reserva — %s', 'amir-booking' ), $this->booking->booking_ref );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
         $is_operator = in_array( $this->reason_type, [ 'weather', 'min_pax' ], true );
 
-        if ( $this->lang === 'en' ) {
-            if ( $is_operator ) {
-                $title = $this->reason_type === 'weather'
-                    ? '<h1>Tour cancelled due to weather ⛈</h1>'
-                    : '<h1>Tour cancelled — minimum passengers not reached</h1>';
-                $msg = '<p>Hi <strong>' . esc_html($b->customer_name) . '</strong>,<br>We\'re sorry to inform you that your booking <strong>' . esc_html($b->booking_ref) . '</strong> has been cancelled. A <strong>full refund</strong> has been processed and will appear in your account within 3–5 business days.</p>';
-            } else {
-                $title = '<h1>Booking cancelled</h1>';
-                $policy = (int) $b->cancellation_policy_pct;
-                $refund_msg = $policy === 0
-                    ? 'A full refund has been processed and will appear in your account within 3–5 business days.'
-                    : ( $policy === 50
-                        ? 'A 50% refund of ' . \AmirBooking\Core\Currency::format( (float) $b->refund_amount_mxn ) . ' has been processed.'
-                        : 'Per our cancellation policy, no refund is applicable for cancellations within 2 days of the tour.' );
-                $msg = '<p>Hi <strong>' . esc_html($b->customer_name) . '</strong>,<br>Your booking <strong>' . esc_html($b->booking_ref) . '</strong> has been cancelled. ' . $refund_msg . '</p>';
-            }
+        if ( $is_operator ) {
+            $title = '<h1>' . ( $this->reason_type === 'weather'
+                ? __( 'Tour cancelado por condiciones climáticas ⛈', 'amir-booking' )
+                : __( 'Tour cancelado — mínimo de pasajeros no alcanzado', 'amir-booking' ) ) . '</h1>';
+            $msg = '<p>' . sprintf(
+                __( 'Hola <strong>%s</strong>,<br>Lamentamos informarte que tu reserva <strong>%s</strong> ha sido cancelada. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' ),
+                esc_html( $b->customer_name ), esc_html( $b->booking_ref )
+            ) . '</p>';
         } else {
-            if ( $is_operator ) {
-                $title = $this->reason_type === 'weather'
-                    ? '<h1>Tour cancelado por condiciones climáticas ⛈</h1>'
-                    : '<h1>Tour cancelado — mínimo de pasajeros no alcanzado</h1>';
-                $msg = '<p>Hola <strong>' . esc_html($b->customer_name) . '</strong>,<br>Lamentamos informarte que tu reserva <strong>' . esc_html($b->booking_ref) . '</strong> ha sido cancelada. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.</p>';
-            } else {
-                $title = '<h1>Reserva cancelada</h1>';
-                $policy = (int) $b->cancellation_policy_pct;
-                $refund_msg = $policy === 0
-                    ? 'Se ha procesado un reembolso completo que aparecerá en tu cuenta en 3–5 días hábiles.'
-                    : ( $policy === 50
-                        ? 'Se ha procesado un reembolso del 50% por ' . \AmirBooking\Core\Currency::format( (float) $b->refund_amount_mxn ) . '.'
-                        : 'De acuerdo con nuestra política, no aplica reembolso para cancelaciones dentro de los 2 días previos al tour.' );
-                $msg = '<p>Hola <strong>' . esc_html($b->customer_name) . '</strong>,<br>Tu reserva <strong>' . esc_html($b->booking_ref) . '</strong> ha sido cancelada. ' . $refund_msg . '</p>';
-            }
+            $title = '<h1>' . __( 'Reserva cancelada', 'amir-booking' ) . '</h1>';
+            $policy = (int) $b->cancellation_policy_pct;
+            $refund_msg = $policy === 0
+                ? __( 'Se ha procesado un reembolso completo que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' )
+                : ( $policy === 50
+                    ? sprintf( __( 'Se ha procesado un reembolso del 50%% por %s.', 'amir-booking' ), \AmirBooking\Core\Currency::format( (float) $b->refund_amount_mxn ) )
+                    : __( 'De acuerdo con nuestra política, no aplica reembolso para cancelaciones dentro de los 2 días previos al tour.', 'amir-booking' ) );
+            $msg = '<p>' . sprintf(
+                __( 'Hola <strong>%s</strong>,<br>Tu reserva <strong>%s</strong> ha sido cancelada. %s', 'amir-booking' ),
+                esc_html( $b->customer_name ), esc_html( $b->booking_ref ), $refund_msg
+            ) . '</p>';
         }
 
         $wa  = get_option( 'amir_wa_phone', '5219831649541' );
@@ -646,25 +692,18 @@ class CancellationEmail extends BaseEmail {
 class TourOpenedEmail extends BaseEmail {
 
     protected function get_subject(): string {
-        return $this->lang === 'en'
-            ? '🎉 ' . $this->booking->tour_name . ' is open — complete your payment'
-            : '🎉 ¡' . $this->booking->tour_name . ' ya está disponible — completá tu pago';
+        return sprintf( __( '🎉 ¡%s ya está disponible — completá tu pago', 'amir-booking' ), $this->booking->tour_name );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
 
-        if ( $this->lang === 'en' ) {
-            $intro = '<h1>Good news! 🎉</h1><p>Hi <strong>' . esc_html( $b->customer_name ) . '</strong>,<br>'
-                   . 'You asked us to let you know when <strong>' . esc_html( $b->tour_name ) . '</strong> opened — and it just did. '
-                   . 'Your spot for ' . esc_html( $this->fmt_date( $b->tour_date ) ) . ' is reserved — complete your payment to confirm it.</p>';
-            $cta = 'Pay now';
-        } else {
-            $intro = '<h1>¡Buenas noticias! 🎉</h1><p>Hola <strong>' . esc_html( $b->customer_name ) . '</strong>,<br>'
-                   . 'Nos pediste que te avisáramos cuando <strong>' . esc_html( $b->tour_name ) . '</strong> abriera — y ya está disponible. '
-                   . 'Tu lugar para el ' . esc_html( $this->fmt_date( $b->tour_date ) ) . ' está reservado — completá el pago para confirmarlo.</p>';
-            $cta = 'Pagar ahora';
-        }
+        $intro = '<h1>' . __( '¡Buenas noticias! 🎉', 'amir-booking' ) . '</h1>'
+               . '<p>' . sprintf(
+                   __( 'Hola <strong>%1$s</strong>,<br>Nos pediste que te avisáramos cuando <strong>%2$s</strong> abriera — y ya está disponible. Tu lugar para el %3$s está reservado — completá el pago para confirmarlo.', 'amir-booking' ),
+                   esc_html( $b->customer_name ), esc_html( $b->tour_name ), esc_html( $this->fmt_date( $b->tour_date ) )
+               ) . '</p>';
+        $cta = __( 'Pagar ahora', 'amir-booking' );
 
         $ref_box = '<div class="ref-box">
           <div class="ref-label">' . $this->t('booking_ref') . '</div>
@@ -674,5 +713,71 @@ class TourOpenedEmail extends BaseEmail {
         return $intro . $ref_box . '<p style="text-align:center;margin-top:24px;">'
              . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html( $cta ) . '</a>'
              . '</p>';
+    }
+}
+
+// ── Email: reserva manual cargada por el operador, pendiente de pago ───────
+
+class PaymentLinkEmail extends BaseEmail {
+
+    protected function get_subject(): string {
+        return sprintf( __( 'Completá el pago de tu reserva — %s', 'amir-booking' ), $this->booking->booking_ref );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+
+        $intro = '<h1>' . __( 'Tu reserva está lista 🎉', 'amir-booking' ) . '</h1>'
+               . '<p>' . sprintf(
+                   __( 'Hola <strong>%1$s</strong>,<br>Ya armamos tu reserva para <strong>%2$s</strong> el %3$s — solo falta completar el pago para confirmarla.', 'amir-booking' ),
+                   esc_html( $b->customer_name ), esc_html( $b->tour_name ), esc_html( $this->fmt_date( $b->tour_date ) )
+               ) . '</p>';
+
+        $ref_box = '<div class="ref-box">
+          <div class="ref-label">' . $this->t('booking_ref') . '</div>
+          <div class="ref-value">' . esc_html( $b->booking_ref ) . '</div>
+        </div>';
+
+        $custom_note = '';
+        if ( ! empty( $b->custom_email_note ) ) {
+            $custom_note = '<div style="background:#e8f5e9;border-left:4px solid #1D9E75;padding:12px 16px;'
+                         . 'margin:16px 0;border-radius:0 8px 8px 0;">'
+                         . '<p style="font-size:14px;color:#1a2e24;margin:0;">'
+                         . '<strong>' . esc_html__( 'Nota del operador:', 'amir-booking' ) . '</strong><br>'
+                         . nl2br( esc_html( $b->custom_email_note ) )
+                         . '</p></div>';
+        }
+
+        return $intro . $ref_box . $custom_note . '<p style="text-align:center;margin-top:24px;">'
+             . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html__( 'Pagar ahora', 'amir-booking' ) . '</a>'
+             . '</p>';
+    }
+}
+
+// ── Email: reserva reprogramada ─────────────────────────────────────────────
+// Bug real encontrado probando en vivo: reprogramar desde el admin actualizaba
+// la reserva pero nunca avisaba al cliente — ver send_reschedule_notice().
+
+class RescheduleEmail extends BaseEmail {
+
+    protected function get_subject(): string {
+        return sprintf( __( '🔄 Tu reserva fue reprogramada — %s', 'amir-booking' ), $this->booking->booking_ref );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+
+        $intro = '<h1>' . __( 'Tu reserva cambió de fecha', 'amir-booking' ) . '</h1>'
+               . '<p>' . sprintf(
+                   __( 'Hola <strong>%1$s</strong>,<br>Tu reserva <strong>%2$s</strong> fue reprogramada. Estos son los nuevos detalles:', 'amir-booking' ),
+                   esc_html( $b->customer_name ), esc_html( $b->booking_ref )
+               ) . '</p>';
+
+        $wa     = get_option( 'amir_wa_phone', '5219831649541' );
+        $footer = '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">'
+                . __( '¿La nueva fecha no te sirve? Escribinos y lo resolvemos.', 'amir-booking' )
+                . ' ' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a></p>';
+
+        return $intro . $this->booking_info_table() . $footer;
     }
 }
