@@ -39,7 +39,7 @@ class ElementorIntegration {
 
     public function add_category( $elements_manager ): void {
         $elements_manager->add_category( 'amir-booking', [
-            'title' => __( 'Amir Adventours', 'amir-booking' ),
+            'title' => __( 'TourFlow', 'amir-booking' ),
             'icon'  => 'eicon-calendar',
         ] );
     }

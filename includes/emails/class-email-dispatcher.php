@@ -291,15 +291,20 @@ abstract class BaseEmail {
         $color        = get_option( 'amir_brand_color', '#1D9E75' );
         $color_dark   = $this->darken_color( $color );
         $color_light  = $this->lighten_color( $color );
-        $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
+        $company_name = get_option( 'amir_company_name', 'TourFlow' );
         $site         = get_site_url();
-        $wa           = get_option( 'amir_wa_phone', '5219831649541' );
+        $wa           = get_option( 'amir_wa_phone', '' );
         $year         = date( 'Y' );
 
         // Prefijo de URL por idioma: Polylang/WPML sirven cada idioma bajo
         // /{lang}/ salvo el base (es), que no lleva prefijo.
         $tours_path   = $this->lang === \AmirBooking\Core\Languages::default_lang() ? '/tours/' : "/{$this->lang}/";
-        $footer_links = '<a href="' . $site . $tours_path . '">Tours</a> &nbsp;·&nbsp; <a href="https://wa.me/' . $wa . '">WhatsApp</a>';
+        // Sin número configurado (instalación nueva sin amir_wa_phone cargado
+        // en Configuración), no mostrar un link roto — antes esto caía en un
+        // número de WhatsApp real hardcodeado (el de Amir Adventours), lo que
+        // filtraba mensajes de clientes de OTRAS instalaciones a ese número.
+        $footer_links = '<a href="' . $site . $tours_path . '">Tours</a>'
+            . ( $wa ? ' &nbsp;·&nbsp; <a href="https://wa.me/' . esc_attr( $wa ) . '">WhatsApp</a>' : '' );
 
         return '<!DOCTYPE html><html lang="' . $this->lang . '">
 <head>
@@ -516,7 +521,7 @@ abstract class BaseEmail {
     protected function calendar_url(): string {
         $b     = $this->booking;
         $start = str_replace('-','',$b->tour_date) . 'T' . str_replace(':','',$b->time_start??'') . '00';
-        $title = rawurlencode( $b->tour_name . ' — Amir Adventours' );
+        $title = rawurlencode( $b->tour_name . ' — ' . get_option( 'amir_company_name', 'TourFlow' ) );
         $loc   = rawurlencode( $b->meeting_point_es ?? 'Bacalar, México' );
         return "https://calendar.google.com/calendar/render?action=TEMPLATE&text={$title}&dates={$start}/{$start}&location={$loc}";
     }
@@ -524,7 +529,6 @@ abstract class BaseEmail {
     protected function booking_info_table(): string {
         $b   = $this->booking;
         $mp  = \AmirBooking\Core\Languages::tour_field( $b, 'meeting_point', $this->lang );
-        $wa  = get_option( 'amir_wa_phone', '5219831649541' );
 
         return '
         <table class="info-table">
@@ -573,7 +577,7 @@ class ConfirmationEmail extends BaseEmail {
     protected function get_body_content(): string {
         $b       = $this->booking;
         $siteUrl = get_site_url();
-        $wa      = get_option( 'amir_wa_phone', '5219831649541' );
+        $wa      = get_option( 'amir_wa_phone', '' );
 
         $intro = '<h1>' . __( '¡Tu reserva está confirmada! 🎉', 'amir-booking' ) . '</h1>'
                . '<p>' . sprintf( __( 'Hola <strong>%s</strong>,<br>Todo está listo para tu aventura en Bacalar. Aquí están los detalles de tu reserva:', 'amir-booking' ), esc_html( $b->customer_name ) ) . '</p>';
@@ -605,10 +609,10 @@ class ConfirmationEmail extends BaseEmail {
         </p>
         <p style="text-align:center;font-size:13px;margin-top:12px;">
           <a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . esc_html__( 'Ver estado de mi reserva', 'amir-booking' ) . '</a>
-        </p>
+        </p>' . ( $wa ? '
         <p style="text-align:center;font-size:13px;color:#5a7068;margin-top:8px;">
-          ' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a>
-        </p>';
+          ' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:#1D9E75;">wa.me/' . esc_html( $wa ) . '</a>
+        </p>' : '' );
 
         $custom_note = '';
         if ( ! empty( $b->custom_email_note ) ) {
@@ -640,7 +644,7 @@ class ReminderEmail extends BaseEmail {
 
     protected function get_body_content(): string {
         $b  = $this->booking;
-        $wa = get_option( 'amir_wa_phone', '5219831649541' );
+        $wa = get_option( 'amir_wa_phone', '' );
 
         $intro = '<h1>' . __( '¡Tu aventura es mañana! ⛵', 'amir-booking' ) . '</h1>'
                . '<p>' . sprintf( __( 'Hola <strong>%s</strong>,<br>Un recordatorio de tu reserva para mañana:', 'amir-booking' ), esc_html( $b->customer_name ) ) . '</p>';
@@ -651,7 +655,7 @@ class ReminderEmail extends BaseEmail {
             [ 'Comfortable clothes and swimsuit', 'Biodegradable sunscreen (required on the lagoon)', 'Water and light snacks', 'Photo ID', 'Camera or phone in a waterproof bag' ]
         );
 
-        $footer_wa = '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a></p>';
+        $footer_wa = $wa ? '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:#1D9E75;">wa.me/' . esc_html( $wa ) . '</a></p>' : '';
 
         return $intro
             . $this->booking_info_table()
@@ -665,7 +669,7 @@ class ReminderEmail extends BaseEmail {
 class ReviewEmail extends BaseEmail {
 
     protected function get_subject(): string {
-        return __( '⭐ ¿Cómo fue tu experiencia? — Amir Adventours', 'amir-booking' );
+        return sprintf( __( '⭐ ¿Cómo fue tu experiencia? — %s', 'amir-booking' ), get_option( 'amir_company_name', 'TourFlow' ) );
     }
 
     protected function get_body_content(): string {
@@ -748,8 +752,8 @@ class CancellationEmail extends BaseEmail {
             ) . '</p>';
         }
 
-        $wa  = get_option( 'amir_wa_phone', '5219831649541' );
-        $footer = '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a></p>';
+        $wa     = get_option( 'amir_wa_phone', '' );
+        $footer = $wa ? '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:#1D9E75;">wa.me/' . esc_html( $wa ) . '</a></p>' : '';
 
         return $title . $msg . $footer;
     }
@@ -850,7 +854,7 @@ class RescheduleEmail extends BaseEmail {
                    esc_html( $b->customer_name ), esc_html( $b->booking_ref )
                ) . '</p>';
 
-        $wa     = get_option( 'amir_wa_phone', '5219831649541' );
+        $wa     = get_option( 'amir_wa_phone', '' );
         $footer = '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">'
                 . __( '¿La nueva fecha no te sirve? Escribinos y lo resolvemos.', 'amir-booking' )
                 . ' ' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a></p>';

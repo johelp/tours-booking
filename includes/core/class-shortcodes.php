@@ -268,7 +268,7 @@ class Shortcodes {
                  . '<div style="background:' . esc_attr( $st['color'] ) . ';padding:24px 24px 20px;text-align:center;">'
                  . '<div style="font-size:48px;line-height:1;">' . $st['icon'] . '</div>'
                  . '<div style="color:#fff;font-size:18px;font-weight:700;margin-top:8px;">' . esc_html( $st['label'] ) . '</div>'
-                 . '<div style="color:rgba(255,255,255,.8);font-size:12px;margin-top:4px;">' . esc_html( $verified_label ) . ' · Amir Adventours</div>'
+                 . '<div style="color:rgba(255,255,255,.8);font-size:12px;margin-top:4px;">' . esc_html( $verified_label ) . ' · ' . esc_html( get_option( 'amir_company_name', 'TourFlow' ) ) . '</div>'
                  . '</div>'
                  . '<div style="background:#fff;padding:20px 24px 24px;">'
                  . $rows
@@ -492,8 +492,9 @@ class Shortcodes {
             'apiUrl'   => rest_url( 'amir/v1/' ),
             'nonce'    => wp_create_nonce( 'wp_rest' ),
             'stripePk' => $pk_key,
-            'siteUrl'  => get_site_url(),
-            'waPhone'  => get_option( 'amir_wa_phone', '5219831649541' ),
+            'siteUrl'     => get_site_url(),
+            'waPhone'     => get_option( 'amir_wa_phone', '' ),
+            'companyName' => get_option( 'amir_company_name', 'TourFlow' ),
             'lang'     => self::detect_lang(),
             'currency' => \AmirBooking\Core\Currency::code(),
             'mpMode'   => get_option( 'amir_mp_mode', 'test' ),

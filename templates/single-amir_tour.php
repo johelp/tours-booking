@@ -310,7 +310,7 @@ if ( $has_pixels && $db_id ) :
             <div style="background:#f8fdfb;border:1px solid #e1f5ee;border-radius:12px;padding:24px;text-align:center;color:#5a7068;font-size:14px;">
               <?php echo $is_en ? 'Contact us to book this tour.' : 'Contáctanos para reservar.'; ?>
               <br><br>
-              <a href="https://wa.me/<?php echo esc_attr( preg_replace('/[^0-9]/', '', get_option('amir_wa_phone','5219831649541') ) ); ?>"
+              <a href="https://wa.me/<?php echo esc_attr( preg_replace('/[^0-9]/', '', get_option('amir_wa_phone','') ) ); ?>"
                  style="display:inline-block;background:#25D366;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;">
                 💬 WhatsApp
               </a>

@@ -157,7 +157,7 @@ class SettingsPage {
               </div>
               <div class="ab-field">
                 <label>WhatsApp de contacto (solo números)</label>
-                <input type="text" name="amir_wa_phone" value="<?php echo esc_attr(get_option('amir_wa_phone','5219831649541')); ?>" placeholder="5219831649541" />
+                <input type="text" name="amir_wa_phone" value="<?php echo esc_attr(get_option('amir_wa_phone','')); ?>" placeholder="5219831649541" />
               </div>
             </div>
             <div class="ab-field-row">

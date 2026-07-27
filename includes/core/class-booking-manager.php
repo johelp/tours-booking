@@ -599,16 +599,25 @@ class BookingManager {
             return false;
         }
 
-        $wpdb->update(
+        // UPDATE condicionado a que siga en pending_provider_approval —
+        // atómico, mismo motivo que en cancel(): dos clicks casi simultáneos
+        // en el link de aprobar (doble tap, reintento de red) no deben
+        // disparar finalize_confirmation()/el hook de liquidación dos veces
+        // para la misma reserva (duplicaría la fila en amir_provider_payouts).
+        $updated = $wpdb->update(
             "{$wpdb->prefix}amir_bookings",
             [
                 'provider_responded_at'   => current_time( 'mysql' ),
                 'provider_response_token' => null,
             ],
-            [ 'id' => $booking_id ],
+            [ 'id' => $booking_id, 'status' => 'pending_provider_approval' ],
             [ '%s', '%s' ],
-            [ '%d' ]
+            [ '%d', '%s' ]
         );
+
+        if ( ! $updated ) {
+            return false;
+        }
 
         $charge_id = $booking->gateway_charge_id ?: $booking->stripe_charge_id;
         $this->finalize_confirmation( $booking_id, $charge_id );
@@ -737,7 +746,14 @@ class BookingManager {
         ];
         $new_status = isset( $status_map[ $reason_type ] ) ? $status_map[ $reason_type ] : 'cancelled_client';
 
-        $wpdb->update(
+        // UPDATE condicionado al status leído arriba — atómico: si otro
+        // proceso ya canceló/confirmó esta misma reserva entre el SELECT y
+        // acá (el cron de vencimiento de 48h del proveedor y un click de
+        // "rechazar" casi simultáneos, un doble click, un reintento de red),
+        // esto da 0 filas afectadas y cortamos antes de reembolsar dos veces
+        // la misma reserva. Sin este guard, wpdb->update() con solo
+        // ['id' => $booking_id] en el WHERE no distingue esos casos.
+        $updated = $wpdb->update(
             "{$wpdb->prefix}amir_bookings",
             [
                 'status'                  => $new_status,
@@ -745,10 +761,14 @@ class BookingManager {
                 'refund_amount_mxn'       => $refund['refund_mxn'],
                 'internal_notes'          => $booking->internal_notes . "\n[" . current_time( 'mysql' ) . "] " . $internal_note,
             ],
-            [ 'id' => $booking_id ],
+            [ 'id' => $booking_id, 'status' => $booking->status ],
             [ '%s', '%d', '%f', '%s' ],
-            [ '%d' ]
+            [ '%d', '%s' ]
         );
+
+        if ( ! $updated ) {
+            return BookingResult::error( 'Esta reserva ya fue cancelada o completada' );
+        }
 
         // Procesar reembolso con la pasarela que corresponda (Stripe o MP)
         $charge_ref = $booking->gateway_charge_id ?: $booking->stripe_charge_id;

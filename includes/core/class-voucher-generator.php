@@ -161,8 +161,8 @@ class VoucherGenerator {
         }
 
         $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
-        $pdf->SetCreator('Amir Adventours Bacalar');
-        $pdf->SetAuthor('Amir Adventours');
+        $pdf->SetCreator( get_option( 'amir_company_name', 'TourFlow' ) );
+        $pdf->SetAuthor( get_option( 'amir_company_name', 'TourFlow' ) );
         $pdf->SetTitle('Voucher ' . $booking->booking_ref);
         $pdf->setPrintHeader(false);
         $pdf->setPrintFooter(false);
@@ -242,7 +242,7 @@ class VoucherGenerator {
             $logo_src  = file_exists($logo_path) ? $this->path_to_data_uri($logo_path) : '';
         }
         $brand_color  = get_option( 'amir_brand_color', '#1D9E75' );
-        $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
+        $company_name = get_option( 'amir_company_name', 'TourFlow' );
 
         $is_en       = $lang === 'en';
         $tagline_opt = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
@@ -274,7 +274,7 @@ class VoucherGenerator {
             ? "https://maps.google.com/?q={$b->meeting_lat},{$b->meeting_lng}"
             : 'https://maps.google.com/?q=Bacalar,Quintana+Roo,Mexico';
 
-        $wa    = get_option('amir_wa_phone','5219831649541');
+        $wa    = get_option('amir_wa_phone','');
         $site  = get_site_url();
 
         ob_start();
@@ -559,7 +559,7 @@ class VoucherGenerator {
             ? 'https://maps.google.com/?q=' . $b->meeting_lat . ',' . $b->meeting_lng
             : 'https://maps.google.com/?q=Bacalar,Quintana+Roo,Mexico';
 
-        $wa   = get_option( 'amir_wa_phone', '5219831649541' );
+        $wa   = get_option( 'amir_wa_phone', '' );
         $site = get_site_url();
 
         $logo_url_opt = get_option( 'amir_brand_logo_url', '' );
@@ -577,7 +577,7 @@ class VoucherGenerator {
         $qr_uri    = $qr_path ? $this->path_to_data_uri( $qr_path ) : '';
 
         $green        = get_option( 'amir_brand_color', '#1D9E75' );
-        $company_name = get_option( 'amir_company_name', 'Amir Adventours Bacalar' );
+        $company_name = get_option( 'amir_company_name', 'TourFlow' );
         $amber = '#BA7517';
         $gray  = '#5a7068';
 

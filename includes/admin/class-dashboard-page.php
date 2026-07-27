@@ -19,12 +19,20 @@ class DashboardPage {
         $tomorrow_data = $this->get_day_summary( $tomorrow );
         $stats         = $this->get_period_stats();
         $notifications = $this->get_unread_notifications();
+        $provider_pending = $this->get_provider_pending_approvals();
 
         ?>
         <div class="wrap ab-admin-wrap">
         <style>
         .ab-admin-wrap { max-width:1200px; }
         .ab-admin-wrap h1 { font-size:22px; font-weight:700; color:#1a2e24; margin-bottom:20px; display:flex; align-items:center; gap:10px; }
+        .ab-quicklinks { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+        .ab-quicklinks a { display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid #e1f5ee; color:#1a2e24; border-radius:8px; padding:9px 14px; font-size:13px; font-weight:600; text-decoration:none; }
+        .ab-quicklinks a:hover { border-color:#1D9E75; color:#1D9E75; }
+        .ab-provider-bar { background:#eef4ff; border:1px solid #bfdbfe; border-radius:10px; padding:12px 16px; margin-bottom:20px; }
+        .ab-provider-bar .ptitle { font-size:13px; font-weight:700; color:#1a6fa8; margin-bottom:6px; }
+        .ab-provider-item { font-size:13px; color:#1e40af; padding:3px 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        .ab-provider-item .urgent { color:#dc2626; font-weight:700; }
         .ab-stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
         .ab-stat-card { background:#fff; border:1px solid #e1f5ee; border-radius:10px; padding:16px 18px; }
         .ab-stat-card .label { font-size:12px; font-weight:600; color:#5a7068; text-transform:uppercase; letter-spacing:.4px; }
@@ -98,8 +106,32 @@ class DashboardPage {
 
         <h1>📅 <?php _e('Dashboard operativo', 'amir-booking'); ?>
           <span style="font-size:14px;font-weight:400;color:#5a7068;"><?php echo date_i18n( 'l j \d\e F Y', strtotime($today) ); ?></span>
-          <span style="margin-left:auto;font-size:11px;font-weight:600;color:#5a7068;background:#f0faf6;border:1px solid #e1f5ee;border-radius:20px;padding:4px 12px;" title="Versión del plugin instalada en este sitio">TourFlow v<?php echo esc_html( AMIR_VERSION ); ?></span>
+          <span class="ab-badge ab-badge-neutral" style="margin-left:auto;font-size:11px;" title="Versión del plugin instalada en este sitio">TourFlow v<?php echo esc_html( AMIR_VERSION ); ?></span>
         </h1>
+
+        <div class="ab-quicklinks">
+          <a href="<?php echo esc_url( admin_url('admin.php?page=amir-field') ); ?>">📱 Modo campo</a>
+          <a href="<?php echo esc_url( admin_url('admin.php?page=amir-bookings-list&action=new') ); ?>">+ Nueva reserva</a>
+          <a href="<?php echo esc_url( admin_url('admin.php?page=amir-calendar') ); ?>">📅 Calendario</a>
+          <a href="<?php echo esc_url( admin_url('admin.php?page=amir-wishlist') ); ?>">📋 Lista de interés</a>
+        </div>
+
+        <?php if ( ! empty( $provider_pending ) ) : ?>
+        <div class="ab-provider-bar">
+          <div class="ptitle">🤝 <?php printf( _n('%d reserva esperando aprobación del proveedor', '%d reservas esperando aprobación del proveedor', count($provider_pending), 'amir-booking'), count($provider_pending) ); ?></div>
+          <?php foreach ( $provider_pending as $pp ) :
+            $is_urgent = $pp['hours_left'] <= 6;
+          ?>
+            <div class="ab-provider-item">
+              <a href="<?php echo esc_url( admin_url('admin.php?page=amir-bookings-list&action=view&id='.$pp['id']) ); ?>" style="color:#1a6fa8;font-weight:700;"><?php echo esc_html($pp['booking_ref']); ?></a>
+              — <?php echo esc_html($pp['business_name']); ?> · <?php echo esc_html($pp['customer_name']); ?>
+              <span class="<?php echo $is_urgent ? 'urgent' : ''; ?>">
+                <?php echo $pp['hours_left'] > 0 ? ( $is_urgent ? '⚠ ' : '' ) . 'vence en ' . $pp['hours_left'] . 'h' : 'vencida (esperando cron)'; ?>
+              </span>
+            </div>
+          <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
 
         <details class="ab-shortcodes">
           <summary>🧩 Shortcodes disponibles — cómo usar el plugin en una página</summary>
@@ -435,6 +467,43 @@ class DashboardPage {
              WHERE b.status = 'cancellation_requested'
              ORDER BY b.created_at DESC"
         ) ?? [];
+    }
+
+    /**
+     * Reservas de tours con proveedor externo (marketplace, § 11
+     * CONTRIBUTING.md) esperando que el proveedor apruebe/rechace — sin esto
+     * en el Dashboard quedaban "invisibles" salvo que alguien entrara a
+     * Reservas y filtrara a mano por ese estado puntual. hours_left usa el
+     * mismo amir_provider_response_hours que ya lee el cron de vencimiento
+     * (class-cron-manager.php) para que el número coincida con cuándo se
+     * cancela solo de verdad.
+     */
+    private function get_provider_pending_approvals(): array {
+        global $wpdb;
+        $response_hours = (int) get_option( 'amir_provider_response_hours', 48 );
+
+        $rows = $wpdb->get_results(
+            "SELECT b.id, b.booking_ref, b.customer_name, b.provider_notified_at,
+                    p.business_name
+             FROM {$wpdb->prefix}amir_bookings b
+             JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
+             LEFT JOIN {$wpdb->prefix}amir_providers p ON p.id = t.provider_id
+             WHERE b.status = 'pending_provider_approval'
+             ORDER BY b.provider_notified_at ASC"
+        ) ?? [];
+
+        $now = current_time( 'timestamp' );
+        return array_map( function ( $r ) use ( $now, $response_hours ) {
+            $notified_ts = $r->provider_notified_at ? strtotime( $r->provider_notified_at ) : $now;
+            $deadline_ts = $notified_ts + ( $response_hours * HOUR_IN_SECONDS );
+            return [
+                'id'             => (int) $r->id,
+                'booking_ref'    => $r->booking_ref,
+                'customer_name'  => $r->customer_name,
+                'business_name'  => $r->business_name ?: '—',
+                'hours_left'     => max( 0, (int) ceil( ( $deadline_ts - $now ) / HOUR_IN_SECONDS ) ),
+            ];
+        }, $rows );
     }
 
     private function get_unread_notifications(): array {

@@ -3,8 +3,8 @@
  * Plugin Name:  TourFlow
  * Plugin URI:   https://amiradventours.com
  * Description:  Sistema de reservas y gestión de tours para operadoras. Sin WooCommerce. Multisite ready.
- * Version:      2.2.1
- * Author:       Amir Adventours
+ * Version:      2.5.0
+ * Author:       TourFlow
  * Text Domain:  amir-booking
  * Domain Path:  /languages
  * Requires PHP: 8.1
@@ -15,7 +15,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-define( 'AMIR_VERSION',     '2.2.1' );
+define( 'AMIR_VERSION',     '2.5.0' );
 define( 'AMIR_PLUGIN_FILE', __FILE__ );
 define( 'AMIR_PLUGIN_DIR',  plugin_dir_path( __FILE__ ) );
 define( 'AMIR_PLUGIN_URL',  plugin_dir_url( __FILE__ ) );

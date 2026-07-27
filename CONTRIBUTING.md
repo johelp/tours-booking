@@ -166,6 +166,7 @@ Pedido del cliente: quien gestiona el día a día necesita poder hacerlo desde e
 
 - ¿Multisite real para varios operadores (plataforma) o queda como plugin independiente por operador? Se decidió no comprometerse todavía — el `LicenseManager` (stub) ya deja la puerta abierta sin complicar el resto.
 - Un cupón que cubra el 100% del total deja el cobro en $0, y Stripe no puede procesar eso — pendiente decidir si vale la pena un flujo de "reserva gratuita sin pasarela".
+- **Comercializar TourFlow más allá de los clientes propios** (planteado 2026-07-28): dos modelos en paralelo — instalaciones privadas (como hoy) y un modo "llave en mano" tipo SaaS donde el cliente controla el despliegue y vende el servicio ya configurado. Posible venta en CodeCanyon/Envato u otro marketplace también sobre la mesa. Sin diseñar — el cliente va a guiar el spec en otra sesión. Nota legal ya conversada: WordPress es GPL, así que un "código de activación" no puede bloquear que el plugin funcione una vez instalado (mismo criterio que WooCommerce/Elementor Pro) — como mucho gatea updates automáticos y soporte, no la ejecución. El hallazgo de branding de Amir hardcodeado como default (WhatsApp, nombre de empresa — ver historial de commits de v2.5.0) era un bloqueante real para esto, ya corregido.
 
 ## 8. Personalización visual del widget de reserva (Tarea 19)
 

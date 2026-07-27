@@ -1068,7 +1068,7 @@ export function StepPaymentMP({ t, goBack, goNext, setBookingRef, bookingId, mpD
 
 // ── Step 7: Confirmation ──────────────────────────────────────────────────────
 function StepConfirm({ tour, form, bookingRef, t, lang, finalTotalMxn }) {
-  const waPhone  = window.amirBooking?.waPhone ?? '5219831649541';
+  const waPhone  = window.amirBooking?.waPhone ?? '';
 
   // Purchase/purchase + conversión de Google Ads — una sola vez por reserva
   // (el ref evita que un re-render por cambio de idioma, etc. lo dispare de
@@ -1095,7 +1095,7 @@ function StepConfirm({ tour, form, bookingRef, t, lang, finalTotalMxn }) {
 
   const calUrl = () => {
     const start = form.date.replace(/-/g,'') + 'T' + (form.scheduleTime??'').replace(':','') + '00';
-    const title = encodeURIComponent(`${tour.name} — Amir Adventours`);
+    const title = encodeURIComponent(`${tour.name} — ${window.amirBooking?.companyName ?? 'TourFlow'}`);
     const loc   = encodeURIComponent( tour.meeting_point ?? 'Bacalar, México' );
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${start}&location=${loc}`;
   };
