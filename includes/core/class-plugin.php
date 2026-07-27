@@ -71,6 +71,7 @@ final class Plugin {
         add_shortcode( 'amir_tour_list',      [ Shortcodes::class, 'tour_list'      ] );
         add_shortcode( 'amir_wishlist',       [ Shortcodes::class, 'wishlist_list'  ] );
         add_shortcode( 'amir_verify_booking', [ Shortcodes::class, 'verify_booking' ] );
+        add_shortcode( 'amir_provider_action', [ Shortcodes::class, 'provider_action' ] );
 
         // ── Cron jobs ─────────────────────────────────────────────────────
         ( new CronManager() )->register();
@@ -127,6 +128,50 @@ final class Plugin {
                 [ 'amount_mxn' => $refund_mxn, 'charge_reference' => $charge_reference ]
             );
         }, 10, 2 );
+
+        // ── Marketplace de proveedores: ledger de liquidación ─────────────
+        // BookingManager::provider_approve() dispara esta acción — genera
+        // automáticamente la fila 'pending' del ledger (amir_provider_payouts)
+        // con el costo del proveedor para esa reserva, calculado desde
+        // amir_prices.provider_cost_mxn (mismo criterio de vigencia/horario
+        // que el precio de venta, ver PricingEngine::calculate_provider_cost()).
+        add_action( 'amir_provider_booking_approved', function ( int $booking_id ) {
+            global $wpdb;
+            $booking = $wpdb->get_row( $wpdb->prepare(
+                "SELECT b.*, t.provider_id
+                 FROM {$wpdb->prefix}amir_bookings b
+                 JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
+                 WHERE b.id = %d", $booking_id
+            ) );
+            if ( ! $booking || ! $booking->provider_id ) {
+                return;
+            }
+
+            $cost = ( new \AmirBooking\Core\PricingEngine() )->calculate_provider_cost(
+                (int) $booking->tour_id,
+                (int) $booking->schedule_id,
+                $booking->tour_date,
+                (int) $booking->adults,
+                (int) $booking->children,
+                (int) $booking->babies
+            );
+
+            if ( $cost <= 0 ) {
+                return;
+            }
+
+            $wpdb->insert(
+                "{$wpdb->prefix}amir_provider_payouts",
+                [
+                    'provider_id' => (int) $booking->provider_id,
+                    'booking_id'  => $booking_id,
+                    'amount_mxn'  => $cost,
+                    'status'      => 'pending',
+                    'created_at'  => current_time( 'mysql' ),
+                ],
+                [ '%d', '%d', '%f', '%s', '%s' ]
+            );
+        }, 10, 1 );
 
         // ── Actualización de DB cuando la versión del esquema cambia ──────
         if ( get_option( 'amir_db_version', '0' ) !== AMIR_DB_VERSION ) {

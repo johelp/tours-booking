@@ -315,6 +315,141 @@ class Shortcodes {
              . '</div>';
     }
 
+    // ── Marketplace: aprobar/rechazar reserva por email (proveedor externo) ──
+    // § 11 CONTRIBUTING.md. GET solo renderiza una pantalla de confirmación
+    // sin side-effects — evita que scanners de email/antivirus corporativos
+    // (Outlook Safe Links, etc.) disparen la acción por prefetch. La escritura
+    // real ocurre recién en el POST de esa misma pantalla.
+
+    public static function provider_action( array $atts ): string {
+        $ref   = strtoupper( sanitize_text_field( $_REQUEST['ref'] ?? '' ) );
+        $token = sanitize_text_field( $_REQUEST['token'] ?? '' );
+        $do    = sanitize_key( $_REQUEST['do'] ?? '' );
+        $lang  = self::detect_lang();
+
+        if ( empty( $ref ) || ! in_array( $do, [ 'approve', 'reject' ], true ) ) {
+            return Languages::run_in( $lang, fn() => self::provider_action_message( __( 'Link inválido.', 'amir-booking' ), '❌' ) );
+        }
+
+        // Throttle por IP, mismo criterio que verify_booking() — frena fuerza
+        // bruta contra el token del proveedor.
+        if ( RateLimiter::too_many_attempts( 'provider_action_' . RateLimiter::client_ip() ) ) {
+            return Languages::run_in( $lang, fn() => self::rate_limited_message() );
+        }
+
+        $manager = new \AmirBooking\Core\BookingManager();
+        $booking = $manager->get_booking_by_ref( $ref );
+
+        if ( ! $booking ) {
+            return Languages::run_in( $lang, fn() => self::provider_action_message( __( 'Reserva no encontrada.', 'amir-booking' ), '❌' ) );
+        }
+
+        // Autorización exclusiva por token fuerte del proveedor — nunca por
+        // email/booking_ref (ver BookingManager::authorize_provider_access()).
+        if ( ! $manager->authorize_provider_access( $booking, $token ) ) {
+            return Languages::run_in( $lang, fn() => self::provider_action_message(
+                __( 'Este link ya no es válido — puede que ya se haya usado o que haya vencido.', 'amir-booking' ), '⚠️'
+            ) );
+        }
+
+        if ( $booking->status !== 'pending_provider_approval' ) {
+            return Languages::run_in( $lang, fn() => self::provider_action_message( __( 'Esta reserva ya fue procesada.', 'amir-booking' ), 'ℹ️' ) );
+        }
+
+        $is_post = ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) === 'POST';
+
+        if ( $is_post ) {
+            if ( ! wp_verify_nonce( sanitize_text_field( $_POST['amir_provider_nonce'] ?? '' ), 'amir_provider_action_' . $ref ) ) {
+                return Languages::run_in( $lang, fn() => self::provider_action_message(
+                    __( 'No se pudo validar la solicitud — volvé a intentarlo desde el link del email.', 'amir-booking' ), '⚠️'
+                ) );
+            }
+
+            $reason = mb_substr( sanitize_textarea_field( $_POST['reject_reason'] ?? '' ), 0, 500 );
+
+            if ( $do === 'approve' ) {
+                $ok = $manager->provider_approve( (int) $booking->id );
+                return Languages::run_in( $lang, fn() => self::provider_action_message(
+                    $ok
+                        ? __( '¡Listo! La reserva quedó confirmada. Gracias por responder.', 'amir-booking' )
+                        : __( 'No se pudo procesar la reserva. Contactá a TourFlow.', 'amir-booking' ),
+                    $ok ? '✅' : '❌'
+                ) );
+            }
+
+            $result = $manager->provider_reject( (int) $booking->id, 'provider_rejected', $reason );
+            return Languages::run_in( $lang, fn() => self::provider_action_message(
+                $result->success
+                    ? __( 'La reserva fue rechazada y se notificó al cliente. Gracias por responder.', 'amir-booking' )
+                    : __( 'No se pudo procesar la reserva. Contactá a TourFlow.', 'amir-booking' ),
+                $result->success ? '✅' : '❌'
+            ) );
+        }
+
+        return Languages::run_in( $lang, fn() => self::provider_action_confirm_screen( $booking, $ref, $token, $do ) );
+    }
+
+    /** Pantalla de confirmación (GET, sin side-effects) — debe llamarse dentro de Languages::run_in(). */
+    private static function provider_action_confirm_screen( object $b, string $ref, string $token, string $do ): string {
+        $is_approve = $do === 'approve';
+        $title      = $is_approve ? __( '¿Confirmar esta reserva?', 'amir-booking' ) : __( '¿Rechazar esta reserva?', 'amir-booking' );
+        $btn_label  = $is_approve ? __( 'Sí, confirmar disponibilidad', 'amir-booking' ) : __( 'Sí, rechazar esta reserva', 'amir-booking' );
+        $btn_color  = $is_approve ? '#1D9E75' : '#dc2626';
+
+        $date_parts = explode( '-', $b->tour_date );
+        $months = array(
+            __( 'Enero', 'amir-booking' ), __( 'Febrero', 'amir-booking' ), __( 'Marzo', 'amir-booking' ),
+            __( 'Abril', 'amir-booking' ), __( 'Mayo', 'amir-booking' ), __( 'Junio', 'amir-booking' ),
+            __( 'Julio', 'amir-booking' ), __( 'Agosto', 'amir-booking' ), __( 'Septiembre', 'amir-booking' ),
+            __( 'Octubre', 'amir-booking' ), __( 'Noviembre', 'amir-booking' ), __( 'Diciembre', 'amir-booking' ),
+        );
+        $date_fmt = (int) $date_parts[2] . ' ' . $months[ (int) $date_parts[1] - 1 ] . ' ' . $date_parts[0];
+
+        $pax_parts = array();
+        if ( $b->adults )   $pax_parts[] = $b->adults   . ' ' . __( 'adultos', 'amir-booking' );
+        if ( $b->children ) $pax_parts[] = $b->children . ' ' . __( 'niños', 'amir-booking' );
+        if ( $b->babies )   $pax_parts[] = $b->babies   . ' ' . __( 'bebés', 'amir-booking' );
+        $pax = implode( ' + ', $pax_parts );
+
+        $reason_field = '';
+        if ( ! $is_approve ) {
+            $reason_field = '<textarea name="reject_reason" maxlength="500" placeholder="'
+                . esc_attr__( 'Motivo (opcional) — se le mostrará al cliente', 'amir-booking' )
+                . '" style="width:100%;min-height:80px;padding:10px 12px;border:1px solid #c3d9d0;border-radius:8px;font-size:14px;margin:12px 0;box-sizing:border-box;font-family:inherit;"></textarea>';
+        }
+
+        $nonce_field = wp_nonce_field( 'amir_provider_action_' . $ref, 'amir_provider_nonce', true, false );
+
+        return '<div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:0;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08);">'
+             . '<div style="background:#1a2e24;padding:24px;text-align:center;">'
+             . '<div style="color:#fff;font-size:18px;font-weight:700;">' . esc_html( $title ) . '</div>'
+             . '</div>'
+             . '<div style="background:#fff;padding:24px;">'
+             . '<div style="background:#f3f4f6;border-radius:10px;padding:16px;font-size:14px;color:#1a2e24;margin-bottom:16px;">'
+             . '<strong>' . esc_html( $b->booking_ref ) . '</strong><br>'
+             . esc_html( $date_fmt ) . ' · ' . esc_html( $pax ) . '<br>'
+             . esc_html( $b->customer_name )
+             . '</div>'
+             . '<form method="post">'
+             . $nonce_field
+             . '<input type="hidden" name="ref" value="' . esc_attr( $ref ) . '">'
+             . '<input type="hidden" name="token" value="' . esc_attr( $token ) . '">'
+             . '<input type="hidden" name="do" value="' . esc_attr( $do ) . '">'
+             . $reason_field
+             . '<button type="submit" style="width:100%;padding:12px;background:' . esc_attr( $btn_color ) . ';color:#fff;border:none;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer;">' . esc_html( $btn_label ) . '</button>'
+             . '</form>'
+             . '</div>'
+             . '</div>';
+    }
+
+    /** Mensaje genérico de resultado/error de la acción del proveedor — debe llamarse dentro de Languages::run_in(). */
+    private static function provider_action_message( string $message, string $icon = 'ℹ️' ): string {
+        return '<div style="font-family:sans-serif;max-width:420px;margin:40px auto;padding:24px;background:#fff;border-radius:12px;border:1px solid #e1f5ee;text-align:center;">'
+             . '<div style="font-size:40px;margin-bottom:12px;">' . $icon . '</div>'
+             . '<p style="color:#1a2e24;font-size:14px;">' . esc_html( $message ) . '</p>'
+             . '</div>';
+    }
+
     // ── Assets ────────────────────────────────────────────────────────────
 
     private static function enqueue_widget_assets(): void {

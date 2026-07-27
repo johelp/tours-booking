@@ -140,4 +140,32 @@ final class PricingEngineTest extends TestCase {
         $this->assertEqualsWithDelta( 1300.0, $no_coupon->total_mxn, 0.001 );
         $this->assertEqualsWithDelta( 300.0, $no_coupon->addons_mxn, 0.001 );
     }
+
+    // ── Costo del proveedor externo (marketplace, § 11 CONTRIBUTING.md) ────
+
+    public function test_calculate_provider_cost_sums_percapita_like_the_sale_price(): void {
+        $GLOBALS['wpdb']->tour_row   = (object) [ 'id' => 1, 'price_model' => 'percapita' ];
+        $GLOBALS['wpdb']->price_rows = [
+            (object) [ 'person_type' => 'adult', 'group_min' => null, 'group_max' => null, 'price_mxn' => 500.00, 'provider_cost_mxn' => 300.00 ],
+            (object) [ 'person_type' => 'child', 'group_min' => null, 'group_max' => null, 'price_mxn' => 250.00, 'provider_cost_mxn' => 150.00 ],
+        ];
+
+        $engine = new PricingEngine();
+        $cost   = $engine->calculate_provider_cost( 1, 0, '2026-08-01', 2, 1, 0 );
+
+        // 2 adultos x 300 + 1 niño x 150 = 750 (costo, separado de los 1250 de venta)
+        $this->assertEqualsWithDelta( 750.0, $cost, 0.001 );
+    }
+
+    public function test_calculate_provider_cost_matches_group_range(): void {
+        $GLOBALS['wpdb']->tour_row   = (object) [ 'id' => 2, 'price_model' => 'group' ];
+        $GLOBALS['wpdb']->price_rows = [
+            (object) [ 'person_type' => 'group', 'group_min' => 1, 'group_max' => 2, 'price_mxn' => 3000.00, 'provider_cost_mxn' => 2000.00 ],
+        ];
+
+        $engine = new PricingEngine();
+        $cost   = $engine->calculate_provider_cost( 2, 0, '2026-08-01', 2, 0, 0 );
+
+        $this->assertEqualsWithDelta( 2000.0, $cost, 0.001 );
+    }
 }

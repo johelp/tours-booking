@@ -239,39 +239,65 @@ El modelo de negocio depende de tráfico de contenido (no solo de fichas de tour
 
 Ya que `amir_tours` tiene estructurados precio, duración, imágenes y ubicación de cada tour propio, generar automáticamente el JSON-LD `TouristTrip`/`Product`/`Offer` desde esos datos —sin que el operador toque nada— sería una mejora barata y **genérica** de TourFlow: cualquier instalación (Amir Adventours incluido) gana visibilidad en Google/buscadores de IA en sus fichas de tour existentes, gratis, porque el dato ya está en la base. Bajo esfuerzo, no depende de Visit Sicily ni de ningún módulo de afiliados — se puede construir independientemente.
 
-## 11. Marketplace de proveedores externos (tours de terceros) — spec acordado, sin construir
+## 11. Marketplace de proveedores externos (tours de terceros) — ✅ implementado (v2.2.0)
 
-Planteado por el cliente el 2026-07-27, dialogado y cerrado en la misma sesión. **No confundir con §9 (Afiliados externos)**: ahí TourFlow solo redirige al proveedor (Booking.com, GetYourGuide) y nunca es dueño de la venta; acá TourFlow **sí es el vendedor de registro** — el cliente paga a TourFlow a un precio propio, y TourFlow le liquida después al proveedor su costo. La diferencia es de negocio, no de detalle técnico: comisión de referido vs. reventa con margen propio.
+Planteado por el cliente el 2026-07-27, dialogado y cerrado en la misma sesión, implementado en la sesión siguiente. **No confundir con §9 (Afiliados externos)**: ahí TourFlow solo redirige al proveedor (Booking.com, GetYourGuide) y nunca es dueño de la venta; acá TourFlow **sí es el vendedor de registro** — el cliente paga a TourFlow a un precio propio, y TourFlow le liquida después al proveedor su costo. La diferencia es de negocio, no de detalle técnico: comisión de referido vs. reventa con margen propio.
 
-**Por qué es distinto de `amir_partners` (ya existente)**: un partner de hoy *refiere* clientes a tours *nuestros* y cobra comisión (`PartnerTracker`, `?ref=TOKEN`). Acá el proveedor *es dueño* del tour — se modela aparte, `amir_providers`, aunque el criterio de "liquidación pendiente/pagada" se pueda reusar de forma similar.
+**Por qué es distinto de `amir_partners` (ya existente)**: un partner de hoy *refiere* clientes a tours *nuestros* y cobra comisión (`PartnerTracker`, `?ref=TOKEN`). Acá el proveedor *es dueño* del tour — se modela aparte, `amir_providers`, con su propio ledger (`amir_provider_payouts` — a diferencia de `amir_partners`, que nunca llegó a tener uno: la comisión de un partner se calcula on-the-fly en `PartnerTracker::get_partner_stats()`, nunca se persiste).
 
-### Decisiones cerradas en el diálogo
+### Decisiones cerradas en el diálogo con el cliente
 
 | Punto | Decisión |
 |---|---|
-| Quién carga el tour del proveedor | **El equipo de TourFlow, a mano** — el proveedor manda los datos (WhatsApp/email/planilla), previamente acordado con él, y se carga con el editor de tours actual. Un portal de autogestión ("Vendé tus experiencias en nuestro portal") queda documentado como visión a futuro, no en esta etapa — no bloquea nada de lo de abajo si se construye después |
-| Aprobación de cada reserva | **Link por email, sin login** — mismo patrón que `verify_url()` de wishlist (token en la URL, sin cuenta de usuario). Panel/calendario propio del proveedor para bloquear disponibilidad de antemano queda para v2 — para v1, el propio paso de aprobación ya cumple esa función: si el proveedor está lleno, rechaza esa reserva puntual |
-| Plazo de respuesta | Recordatorio a las **24h**, cancelación automática + reembolso a las **48h** sin respuesta — configurable en Configuración (no hardcodeado), para poder ajustarlo por acuerdo comercial sin tocar código |
-| Precio/margen | Costo del proveedor separado del precio de venta (no una comisión %) — `amir_prices` suma una columna de costo junto al `price_mxn` que ya existe por tipo de persona/grupo. Margen = venta − costo |
-| Liquidación | **Manual para v1** — ledger simple de "liquidado/pendiente", igual que quedó anotado para partners. Un payout automático tipo transferencia desde Stripe (Stripe Connect u similar) quedó explícitamente como "lujo, no necesario ahora" — no bloquea la v1 si se suma después |
-| Transparencia al cliente | Aviso **discreto** en la ficha del tour (no en el email de confirmación) — algo como "sujeto a confirmación del operador local", **sin nombrar al proveedor** ni invitar a buscarlo por fuera de TourFlow (riesgo de que el cliente reserve directo con el proveedor la próxima vez, salteando la plataforma) |
+| Quién carga el tour del proveedor | **El equipo de TourFlow, a mano** — el proveedor manda los datos (WhatsApp/email/planilla), previamente acordado con él, y se carga con el editor de tours actual (dropdown "Proveedor" nuevo, ver abajo). Portal de autogestión ("Vendé tus experiencias en nuestro portal") queda como visión a futuro, no en esta etapa |
+| Aprobación de cada reserva | **Link por email, sin login** — token propio del proveedor (`provider_response_token`), nunca el `access_token` del cliente (ver nota de seguridad abajo). Panel/calendario propio del proveedor queda para v2 — para v1, el propio paso de aprobación ya cumple esa función |
+| Plazo de respuesta | Recordatorio a las **24h**, cancelación automática + reembolso a las **48h** sin respuesta — configurable (`amir_provider_reminder_hours`/`amir_provider_response_hours`, Configuración), no hardcodeado |
+| Precio/margen | Costo del proveedor separado del precio de venta — `amir_prices.provider_cost_mxn`, misma granularidad que `price_mxn` (por `person_type`/grupo). Margen = venta − costo |
+| Liquidación | **Manual v1** — ledger `amir_provider_payouts`, fila `pending` generada automáticamente al aprobarse cada reserva (decisión tomada en esta sesión: automática, no carga manual), el equipo la marca `paid` a mano en Amir Booking → 💸 Liquidación. Sin payout automático vía pasarela |
+| Transparencia al cliente | Badge discreto en la ficha del tour (no en el email de confirmación), **sin nombrar al proveedor** — texto placeholder pendiente de validar con el cliente antes de darlo por definitivo (ver "Pendiente" abajo) |
 
-### Flujo de reserva
+### Decisiones de implementación tomadas en la sesión de build (no estaban en el sketch original)
 
-1. Cliente reserva y paga normal, al precio de TourFlow (nada cambia en el checkout).
-2. Si el tour tiene `provider_id`, la reserva no pasa a `confirmed` directo — entra en un estado nuevo, `pending_provider_approval`.
-3. Email al proveedor ("Recibiste una nueva reserva desde TourFlow") con botones Aprobar/Rechazar vía link tokenizado, y con los datos de contacto del cliente (nombre, teléfono/email, fecha, personas, pedidos especiales) — el proveedor puede necesitar contactar al cliente directo con info adicional (punto de encuentro puntual, etc.), más allá de la confirmación estándar de TourFlow.
-4. **Aprueba** → pasa a `confirmed`, dispara el email de confirmación y voucher de siempre — para el cliente no cambia nada.
-5. **Rechaza**, o pasan 48h sin respuesta → se cancela y se reembolsa automático (reusa `PaymentGatewayInterface::refund()`, ya integrado).
-6. Cron (mismo mecanismo que ya libera `pending` vencidos): recordatorio a las 24h, auto-cancelación a las 48h.
+- **Email interino al cliente**: al entrar a `pending_provider_approval` (pago ya cobrado), el cliente recibe un aviso breve ("estamos confirmando disponibilidad con el operador local") — el spec original no lo mencionaba, se agregó para no dejarlo sin ninguna señal hasta 48h después.
+- **Aprobar/rechazar por email es GET (pantalla de confirmación) + POST (acción real), no un solo click**: un link `GET` que ejecutara la acción directo quedaba expuesto a que scanners de seguridad de email corporativo (Outlook Safe Links, antivirus) lo abran por prefetch sin que el proveedor haya hecho nada — el `GET` solo renderiza un resumen + botón, la escritura ocurre en el `POST` de esa misma pantalla.
+- **Un solo status `cancelled_provider`** para rechazo explícito y vencimiento del plazo (se distinguen por `reason_type`/`provider_reject_reason` al momento, no por status separados) — más simple, nadie pidió filtrarlos aparte en Reservas todavía.
+- **`provider_response_token` es un secreto separado del `access_token` del cliente** — si se compartiera el mismo valor, el cliente podría usar su propio link de "verificar mi reserva" para forzar un rechazo con reembolso 100%, saltándose la política de cancelación escalonada de `calculate_refund()`.
+- **Reenvío manual no reinicia el cronómetro de 24h/48h** — el botón "📨 Reenviar aviso al proveedor" reusa el `provider_response_token` existente y no toca `provider_notified_at`, para no poder extender el plazo indefinidamente reenviando a mano.
+- **`delete_provider` bloquea si el proveedor tiene tours asignados** (hay que desactivarlo en su lugar) — evita huérfanos de la FK lógica `amir_tours.provider_id`.
 
-### Modelo de datos (sketch, sin implementar)
+### Flujo de reserva (implementado)
 
-- `amir_providers`: id, nombre, contacto, email, teléfono, notas, activo.
-- `amir_tours.provider_id` (NULL = tour propio, como hoy).
-- `amir_prices`: + `provider_cost_mxn` junto al `price_mxn` existente, por tipo de persona/grupo.
-- `amir_bookings`: nuevo status `pending_provider_approval` en el ENUM, + `provider_response_token`, `provider_notified_at`, `provider_reminder_sent_at`, `provider_responded_at`.
-- `amir_provider_payouts`: ledger manual (proveedor, monto, nota, fecha) — igual de simple que lo pendiente para `amir_partners`.
-- Configuración nueva: `amir_provider_reminder_hours` (24), `amir_provider_response_hours` (48).
+1. Cliente reserva y paga normal, al precio de TourFlow — checkout sin cambios.
+2. `BookingManager::confirm()` resuelve si el tour tiene un proveedor activo (`tour_has_active_provider()`); si sí, en vez de `finalize_confirmation()` pone `status='pending_provider_approval'`, genera `provider_response_token` y dispara `amir_booking_pending_provider_approval`.
+3. Ese hook dispara dos emails (`class-email-dispatcher.php`): `ProviderNoticeEmail` al proveedor (datos de contacto completos del cliente + botones Aprobar/Rechazar hacia `/proveedor-reserva/`) y `ProviderPendingNoticeEmail` al cliente (aviso interino).
+4. El proveedor entra al link → pantalla de confirmación (`Shortcodes::provider_action()`, GET) → confirma con un botón (POST) → `BookingManager::provider_approve()` o `provider_reject()`.
+5. **Aprueba** → `finalize_confirmation()` (mismo camino que cualquier reserva sin proveedor: email + voucher + notificación admin) + hook `amir_provider_booking_approved` que genera la fila del ledger.
+6. **Rechaza** (con motivo opcional), o pasan 48h sin respuesta (`CronManager::expire_provider_pending()`, hook horario) → `cancel()` con reembolso 100% + `CancellationEmail` con el `reason_type` correspondiente.
 
-Sin empezar a construir — queda documentado para cuando se priorice.
+### Modelo de datos (implementado)
+
+- `amir_providers`: `id, business_name, contact_name, email, phone, notes, active, created_at, updated_at`.
+- `amir_tours.provider_id` (NULL = tour propio).
+- `amir_prices.provider_cost_mxn` junto a `price_mxn`.
+- `amir_bookings`: status `pending_provider_approval`/`cancelled_provider` + `provider_response_token`, `provider_notified_at`, `provider_reminder_sent_at`, `provider_responded_at`, `provider_reject_reason`.
+- `amir_provider_payouts`: `id, provider_id, booking_id, amount_mxn, status ('pending'|'paid'), note, created_at, paid_at`.
+- Opciones: `amir_provider_reminder_hours` (24), `amir_provider_response_hours` (48).
+- `AMIR_DB_VERSION` → `1.9.0`.
+
+### Archivos clave
+
+- `includes/core/class-booking-manager.php`: `confirm()`/`finalize_confirmation()`, `provider_approve()`, `provider_reject()`, `authorize_provider_access()`, `tour_has_active_provider()`, `cancel()`/`calculate_refund()` extendidos.
+- `includes/core/class-shortcodes.php`: `provider_action()` (shortcode `[amir_provider_action]`, página `/proveedor-reserva/`).
+- `includes/core/class-cron-manager.php`: `send_provider_reminders()`, `expire_provider_pending()` (hook horario).
+- `includes/emails/class-email-dispatcher.php`: `ProviderNoticeEmail`, `ProviderPendingNoticeEmail`, `CancellationEmail` extendido, `BaseEmail` con destinatario parametrizable (`$to_override`).
+- `includes/admin/class-providers-page.php` (CRUD), `includes/admin/class-provider-payouts-page.php` (ledger) — nuevos submenús 🤝 Proveedores / 💸 Liquidación.
+- `includes/cpt/class-tour-post-type.php`: dropdown de proveedor + costo por persona/grupo en el editor de tour.
+- `templates/single-amir_tour.php`: badge discreto junto al precio.
+- `includes/core/class-pricing-engine.php`: `calculate_provider_cost()` público (mismo criterio de vigencia/horario que `quote()`, pero con `provider_cost_mxn`).
+- `tests/unit/BookingManagerProviderApprovalTest.php`, casos nuevos en `PricingEngineTest.php`.
+
+### Pendiente — falta probar en vivo y definir
+
+- **No probado en vivo todavía** (recién construido) — falta subir el ZIP al sandbox y hacer el flujo end-to-end completo: crear proveedor, asignarlo a un tour con costo, reservar y pagar de verdad, aprobar/rechazar desde el link real, confirmar que el ledger se genera.
+- **Texto del badge**: placeholder ("Operado por un partner local") marcado con `<!-- TODO -->` en `templates/single-amir_tour.php` — falta validarlo con el cliente antes de darlo por definitivo.
+- Confirmar que el `wp_mail()` de `ProviderNoticeEmail` llega bien a la bandeja del proveedor (mismo riesgo de spam que se vio con `TourOpenedEmail`, ver "Estado al cierre" de sesiones previas en CLAUDE.md).

@@ -492,7 +492,52 @@ class BookingManager {
             return false;
         }
 
-        // Actualizar estado
+        // El cobro ya ocurrió sin importar si el tour tiene proveedor — eso
+        // solo decide si la reserva queda 'confirmed' directo o pasa antes
+        // por la aprobación del proveedor (marketplace, § 11 CONTRIBUTING.md).
+        $wpdb->update(
+            "{$wpdb->prefix}amir_bookings",
+            [
+                'stripe_charge_id'  => $charge_id,
+                'gateway_charge_id' => $charge_id,
+            ],
+            [ 'id' => $booking_id ],
+            [ '%s', '%s' ],
+            [ '%d' ]
+        );
+
+        if ( $this->tour_has_active_provider( (int) $booking->tour_id ) ) {
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings",
+                [
+                    'status'                  => 'pending_provider_approval',
+                    'provider_response_token' => self::generate_access_token(),
+                    'provider_notified_at'    => current_time( 'mysql' ),
+                ],
+                [ 'id' => $booking_id ],
+                [ '%s', '%s', '%s' ],
+                [ '%d' ]
+            );
+
+            // Dispara el email al proveedor (con los links de aprobar/rechazar)
+            // y el aviso interino al cliente — ver EmailDispatcher.
+            do_action( 'amir_booking_pending_provider_approval', $booking_id );
+            return true;
+        }
+
+        $this->finalize_confirmation( $booking_id, $charge_id );
+        return true;
+    }
+
+    /**
+     * Segunda mitad de confirm() para el caso normal (sin proveedor):
+     * marca 'confirmed', dispara el email/voucher de siempre. También la
+     * usa provider_approve() cuando el proveedor aprueba una reserva que
+     * ya estaba cobrada — el cliente no nota ninguna diferencia.
+     */
+    private function finalize_confirmation( int $booking_id, string $charge_id ): void {
+        global $wpdb;
+
         $wpdb->update(
             "{$wpdb->prefix}amir_bookings",
             [
@@ -539,15 +584,136 @@ class BookingManager {
 
         // Notificar al admin
         $this->create_admin_notification( 'new_booking', $booking_id );
+    }
+
+    /**
+     * El proveedor aprobó la reserva (vía el link tokenizado del email) —
+     * invalida el token (un solo uso) y termina de confirmarla igual que
+     * cualquier otra reserva pagada.
+     */
+    public function provider_approve( int $booking_id ): bool {
+        global $wpdb;
+
+        $booking = $this->get_booking( $booking_id );
+        if ( ! $booking || $booking->status !== 'pending_provider_approval' ) {
+            return false;
+        }
+
+        $wpdb->update(
+            "{$wpdb->prefix}amir_bookings",
+            [
+                'provider_responded_at'   => current_time( 'mysql' ),
+                'provider_response_token' => null,
+            ],
+            [ 'id' => $booking_id ],
+            [ '%s', '%s' ],
+            [ '%d' ]
+        );
+
+        $charge_id = $booking->gateway_charge_id ?: $booking->stripe_charge_id;
+        $this->finalize_confirmation( $booking_id, $charge_id );
+
+        // Desacoplado igual que amir_process_gateway_refund — el ledger de
+        // liquidación (amir_provider_payouts) escucha este hook, BookingManager
+        // no conoce esa tabla directamente.
+        do_action( 'amir_provider_booking_approved', $booking_id );
 
         return true;
+    }
+
+    /**
+     * El proveedor rechazó la reserva, o venció el plazo de respuesta sin
+     * contestar (cron, ver class-cron-manager.php). En ambos casos se
+     * cancela con reembolso 100% (no es responsabilidad del cliente) —
+     * se distinguen por $reason_type, no por status separado.
+     *
+     * $reason_type: 'provider_rejected' (click explícito) | 'provider_expired' (cron 48h)
+     */
+    public function provider_reject( int $booking_id, string $reason_type, string $reject_reason = '' ): BookingResult {
+        global $wpdb;
+
+        $booking = $this->get_booking( $booking_id );
+        if ( ! $booking ) {
+            return BookingResult::error( 'Reserva no encontrada' );
+        }
+        if ( $booking->status !== 'pending_provider_approval' ) {
+            return BookingResult::error( 'Esta reserva ya fue procesada.' );
+        }
+
+        $update  = [ 'provider_response_token' => null ];
+        $formats = [ '%s' ];
+
+        // Vencimiento del plazo no es una "respuesta" real del proveedor —
+        // se deja provider_responded_at vacío para poder distinguir después
+        // "rechazó" de "nunca contestó" en reportes.
+        if ( $reason_type === 'provider_rejected' ) {
+            $update['provider_responded_at'] = current_time( 'mysql' );
+            $formats[] = '%s';
+            if ( $reject_reason !== '' ) {
+                $update['provider_reject_reason'] = $reject_reason;
+                $formats[] = '%s';
+            }
+        }
+
+        $wpdb->update(
+            "{$wpdb->prefix}amir_bookings",
+            $update,
+            [ 'id' => $booking_id ],
+            $formats,
+            [ '%d' ]
+        );
+
+        return $this->cancel(
+            $booking_id,
+            $reason_type,
+            $reject_reason !== '' ? "Motivo del proveedor: {$reject_reason}" : ''
+        );
+    }
+
+    /**
+     * Autoriza al proveedor externo a aprobar/rechazar una reserva vía el
+     * link tokenizado del email — a propósito NO reusa authorize_public_access()
+     * (esa tiene un fallback débil por email pensado para el cliente). El
+     * proveedor solo autoriza por token fuerte; si ya se usó/venció
+     * (provider_response_token es NULL), no autoriza nunca.
+     *
+     * Importante: provider_response_token es un secreto DISTINTO del
+     * access_token del cliente — si se compartiera, el cliente podría usar
+     * su propio link de "verificar mi reserva" para forzar un rechazo con
+     * reembolso 100%, saltándose la política de cancelación escalonada.
+     */
+    public function authorize_provider_access( object $booking, string $token ): bool {
+        if ( $token === '' || empty( $booking->provider_response_token ) ) {
+            return false;
+        }
+        return hash_equals( (string) $booking->provider_response_token, $token );
+    }
+
+    /**
+     * Resuelve si el tour de una reserva tiene un proveedor externo activo
+     * asignado — determina si confirm() bifurca a pending_provider_approval.
+     * Un proveedor inactivo se trata igual que "sin proveedor" (tour propio).
+     */
+    private function tour_has_active_provider( int $tour_id ): bool {
+        global $wpdb;
+        $provider_id = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT provider_id FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+            $tour_id
+        ) );
+        if ( $provider_id <= 0 ) {
+            return false;
+        }
+        return (bool) $wpdb->get_var( $wpdb->prepare(
+            "SELECT active FROM {$wpdb->prefix}amir_providers WHERE id = %d",
+            $provider_id
+        ) );
     }
 
     // ── Cancelar reserva ──────────────────────────────────────────────────
 
     public function cancel(
         int    $booking_id,
-        string $reason_type = 'client',  // client | weather | min_pax
+        string $reason_type = 'client',  // client | weather | min_pax | provider_rejected | provider_expired
         string $internal_note = ''
     ): BookingResult {
         global $wpdb;
@@ -556,7 +722,7 @@ class BookingManager {
         if ( ! $booking ) {
             return BookingResult::error( 'Reserva no encontrada' );
         }
-        if ( ! in_array( $booking->status, [ 'pending', 'confirmed' ], true ) ) {
+        if ( ! in_array( $booking->status, [ 'pending', 'confirmed', 'pending_provider_approval' ], true ) ) {
             return BookingResult::error( 'Esta reserva ya fue cancelada o completada' );
         }
 
@@ -564,8 +730,10 @@ class BookingManager {
         $refund = $this->calculate_refund( $booking, $reason_type );
 
         $status_map = [
-            'weather' => 'cancelled_weather',
-            'min_pax' => 'cancelled_min_pax',
+            'weather'           => 'cancelled_weather',
+            'min_pax'           => 'cancelled_min_pax',
+            'provider_rejected' => 'cancelled_provider',
+            'provider_expired'  => 'cancelled_provider',
         ];
         $new_status = isset( $status_map[ $reason_type ] ) ? $status_map[ $reason_type ] : 'cancelled_client';
 
@@ -605,8 +773,10 @@ class BookingManager {
      *   0–2 días antes → 0% reembolso (100% cargo)
      */
     private function calculate_refund( object $booking, string $reason_type ): array {
-        // Cancelación por el operador = siempre reembolso total
-        if ( in_array( $reason_type, [ 'weather', 'min_pax' ], true ) ) {
+        // Cancelación por el operador, o por el proveedor externo (rechazo o
+        // vencimiento del plazo de aprobación) = siempre reembolso total, no
+        // es responsabilidad del cliente.
+        if ( in_array( $reason_type, [ 'weather', 'min_pax', 'provider_rejected', 'provider_expired' ], true ) ) {
             return [
                 'charge_pct' => 0,
                 'refund_mxn' => (float) $booking->total_mxn,

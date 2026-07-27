@@ -92,6 +92,24 @@ while ( have_posts() ) :
         ) );
     }
 
+    // Marketplace de proveedores externos (§ 11 CONTRIBUTING.md): aviso
+    // discreto si el tour lo opera un proveedor externo — sin nombrarlo,
+    // para no darle al cliente pistas para reservar directo con él la
+    // próxima vez, saltando TourFlow. Un proveedor desactivado se trata
+    // igual que "sin proveedor" (mismo criterio que BookingManager::confirm()).
+    $has_provider = false;
+    if ( $db_id ) {
+        global $wpdb;
+        $provider_id = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT provider_id FROM {$wpdb->prefix}amir_tours WHERE id=%d", $db_id
+        ) );
+        if ( $provider_id > 0 ) {
+            $has_provider = (bool) $wpdb->get_var( $wpdb->prepare(
+                "SELECT active FROM {$wpdb->prefix}amir_providers WHERE id=%d", $provider_id
+            ) );
+        }
+    }
+
     $title        = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'name', $lang ) ?: get_the_title();
     $description  = get_the_content();
     $cover        = get_the_post_thumbnail_url( $post_id, 'full' );
@@ -184,6 +202,10 @@ if ( $has_pixels && $db_id ) :
             <span class="amir-single-tour__price-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
             <span class="amir-single-tour__price-cur"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></span>
           </div>
+        <?php endif; ?>
+        <?php if ($has_provider) : ?>
+          <!-- TODO: copy a validar con el cliente antes de mergear (marketplace de proveedores, § 11 CONTRIBUTING.md) -->
+          <span class="amir-single-tour__provider-badge">🤝 <?php echo $is_en ? 'Operated by a local partner' : 'Operado por un partner local'; ?></span>
         <?php endif; ?>
       </div>
     </div>
@@ -317,6 +339,7 @@ $brand_color_dark = esc_attr( get_option( 'amir_brand_color_dark', '#0F6E56' ) )
 .amir-single-tour__price-from { color:rgba(255,255,255,.75); font-size:13px; }
 .amir-single-tour__price-value { font-size:32px; font-weight:800; color:#fff; }
 .amir-single-tour__price-cur { color:rgba(255,255,255,.75); font-size:14px; }
+.amir-single-tour__provider-badge { display:inline-block; margin-top:8px; background:rgba(255,255,255,.15); color:rgba(255,255,255,.85); font-size:11px; font-weight:600; padding:4px 10px; border-radius:20px; backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
 
 .amir-single-tour__body { max-width:1140px; margin:0 auto; padding:32px 20px 48px; }
 

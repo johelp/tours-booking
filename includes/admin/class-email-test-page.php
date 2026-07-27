@@ -20,6 +20,8 @@ class EmailTestPage {
         'tour_opened'  => [ 'label' => 'Tour ya disponible (wishlist)',   'class' => \AmirBooking\Emails\TourOpenedEmail::class ],
         'payment_link' => [ 'label' => 'Link de pago (reserva manual)',  'class' => \AmirBooking\Emails\PaymentLinkEmail::class ],
         'reschedule'   => [ 'label' => 'Reserva reprogramada',           'class' => \AmirBooking\Emails\RescheduleEmail::class ],
+        'provider_notice' => [ 'label' => 'Marketplace: aviso al proveedor', 'class' => \AmirBooking\Emails\ProviderNoticeEmail::class ],
+        'provider_pending' => [ 'label' => 'Marketplace: aviso interino al cliente', 'class' => \AmirBooking\Emails\ProviderPendingNoticeEmail::class ],
     ];
 
     public function render(): void {
@@ -92,9 +94,23 @@ class EmailTestPage {
             return [ 'success' => false, 'message' => 'Tipo de email o dirección inválida.' ];
         }
 
+        // Todas las clases de email viven juntas en class-email-dispatcher.php.
+        // Cargar el archivo vía EmailDispatcher es redundante hoy (Plugin::init()
+        // ya lo instancia en plugins_loaded, en cada request), pero barato y
+        // a prueba de que alguna vez deje de ser así.
+        class_exists( \AmirBooking\Emails\EmailDispatcher::class );
+
         $booking = $this->fake_booking( $to, $lang );
         $class   = self::TYPES[ $type ]['class'];
-        $mailer  = new $class( $booking );
+
+        // CancellationEmail es la única clase con un constructor distinto al
+        // resto (BaseEmail::__construct(booking, ?to_override)) — exige un
+        // $reason_type obligatorio aparte. Instanciarla igual que las demás,
+        // con un solo argumento, tira "Too few arguments" — error fatal, no
+        // un fallo silencioso de wp_mail(). 'client' como default de prueba.
+        $mailer  = $class === \AmirBooking\Emails\CancellationEmail::class
+            ? new $class( $booking, 'client' )
+            : new $class( $booking );
         $success = $mailer->send();
 
         return [
@@ -135,6 +151,15 @@ class EmailTestPage {
             'cancellation_policy_pct' => 50,
             'refund_amount_mxn'       => 750,
             'custom_email_note'       => '',
+            // Marketplace de proveedores (§ 11 CONTRIBUTING.md) — solo lo
+            // usan ProviderNoticeEmail/ProviderPendingNoticeEmail/CancellationEmail
+            // con reason_type provider_*, pero se completa siempre por si
+            // se agrega otro tipo de email que también los lea.
+            'provider_business_name'  => 'Proveedor de Prueba S.A.',
+            'provider_contact_name'   => 'Contacto de Prueba',
+            'provider_response_token' => 'test-provider-token-0000',
+            'provider_reject_reason'  => '',
+            'special_requests'        => '',
         ];
     }
 }

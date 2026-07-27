@@ -218,6 +218,27 @@ class TourPostType {
           </div>
         </div>
 
+        <div class="amir-section-title">🤝 Proveedor externo (marketplace)</div>
+        <p style="font-size:12px;color:#666;margin:0 0 12px;">
+          Si este tour lo opera un <strong>proveedor externo</strong> (TourFlow lo revende con margen propio), asignalo acá.
+          Las reservas de este tour van a quedar pendientes de que el proveedor confirme disponibilidad por email antes de
+          darse por confirmadas. Dejalo en "— Tour propio —" para el flujo normal.
+        </p>
+        <div class="amir-meta-grid">
+          <div class="amir-field">
+            <label><?php _e('Proveedor', 'amir-booking'); ?></label>
+            <select name="amir_provider_id" id="amir-provider-id-select">
+              <option value=""><?php _e('— Tour propio —', 'amir-booking'); ?></option>
+              <?php foreach ( $this->get_provider_options( (int) $m['provider_id'] ) as $p ) : ?>
+                <option value="<?php echo (int) $p->id; ?>" <?php selected( (int) $m['provider_id'], (int) $p->id ); ?>>
+                  <?php echo esc_html( $p->business_name . ( (int) $p->active === 0 ? ' (inactivo)' : '' ) ); ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <p class="amir-hint">Se gestionan en TourFlow → 🤝 Proveedores</p>
+          </div>
+        </div>
+
         <div class="amir-section-title">📋 Lista de interés ("Próximamente")</div>
         <p style="font-size:12px;color:#666;margin:0 0 12px;">
           Mientras este tour esté en <strong>borrador</strong>, se puede mostrar en la sección "Próximamente" del sitio
@@ -243,6 +264,25 @@ class TourPostType {
           </div>
         </div>
         <?php
+    }
+
+    /**
+     * Proveedores para el <select> del meta box — activos, más el
+     * actualmente asignado aunque se haya desactivado después (para no
+     * perder la selección existente al desactivar un proveedor).
+     */
+    private function get_provider_options( int $current_provider_id ): array {
+        global $wpdb;
+        if ( $current_provider_id > 0 ) {
+            return $wpdb->get_results( $wpdb->prepare(
+                "SELECT id, business_name, active FROM {$wpdb->prefix}amir_providers
+                 WHERE active = 1 OR id = %d ORDER BY business_name",
+                $current_provider_id
+            ) ) ?? [];
+        }
+        return $wpdb->get_results(
+            "SELECT id, business_name, active FROM {$wpdb->prefix}amir_providers WHERE active = 1 ORDER BY business_name"
+        ) ?? [];
     }
 
     // ── Meta Box: Contenido EN ────────────────────────────────────────────
@@ -463,6 +503,7 @@ class TourPostType {
             : [];
 
         $price_model = get_post_meta( $post->ID, '_amir_price_model', true ) ?: 'percapita';
+        $has_provider = (int) get_post_meta( $post->ID, '_amir_provider_id', true ) > 0;
         ?>
         <p style="font-size:12px;color:#666;margin:0 0 14px;">
           Configura los horarios y precios. Se guardan al publicar/actualizar el tour.
@@ -521,6 +562,30 @@ class TourPostType {
           </div>
         </div>
 
+        <!-- Costo del proveedor (solo si el tour tiene proveedor asignado, ver meta_box_main) -->
+        <div id="amir-provider-cost-percapita" style="<?php echo ( $price_model === 'group' || ! $has_provider ) ? 'display:none' : ''; ?>margin-top:14px;">
+          <div style="font-weight:700;font-size:13px;color:#BA7517;margin-bottom:8px;">💰 Costo del proveedor por persona (<?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>)</div>
+          <p style="font-size:11px;color:#888;margin:0 0 8px;">Lo que TourFlow le paga al proveedor — separado del precio de venta de arriba. Margen = venta − costo.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <?php foreach ( $types as $type => $label ) :
+              $cost_row = array_filter( $prices, fn($p) => $p->person_type === $type && ! $p->schedule_id );
+              $cost_val = $cost_row ? (float) reset( $cost_row )->provider_cost_mxn : '';
+            ?>
+              <div class="amir-field" style="margin-bottom:0;">
+                <label style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;display:block;color:#444;">
+                  <?php echo esc_html($label); ?>
+                </label>
+                <div style="position:relative;">
+                  <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#888;">$</span>
+                  <input type="number" name="amir_cost_<?php echo $type; ?>" value="<?php echo esc_attr($cost_val); ?>"
+                         min="0" step="0.01" placeholder="0.00"
+                         style="width:100%;border:1px solid #fde8c8;border-radius:6px;padding:7px 8px 7px 20px;font-size:13px;box-sizing:border-box;" />
+                </div>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </div>
+
         <!-- Precios grupo -->
         <div id="amir-prices-group" style="<?php echo $price_model === 'percapita' ? 'display:none' : ''; ?>">
           <div style="font-weight:700;font-size:13px;color:#1D9E75;margin-bottom:8px;">💲 Precios por grupo (<?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>)</div>
@@ -546,10 +611,44 @@ class TourPostType {
           </div>
         </div>
 
+        <!-- Costo del proveedor — modelo grupo -->
+        <div id="amir-provider-cost-group" style="<?php echo ( $price_model === 'percapita' || ! $has_provider ) ? 'display:none' : ''; ?>margin-top:14px;">
+          <div style="font-weight:700;font-size:13px;color:#BA7517;margin-bottom:8px;">💰 Costo del proveedor por grupo (<?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>)</div>
+          <p style="font-size:11px;color:#888;margin:0 0 8px;">Lo que TourFlow le paga al proveedor — separado del precio de venta de arriba. Margen = venta − costo.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <?php foreach ( $group_ranges as [ $gmin, $gmax, $glabel ] ) :
+              $gcp = array_filter( $prices, fn($p) => $p->person_type === 'group' && (int)$p->group_min === $gmin );
+              $gcv = $gcp ? (float) reset( $gcp )->provider_cost_mxn : '';
+            ?>
+              <div class="amir-field" style="margin-bottom:0;">
+                <label style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;display:block;color:#444;">
+                  <?php echo esc_html($glabel); ?>
+                </label>
+                <div style="position:relative;">
+                  <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#888;">$</span>
+                  <input type="number" name="amir_cost_group_<?php echo $gmin; ?>_<?php echo $gmax; ?>" value="<?php echo esc_attr($gcv); ?>"
+                         min="0" step="0.01" placeholder="0.00"
+                         style="width:100%;border:1px solid #fde8c8;border-radius:6px;padding:7px 8px 7px 20px;font-size:13px;box-sizing:border-box;" />
+                </div>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </div>
+
         <script>
         document.querySelector('[name="amir_price_model"]')?.addEventListener('change', function(){
+          var hasProvider = document.getElementById('amir-provider-id-select')?.value !== '';
           document.getElementById('amir-prices-percapita').style.display = this.value === 'percapita' ? '' : 'none';
           document.getElementById('amir-prices-group').style.display     = this.value === 'group'     ? '' : 'none';
+          document.getElementById('amir-provider-cost-percapita').style.display = ( this.value === 'percapita' && hasProvider ) ? '' : 'none';
+          document.getElementById('amir-provider-cost-group').style.display     = ( this.value === 'group'     && hasProvider ) ? '' : 'none';
+        });
+
+        document.getElementById('amir-provider-id-select')?.addEventListener('change', function(){
+          var priceModel = document.querySelector('[name="amir_price_model"]')?.value || 'percapita';
+          var hasProvider = this.value !== '';
+          document.getElementById('amir-provider-cost-percapita').style.display = ( priceModel === 'percapita' && hasProvider ) ? '' : 'none';
+          document.getElementById('amir-provider-cost-group').style.display     = ( priceModel === 'group'     && hasProvider ) ? '' : 'none';
         });
 
         document.getElementById('amir-add-schedule-btn').addEventListener('click', function(){
@@ -759,6 +858,7 @@ class TourPostType {
             '_amir_gyg_id'           => 'sanitize_text_field',
             '_amir_wishlist_threshold' => 'absint',
             '_amir_wishlist_date'      => 'sanitize_text_field',
+            '_amir_provider_id'        => 'absint',
         ];
 
         $map = [
@@ -784,6 +884,7 @@ class TourPostType {
             '_amir_gyg_id'            => 'amir_gyg_id',
             '_amir_wishlist_threshold' => 'amir_wishlist_threshold',
             '_amir_wishlist_date'      => 'amir_wishlist_date',
+            '_amir_provider_id'        => 'amir_provider_id',
         ];
 
         foreach ( $map as $meta_key => $post_key ) {
@@ -918,6 +1019,10 @@ class TourPostType {
             'wishlist_threshold' => (int) get_post_meta( $post_id, '_amir_wishlist_threshold', true ),
             'wishlist_date'      => get_post_meta( $post_id, '_amir_wishlist_date', true ) ?: null,
             'content_i18n'       => get_post_meta( $post_id, '_amir_content_i18n', true ) ?: '{}',
+            // NULL = tour propio (default) — 0 guardado por absint() cuando
+            // el <select> queda en "— Tour propio —" se convierte a NULL acá,
+            // no se persiste como 0 (provider_id es una FK lógica opcional).
+            'provider_id'        => ( (int) get_post_meta( $post_id, '_amir_provider_id', true ) ) ?: null,
         ];
 
         if ( $db_id ) {
@@ -1083,9 +1188,10 @@ class TourPostType {
                 $price_val = (float)( $_POST["amir_price_{$type}"] ?? 0 );
                 if ( $price_val >= 0 ) {
                     $wpdb->insert( "{$wpdb->prefix}amir_prices", [
-                        'tour_id'     => $tour_db_id,
-                        'person_type' => $type,
-                        'price_mxn'   => $price_val,
+                        'tour_id'           => $tour_db_id,
+                        'person_type'       => $type,
+                        'price_mxn'         => $price_val,
+                        'provider_cost_mxn' => max( 0, (float) ( $_POST["amir_cost_{$type}"] ?? 0 ) ),
                     ] );
                 }
             }
@@ -1096,11 +1202,12 @@ class TourPostType {
                 $price_val = (float)( $_POST["amir_price_group_{$gmin}_{$gmax}"] ?? 0 );
                 if ( $price_val > 0 ) {
                     $wpdb->insert( "{$wpdb->prefix}amir_prices", [
-                        'tour_id'     => $tour_db_id,
-                        'person_type' => 'group',
-                        'group_min'   => $gmin,
-                        'group_max'   => $gmax,
-                        'price_mxn'   => $price_val,
+                        'tour_id'           => $tour_db_id,
+                        'person_type'       => 'group',
+                        'group_min'         => $gmin,
+                        'group_max'         => $gmax,
+                        'price_mxn'         => $price_val,
+                        'provider_cost_mxn' => max( 0, (float) ( $_POST["amir_cost_group_{$gmin}_{$gmax}"] ?? 0 ) ),
                     ] );
                 }
             }
@@ -1244,6 +1351,7 @@ class TourPostType {
             'wishlist_threshold' => $get('wishlist_threshold') ?: '0',
             'wishlist_date'      => $get('wishlist_date'),
             'content_i18n'       => json_decode( $get('content_i18n') ?: '{}', true ) ?: [],
+            'provider_id'        => $get('provider_id') ?: '',
         ];
     }
 }

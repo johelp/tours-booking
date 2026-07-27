@@ -74,6 +74,26 @@ if ( ! function_exists( 'current_time' ) ) {
     }
 }
 
+// ── Hooks (no se disparan de verdad — solo evitan fatales en clases de
+//    dominio que los usan para desacoplar efectos secundarios, ej.
+//    BookingManager::confirm()/cancel() disparando amir_booking_confirmed/
+//    amir_process_gateway_refund) ─────────────────────────────────────────
+
+if ( ! function_exists( 'do_action' ) ) {
+    function do_action( string $hook, ...$args ) {}
+}
+if ( ! function_exists( 'add_action' ) ) {
+    function add_action( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ) {}
+}
+if ( ! function_exists( 'apply_filters' ) ) {
+    function apply_filters( string $hook, $value, ...$args ) {
+        return $value;
+    }
+}
+if ( ! function_exists( 'add_filter' ) ) {
+    function add_filter( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ) {}
+}
+
 // ── HTTP (no se usan en los tests actuales, solo evitan fatales) ──────────
 
 if ( ! function_exists( 'wp_remote_get' ) ) {

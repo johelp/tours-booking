@@ -354,6 +354,14 @@ class BookingsPage {
               </form>
               <?php endif; ?>
 
+              <?php if ( $b->status === 'pending_provider_approval' ) : ?>
+              <form method="post" style="margin-bottom:10px;">
+                <?php wp_nonce_field('amir_booking_action_'.$booking_id); ?>
+                <input type="hidden" name="amir_action" value="resend_provider_notice" />
+                <button type="submit" class="button" style="width:100%;">📨 Reenviar aviso al proveedor</button>
+              </form>
+              <?php endif; ?>
+
               <?php if ( $b->status === 'cancellation_requested' ) : ?>
               <!-- Aprobar cancelación (manual) -->
               <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px;margin-bottom:10px;">
@@ -522,6 +530,19 @@ class BookingsPage {
                         : 'No se pudo enviar el email — revisa el log de errores del servidor.';
                 }
                 return 'La reserva no está en estado "esperando pago".';
+
+            case 'resend_provider_notice':
+                $b = (new \AmirBooking\Core\BookingManager())->get_booking($booking_id);
+                if ($b && $b->status === 'pending_provider_approval') {
+                    // Reusa el token existente (no lo regenera) y no toca
+                    // provider_notified_at — un reenvío manual no debe
+                    // reiniciar el plazo de 24h/48h configurado.
+                    $result = (new \AmirBooking\Emails\EmailDispatcher())->send_provider_notice($booking_id);
+                    return $result['success']
+                        ? 'Aviso reenviado al proveedor.'
+                        : 'No se pudo enviar el email: ' . $result['error'];
+                }
+                return 'La reserva no está esperando aprobación del proveedor.';
 
             case 'approve_cancellation':
                 $note = sanitize_textarea_field($_POST['cancel_note'] ?? '');

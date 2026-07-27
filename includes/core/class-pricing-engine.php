@@ -260,6 +260,47 @@ class PricingEngine {
         );
     }
 
+    // ── Costo del proveedor externo (marketplace, § 11 CONTRIBUTING.md) ────
+
+    /**
+     * Mismo criterio de selección de fila que quote() (vigencia/horario),
+     * pero suma provider_cost_mxn en vez de price_mxn — lo que le cuesta a
+     * TourFlow la reserva, no lo que se le cobra al cliente. Usado por el
+     * listener de amir_provider_booking_approved (class-plugin.php) para
+     * generar la fila del ledger en amir_provider_payouts.
+     */
+    public function calculate_provider_cost(
+        int    $tour_id,
+        int    $schedule_id,
+        string $date,
+        int    $adults   = 1,
+        int    $children = 0,
+        int    $babies   = 0
+    ): float {
+        $tour   = $this->get_tour( $tour_id );
+        $prices = $this->get_prices_for( $tour_id, $schedule_id, $date );
+
+        if ( $tour && $tour->price_model === 'group' ) {
+            $total_pax = $adults + $children + $babies;
+            foreach ( $prices as $price ) {
+                if ( $price->person_type !== 'group' ) {
+                    continue;
+                }
+                if ( $total_pax >= (int) $price->group_min && $total_pax <= (int) $price->group_max ) {
+                    return round( (float) $price->provider_cost_mxn, 2 );
+                }
+            }
+            return 0.0;
+        }
+
+        $adult_cost = $this->find_price( $prices, 'adult', 'provider_cost_mxn' ) ?? 0.0;
+        $child_cost = $this->find_price( $prices, 'child', 'provider_cost_mxn' ) ?? 0.0;
+        $baby_cost  = $this->find_price( $prices, 'baby', 'provider_cost_mxn' ) ?? 0.0;
+
+        $total = ( $adult_cost * $adults ) + ( $child_cost * $children ) + ( $baby_cost * $babies );
+        return round( $total, 2 );
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
@@ -271,7 +312,7 @@ class PricingEngine {
 
         return $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT person_type, group_min, group_max, price_mxn
+                "SELECT person_type, group_min, group_max, price_mxn, provider_cost_mxn
                  FROM {$wpdb->prefix}amir_prices
                  WHERE tour_id = %d
                    AND ( schedule_id = %d OR schedule_id IS NULL )
@@ -291,10 +332,10 @@ class PricingEngine {
         ) ?? [];
     }
 
-    private function find_price( array $prices, string $type ): ?float {
+    private function find_price( array $prices, string $type, string $column = 'price_mxn' ): ?float {
         foreach ( $prices as $price ) {
             if ( $price->person_type === $type ) {
-                return (float) $price->price_mxn;
+                return (float) $price->$column;
             }
         }
         return null;

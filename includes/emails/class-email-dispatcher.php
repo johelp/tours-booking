@@ -15,6 +15,43 @@ class EmailDispatcher {
         add_action( 'amir_send_review_email',   [ $this, 'send_review_request' ], 10, 1 );
         add_action( 'amir_booking_cancelled',   [ $this, 'send_cancellation'   ], 10, 2 );
         add_action( 'amir_booking_rescheduled', [ $this, 'send_reschedule_notice' ], 10, 1 );
+
+        // ── Marketplace de proveedores (§ 11 CONTRIBUTING.md) ──────────────
+        // Al entrar a pending_provider_approval, dos emails: al proveedor
+        // (con los links de aprobar/rechazar) y al cliente (aviso interino,
+        // sin nombrar al proveedor — su pago ya se procesó).
+        add_action( 'amir_booking_pending_provider_approval', [ $this, 'send_provider_notice' ], 10, 1 );
+        add_action( 'amir_booking_pending_provider_approval', [ $this, 'send_provider_pending_notice' ], 10, 1 );
+        add_action( 'amir_send_provider_reminder_email', [ $this, 'send_provider_reminder' ], 10, 1 );
+    }
+
+    // ── Marketplace de proveedores ─────────────────────────────────────────
+
+    /**
+     * @return array{success:bool,error:string}
+     */
+    public function send_provider_notice( int $booking_id ): array {
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking || empty( $booking->provider_email ) ) {
+            return [ 'success' => false, 'error' => 'El proveedor no tiene email configurado.' ];
+        }
+        $mailer  = new ProviderNoticeEmail( $booking, $booking->provider_email );
+        $success = $mailer->send();
+        return [ 'success' => $success, 'error' => $success ? '' : $mailer->get_last_error() ];
+    }
+
+    /** Recordatorio a las 24h (cron) — mismo email, mismo token sin regenerar. */
+    public function send_provider_reminder( int $booking_id ): void {
+        $this->send_provider_notice( $booking_id );
+    }
+
+    /** Aviso al cliente de que su pago ya se procesó y se está confirmando disponibilidad — sin nombrar al proveedor. */
+    public function send_provider_pending_notice( int $booking_id ): void {
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking ) {
+            return;
+        }
+        ( new ProviderPendingNoticeEmail( $booking ) )->send();
     }
 
     // ── Lista de interés: link de pago real ───────────────────────────────
@@ -160,9 +197,14 @@ class EmailDispatcher {
                         t.meeting_point_es, t.meeting_point_en,
                         t.meeting_lat, t.meeting_lng,
                         t.gallery_images,
+                        t.provider_id,
+                        p.business_name AS provider_business_name,
+                        p.contact_name  AS provider_contact_name,
+                        p.email         AS provider_email,
                         s.time_start, s.time_end, s.label_es, s.label_en
                  FROM {$wpdb->prefix}amir_bookings b
                  JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
+                 LEFT JOIN {$wpdb->prefix}amir_providers p ON p.id = t.provider_id
                  LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
                  WHERE b.id = %d",
                 $booking_id
@@ -185,11 +227,14 @@ abstract class BaseEmail {
 
     protected object $booking;
     protected string $lang;
+    /** Destinatario alternativo al cliente (ej. el proveedor externo del marketplace) — null = customer_email de siempre. */
+    protected ?string $to_override = null;
     private string $last_error = '';
 
-    public function __construct( object $booking ) {
-        $this->booking = $booking;
-        $this->lang    = $booking->lang ?? 'es';
+    public function __construct( object $booking, ?string $to_override = null ) {
+        $this->booking     = $booking;
+        $this->lang        = $booking->lang ?? 'es';
+        $this->to_override = $to_override;
     }
 
     abstract protected function get_subject(): string;
@@ -198,11 +243,13 @@ abstract class BaseEmail {
     public function send(): bool {
         add_filter( 'wp_mail_content_type', [ $this, 'set_html' ] );
 
+        $to = $this->to_override ?? $this->booking->customer_email;
+
         // Todo el contenido se arma dentro de run_in(): __()/_e() traducen
         // al idioma de LA RESERVA (no al locale del sitio) mientras dure el callback.
-        $result = \AmirBooking\Core\Languages::run_in( $this->lang, function() {
+        $result = \AmirBooking\Core\Languages::run_in( $this->lang, function() use ( $to ) {
             return wp_mail(
-                $this->booking->customer_email,
+                $to,
                 $this->get_subject(),
                 $this->wrap_template( $this->get_body_content() )
             );
@@ -218,7 +265,7 @@ abstract class BaseEmail {
             }
             error_log( sprintf(
                 'Amir Booking: wp_mail falló para %s — Asunto: %s — Error: %s',
-                $this->booking->customer_email,
+                $to,
                 $this->get_subject(),
                 $this->last_error
             ) );
@@ -657,6 +704,7 @@ class CancellationEmail extends BaseEmail {
     protected function get_body_content(): string {
         $b = $this->booking;
         $is_operator = in_array( $this->reason_type, [ 'weather', 'min_pax' ], true );
+        $is_provider = in_array( $this->reason_type, [ 'provider_rejected', 'provider_expired' ], true );
 
         if ( $is_operator ) {
             $title = '<h1>' . ( $this->reason_type === 'weather'
@@ -666,6 +714,26 @@ class CancellationEmail extends BaseEmail {
                 __( 'Hola <strong>%s</strong>,<br>Lamentamos informarte que tu reserva <strong>%s</strong> ha sido cancelada. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' ),
                 esc_html( $b->customer_name ), esc_html( $b->booking_ref )
             ) . '</p>';
+        } elseif ( $is_provider ) {
+            // Reserva de un tour operado por un proveedor externo (marketplace,
+            // § 11 CONTRIBUTING.md) — el proveedor rechazó, o venció el plazo de
+            // respuesta sin contestar. En ambos casos, reembolso 100% (no es
+            // responsabilidad del cliente). No se nombra al proveedor.
+            $title = '<h1>' . __( 'No pudimos confirmar tu reserva', 'amir-booking' ) . '</h1>';
+            if ( $this->reason_type === 'provider_expired' ) {
+                $msg = '<p>' . sprintf(
+                    __( 'Hola <strong>%1$s</strong>,<br>El operador local no respondió a tiempo para confirmar tu reserva <strong>%2$s</strong>. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' ),
+                    esc_html( $b->customer_name ), esc_html( $b->booking_ref )
+                ) . '</p>';
+            } else {
+                $reason_note = ! empty( $b->provider_reject_reason )
+                    ? ' ' . sprintf( __( 'El operador indicó: "%s".', 'amir-booking' ), esc_html( $b->provider_reject_reason ) )
+                    : '';
+                $msg = '<p>' . sprintf(
+                    __( 'Hola <strong>%1$s</strong>,<br>El operador local no pudo confirmar tu reserva <strong>%2$s</strong>.', 'amir-booking' ),
+                    esc_html( $b->customer_name ), esc_html( $b->booking_ref )
+                ) . $reason_note . ' ' . __( 'Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' ) . '</p>';
+            }
         } else {
             $title = '<h1>' . __( 'Reserva cancelada', 'amir-booking' ) . '</h1>';
             $policy = (int) $b->cancellation_policy_pct;
@@ -788,5 +856,112 @@ class RescheduleEmail extends BaseEmail {
                 . ' ' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a></p>';
 
         return $intro . $this->booking_info_table() . $footer;
+    }
+}
+
+// ── Email: proveedor externo, nueva reserva a confirmar ──────────────────────
+// Marketplace de proveedores (§ 11 CONTRIBUTING.md). Se envía al proveedor
+// (no al cliente — usa $to_override) con los datos de contacto completos del
+// cliente y los links de Aprobar/Rechazar tokenizados. Reusado tal cual para
+// el recordatorio a las 24h (mismo token, no se regenera).
+
+class ProviderNoticeEmail extends BaseEmail {
+
+    protected function get_subject(): string {
+        return sprintf( __( 'Nueva reserva por confirmar — %s', 'amir-booking' ), $this->booking->booking_ref );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+        $greeting_name = $b->provider_contact_name ?: $b->provider_business_name;
+
+        $intro = '<h1>' . __( 'Nueva reserva para confirmar disponibilidad', 'amir-booking' ) . '</h1>'
+               . '<p>' . sprintf(
+                   __( 'Hola %1$s,<br>Recibiste una nueva reserva desde TourFlow para <strong>%2$s</strong>. Por favor confirmá si tenés disponibilidad.', 'amir-booking' ),
+                   esc_html( $greeting_name ), esc_html( $b->tour_name )
+               ) . '</p>';
+
+        $special = '';
+        if ( ! empty( $b->special_requests ) ) {
+            $special = '<tr><td>' . esc_html__( 'Pedidos especiales', 'amir-booking' ) . '</td><td>' . nl2br( esc_html( $b->special_requests ) ) . '</td></tr>';
+        }
+
+        $details = '
+        <table class="info-table">
+          <tr><td>' . esc_html__( 'Referencia', 'amir-booking' ) . '</td><td>' . esc_html( $b->booking_ref ) . '</td></tr>
+          <tr><td>' . $this->t('date') . '</td><td>' . $this->fmt_date( $b->tour_date ) . '</td></tr>
+          <tr><td>' . $this->t('time') . '</td><td>' . ( $b->time_start ? $this->fmt_time( $b->time_start ) : '—' ) . '</td></tr>
+          <tr><td>' . $this->t('people') . '</td><td>' . $this->pax_summary() . '</td></tr>
+          <tr><td>' . esc_html__( 'Cliente', 'amir-booking' ) . '</td><td>' . esc_html( $b->customer_name ) . '</td></tr>
+          <tr><td>' . esc_html__( 'Contacto', 'amir-booking' ) . '</td><td>' . esc_html( $b->customer_email ) . ( $b->customer_phone ? ' / ' . esc_html( $b->customer_phone ) : '' ) . '</td></tr>'
+          . $special . '
+        </table>';
+
+        $response_hours = (int) get_option( 'amir_provider_response_hours', 48 );
+        $deadline_note = '<p style="font-size:13px;color:#5a7068;">' . sprintf(
+            __( 'Si no respondés dentro de %d horas, la reserva se cancelará automáticamente y se reembolsará al cliente.', 'amir-booking' ),
+            $response_hours
+        ) . '</p>';
+
+        $actions = '<p style="text-align:center;margin-top:24px;">'
+            . '<a href="' . esc_url( $this->provider_action_url( 'approve' ) ) . '" class="btn">✅ ' . esc_html__( 'Aprobar', 'amir-booking' ) . '</a>'
+            . '&nbsp;&nbsp;'
+            . '<a href="' . esc_url( $this->provider_action_url( 'reject' ) ) . '" class="btn btn-outline">❌ ' . esc_html__( 'Rechazar', 'amir-booking' ) . '</a>'
+            . '</p>';
+
+        return $intro . $details . $deadline_note . $actions;
+    }
+
+    /**
+     * Link a la pantalla de confirmación en /proveedor-reserva/ (no ejecuta
+     * la acción directo — evita que scanners de email/antivirus corporativos
+     * disparen la aprobación/rechazo por prefetch). Ver Shortcodes::provider_action().
+     */
+    private function provider_action_url( string $do ): string {
+        $page_id = (int) get_option( 'amir_provider_page_id', 0 );
+        $base    = $page_id ? get_permalink( $page_id ) : false;
+        $base    = $base ?: ( get_site_url() . '/proveedor-reserva/' );
+
+        return add_query_arg(
+            [
+                'ref'   => $this->booking->booking_ref,
+                'token' => $this->booking->provider_response_token ?? '',
+                'do'    => $do,
+            ],
+            $base
+        );
+    }
+}
+
+// ── Email: aviso interino al cliente mientras se confirma con el proveedor ──
+// Su pago ya se procesó — este correo evita que se pregunte por qué no
+// recibió la confirmación habitual. No nombra al proveedor (aviso discreto,
+// mismo criterio que el badge de la ficha del tour).
+
+class ProviderPendingNoticeEmail extends BaseEmail {
+
+    protected function get_subject(): string {
+        return sprintf( __( 'Estamos confirmando tu reserva — %s', 'amir-booking' ), $this->booking->booking_ref );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+
+        $intro = '<h1>' . __( 'Tu reserva fue recibida', 'amir-booking' ) . '</h1>'
+               . '<p>' . sprintf(
+                   __( 'Hola <strong>%1$s</strong>,<br>Tu pago se procesó correctamente. Estamos confirmando disponibilidad con el operador local para tu tour del %2$s — te avisamos en cuanto quede confirmada.', 'amir-booking' ),
+                   esc_html( $b->customer_name ), esc_html( $this->fmt_date( $b->tour_date ) )
+               ) . '</p>';
+
+        $ref_box = '<div class="ref-box">
+          <div class="ref-label">' . $this->t('booking_ref') . '</div>
+          <div class="ref-value">' . esc_html( $b->booking_ref ) . '</div>
+        </div>';
+
+        $footer = '<p style="text-align:center;font-size:13px;margin-top:12px;">'
+            . '<a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . esc_html__( 'Ver estado de mi reserva', 'amir-booking' ) . '</a>'
+            . '</p>';
+
+        return $intro . $ref_box . $footer;
     }
 }

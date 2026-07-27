@@ -22,11 +22,13 @@ class Installer {
         'addons',
         'availability_rules',
         'partners',
+        'providers',
         'bookings',
         'booking_addons',
         'notifications',
         'payment_events',
         'coupons',
+        'provider_payouts',
     ];
 
     // ── Activación ────────────────────────────────────────────────────────
@@ -198,12 +200,14 @@ class Installer {
             wishlist_threshold   SMALLINT UNSIGNED NOT NULL DEFAULT 0,
             wishlist_date        DATE DEFAULT NULL,
             wishlist_notified_at DATETIME DEFAULT NULL,
+            provider_id        INT UNSIGNED DEFAULT NULL,
             created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY slug (slug),
             KEY status (status),
-            KEY sort_order (sort_order)
+            KEY sort_order (sort_order),
+            KEY provider_id (provider_id)
         ) $charset;" );
 
         // ── amir_tour_schedules ───────────────────────────────────────────
@@ -230,6 +234,7 @@ class Installer {
             group_min    TINYINT UNSIGNED,
             group_max    TINYINT UNSIGNED,
             price_mxn    DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            provider_cost_mxn DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             valid_from   DATE,
             valid_until  DATE,
             PRIMARY KEY (id),
@@ -296,6 +301,26 @@ class Installer {
             KEY email (email)
         ) $charset;" );
 
+        // ── amir_providers ────────────────────────────────────────────────
+        // Proveedores externos del marketplace (tours de terceros que
+        // TourFlow revende con margen propio) — no confundir con
+        // amir_partners (afiliados que refieren clientes y cobran comisión).
+        // Ver CONTRIBUTING.md § 11 para el spec completo.
+        dbDelta( "CREATE TABLE {$wpdb->prefix}amir_providers (
+            id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            business_name  VARCHAR(255) NOT NULL DEFAULT '',
+            contact_name   VARCHAR(255) NOT NULL DEFAULT '',
+            email          VARCHAR(255) NOT NULL DEFAULT '',
+            phone          VARCHAR(50) DEFAULT '',
+            notes          TEXT,
+            active         TINYINT(1) NOT NULL DEFAULT 1,
+            created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY active (active),
+            KEY email (email)
+        ) $charset;" );
+
         // ── amir_bookings ─────────────────────────────────────────────────
         dbDelta( "CREATE TABLE {$wpdb->prefix}amir_bookings (
             id                       INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -309,11 +334,13 @@ class Installer {
                                         'wishlist',
                                         'awaiting_payment',
                                         'pending',
+                                        'pending_provider_approval',
                                         'confirmed',
                                         'cancellation_requested',
                                         'cancelled_client',
                                         'cancelled_weather',
                                         'cancelled_min_pax',
+                                        'cancelled_provider',
                                         'rescheduled',
                                         'completed'
                                      ) NOT NULL DEFAULT 'pending',
@@ -346,12 +373,18 @@ class Installer {
             reminder_sent_at         DATETIME,
             wishlist_notice_sent_at  DATETIME,
             wishlist_notice_error    VARCHAR(255) DEFAULT '',
+            provider_response_token   VARCHAR(64) DEFAULT NULL,
+            provider_notified_at      DATETIME DEFAULT NULL,
+            provider_reminder_sent_at DATETIME DEFAULT NULL,
+            provider_responded_at     DATETIME DEFAULT NULL,
+            provider_reject_reason    VARCHAR(500) DEFAULT NULL,
             confirmed_at             DATETIME,
             created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY booking_ref (booking_ref),
             UNIQUE KEY access_token (access_token),
+            UNIQUE KEY provider_response_token (provider_response_token),
             KEY tour_id (tour_id),
             KEY schedule_id (schedule_id),
             KEY partner_id (partner_id),
@@ -420,6 +453,29 @@ class Installer {
             KEY validity (valid_from, valid_until)
         ) $charset;" );
 
+        // ── amir_provider_payouts ─────────────────────────────────────────
+        // Ledger manual de liquidación a proveedores del marketplace (§ 11
+        // CONTRIBUTING.md). Una fila 'pending' se genera automáticamente al
+        // aprobarse cada reserva con proveedor (ver amir_provider_booking_approved
+        // en class-plugin.php) — el equipo la marca 'paid' a mano desde
+        // Amir Booking → Liquidación cuando efectivamente le paga al proveedor.
+        // Sin payout automático vía pasarela — descartado explícitamente por
+        // el cliente como "lujo, no necesario ahora".
+        dbDelta( "CREATE TABLE {$wpdb->prefix}amir_provider_payouts (
+            id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            provider_id  INT UNSIGNED NOT NULL,
+            booking_id   INT UNSIGNED DEFAULT NULL,
+            amount_mxn   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            status       ENUM('pending','paid') NOT NULL DEFAULT 'pending',
+            note         TEXT,
+            created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            paid_at      DATETIME DEFAULT NULL,
+            PRIMARY KEY (id),
+            KEY provider_id (provider_id),
+            KEY booking_id (booking_id),
+            KEY status (status)
+        ) $charset;" );
+
         // ── amir_notifications ────────────────────────────────────────────
         dbDelta( "CREATE TABLE {$wpdb->prefix}amir_notifications (
             id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -444,6 +500,7 @@ class Installer {
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}amir_tours" );
         if ( $count > 0 ) {
             self::create_verify_page();
+            self::create_provider_action_page();
             return;
         }
 
@@ -457,8 +514,11 @@ class Installer {
         add_option( 'amir_review_delay_days',     '1' );
         add_option( 'amir_admin_email',           get_option( 'admin_email' ) );
         add_option( 'amir_delete_data_on_uninstall', '0' );
+        add_option( 'amir_provider_reminder_hours',  '24' );
+        add_option( 'amir_provider_response_hours',  '48' );
 
         self::create_verify_page();
+        self::create_provider_action_page();
     }
 
     /**
@@ -494,6 +554,44 @@ class Installer {
 
         if ( $page_id && ! is_wp_error( $page_id ) ) {
             update_option( 'amir_verify_page_id', $page_id );
+        }
+    }
+
+    /**
+     * Crea la página /proveedor-reserva/ con el shortcode [amir_provider_action]
+     * — donde el proveedor externo aprueba/rechaza una reserva sin login
+     * (ver Shortcodes::provider_action(), § 11 CONTRIBUTING.md). Mismo
+     * patrón que create_verify_page(), seguro de llamar en cada activación.
+     */
+    private static function create_provider_action_page(): void {
+        $existing_id = (int) get_option( 'amir_provider_page_id', 0 );
+        if ( $existing_id && get_post( $existing_id ) ) {
+            return;
+        }
+
+        $existing = get_posts( array(
+            'name'           => 'proveedor-reserva',
+            'post_type'      => 'page',
+            'post_status'    => array( 'publish', 'draft' ),
+            'posts_per_page' => 1,
+        ) );
+
+        if ( $existing ) {
+            update_option( 'amir_provider_page_id', $existing[0]->ID );
+            return;
+        }
+
+        $page_id = wp_insert_post( array(
+            'post_title'   => 'Reserva de Proveedor',
+            'post_name'    => 'proveedor-reserva',
+            'post_content' => '[amir_provider_action]',
+            'post_status'  => 'publish',
+            'post_type'    => 'page',
+            'post_author'  => 1,
+        ) );
+
+        if ( $page_id && ! is_wp_error( $page_id ) ) {
+            update_option( 'amir_provider_page_id', $page_id );
         }
     }
 
@@ -536,7 +634,8 @@ class Installer {
             'amir_default_gateway', 'amir_mp_mode',
             'amir_mp_access_token_test', 'amir_mp_access_token_live', 'amir_mp_webhook_secret',
             'amir_review_delay_days', 'amir_admin_email',
-            'amir_delete_data_on_uninstall', 'amir_verify_page_id',
+            'amir_delete_data_on_uninstall', 'amir_verify_page_id', 'amir_provider_page_id',
+            'amir_provider_reminder_hours', 'amir_provider_response_hours',
             'amir_brand_logo_id', 'amir_brand_logo_url', 'amir_brand_color',
             'amir_company_name', 'amir_company_tagline_es', 'amir_company_tagline_en',
             'amir_email_recs_es', 'amir_email_recs_en',
@@ -722,8 +821,46 @@ class Installer {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN min_age_child TINYINT UNSIGNED NOT NULL DEFAULT 4" );
         }
 
+        // 1.9.0: marketplace de proveedores externos (§ 11 CONTRIBUTING.md).
+        // amir_providers/amir_provider_payouts las crea create_tables() más
+        // abajo (dbDelta no duplica). provider_id en amir_tours (NULL = tour
+        // propio, como siempre) y provider_cost_mxn en amir_prices resuelven
+        // "quién opera el tour" y "cuánto le cuesta a TourFlow", separado del
+        // precio de venta al cliente (price_mxn, sin cambios).
+        if ( ! in_array( 'provider_id', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN provider_id INT UNSIGNED DEFAULT NULL" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD KEY provider_id (provider_id)" );
+        }
+        $price_cols = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_prices" );
+        if ( ! in_array( 'provider_cost_mxn', $price_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_prices ADD COLUMN provider_cost_mxn DECIMAL(10,2) NOT NULL DEFAULT 0.00" );
+        }
+        // Reserva con proveedor: no pasa a 'confirmed' directo tras el cobro,
+        // sino a 'pending_provider_approval' hasta que el proveedor aprueba
+        // por email (o vence el plazo configurable, ver class-cron-manager.php).
+        // 'cancelled_provider' cubre tanto el rechazo explícito como el
+        // vencimiento sin respuesta — se distinguen por provider_reject_reason
+        // e internal_notes, no por status separado (nadie pidió filtrarlos
+        // aparte en Reservas todavía).
+        if ( ! in_array( 'provider_response_token', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN provider_response_token VARCHAR(64) DEFAULT NULL" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD UNIQUE KEY provider_response_token (provider_response_token)" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN provider_notified_at DATETIME DEFAULT NULL" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN provider_reminder_sent_at DATETIME DEFAULT NULL" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN provider_responded_at DATETIME DEFAULT NULL" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN provider_reject_reason VARCHAR(500) DEFAULT NULL" );
+        }
+        $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN status ENUM(
+            'wishlist','awaiting_payment','pending','pending_provider_approval','confirmed',
+            'cancellation_requested','cancelled_client','cancelled_weather','cancelled_min_pax',
+            'cancelled_provider','rescheduled','completed'
+        ) NOT NULL DEFAULT 'pending'" );
+        add_option( 'amir_provider_reminder_hours', '24' );
+        add_option( 'amir_provider_response_hours', '48' );
+
         self::create_tables();
         self::create_verify_page();
+        self::create_provider_action_page();
         update_option( 'amir_db_version', AMIR_DB_VERSION );
     }
 
