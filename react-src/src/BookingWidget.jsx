@@ -728,6 +728,7 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
         partner_token:    partnerToken,
         special_requests: form.specialRequests,
         coupon_code:      form.couponCode ?? '',
+        policy_accepted:  form.policyAccepted,
         addons: Object.entries( form.selectedAddons ?? {} )
           .filter( ( [ , qty ] ) => qty > 0 )
           .map( ( [ id, qty ] ) => ( { id: Number( id ), qty } ) ),
@@ -858,9 +859,23 @@ function StepSummary({ tour, form, patchForm, t, lang, goNext, goBack, quote,
 
       <div className="ab-policy-box">
         <div className="ab-policy-title">📋 {t('policy_title')}</div>
-        <div className="ab-policy-line">{t('policy_line1')}</div>
-        <div className="ab-policy-line">{t('policy_line2')}</div>
-        <div className="ab-policy-line">{t('policy_line3')}</div>
+        {(() => {
+          const customText = lang === 'en'
+            ? window.amirBooking?.policyTextEn
+            : window.amirBooking?.policyTextEs;
+          if ( customText ) {
+            return customText.split('\n').filter(Boolean).map( (line, i) => (
+              <div className="ab-policy-line" key={i}>{line}</div>
+            ) );
+          }
+          return (
+            <>
+              <div className="ab-policy-line">{t('policy_line1')}</div>
+              <div className="ab-policy-line">{t('policy_line2')}</div>
+              <div className="ab-policy-line">{t('policy_line3')}</div>
+            </>
+          );
+        })()}
       </div>
 
       <label className="ab-policy-check">

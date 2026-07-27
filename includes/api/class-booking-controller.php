@@ -147,6 +147,7 @@ class BookingController {
             'special_requests' => $request->get_param( 'special_requests' ) ?? '',
             'coupon_code'      => $request->get_param( 'coupon_code' ) ?? '',
             'addons'           => $this->sanitize_addons_param( $request->get_param( 'addons' ) ),
+            'policy_accepted'  => (bool) $request->get_param( 'policy_accepted' ),
             'source'           => 'direct',
         ] );
 
@@ -702,7 +703,7 @@ class BookingController {
         // Si se confirma manualmente, usar el flujo completo (PDF + email)
         if ( $new_status === 'confirmed' && $booking->status === 'pending' ) {
             $manager = new \AmirBooking\Core\BookingManager();
-            $manager->confirm( $booking_id, $booking->stripe_charge_id ?? '' );
+            $manager->confirm( $booking_id, $booking->gateway_charge_id ?: ( $booking->stripe_charge_id ?? '' ) );
         } else {
             $wpdb->update(
                 "{$wpdb->prefix}amir_bookings",
@@ -888,6 +889,7 @@ class BookingController {
             'partner_token'    => [ 'required' => false, 'type' => 'string' ],
             'special_requests' => [ 'required' => false, 'type' => 'string' ],
             'coupon_code'      => [ 'required' => false, 'type' => 'string' ],
+            'policy_accepted'  => [ 'required' => false, 'type' => 'boolean' ],
             'addons'           => [ 'required' => false, 'type' => 'array' ],
         ];
     }

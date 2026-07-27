@@ -131,6 +131,8 @@ class CouponsPage {
                 <?php endif; ?>
               </td>
               <td class="ab-td">
+                <button type="button" class="button button-small"
+                        onclick="document.getElementById('amir-edit-coupon-<?php echo (int) $c->id; ?>').style.display='block';">Editar</button>
                 <form method="post" style="display:inline;">
                   <?php wp_nonce_field( 'amir_coupon_action' ); ?>
                   <input type="hidden" name="amir_action" value="toggle_coupon" />
@@ -142,6 +144,59 @@ class CouponsPage {
                   <input type="hidden" name="amir_action" value="delete_coupon" />
                   <input type="hidden" name="id" value="<?php echo (int) $c->id; ?>" />
                   <button type="submit" class="button button-small" style="color:#e24b4a;">Eliminar</button>
+                </form>
+              </td>
+            </tr>
+            <tr id="amir-edit-coupon-<?php echo (int) $c->id; ?>" style="display:none;">
+              <td colspan="7" class="ab-td" style="background:#f8fdfb;">
+                <form method="post">
+                  <?php wp_nonce_field( 'amir_coupon_action' ); ?>
+                  <input type="hidden" name="amir_action" value="update_coupon" />
+                  <input type="hidden" name="id" value="<?php echo (int) $c->id; ?>" />
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+                    <div>
+                      <label class="ab-label">Código *</label>
+                      <input type="text" name="code" required value="<?php echo esc_attr( $c->code ); ?>" style="<?php echo $this->input_style(); ?> width:100%;text-transform:uppercase;" />
+                    </div>
+                    <div>
+                      <label class="ab-label">Tipo de descuento</label>
+                      <select name="discount_type" style="<?php echo $this->input_style(); ?> width:100%;">
+                        <option value="percent" <?php selected( $c->discount_type, 'percent' ); ?>>Porcentaje (%)</option>
+                        <option value="fixed" <?php selected( $c->discount_type, 'fixed' ); ?>>Monto fijo (<?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?>)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="ab-label">Valor *</label>
+                      <input type="number" name="discount_value" required min="0" step="0.01" value="<?php echo esc_attr( $c->discount_value ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
+                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+                    <div>
+                      <label class="ab-label">Válido desde</label>
+                      <input type="date" name="valid_from" value="<?php echo esc_attr( $c->valid_from ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
+                    </div>
+                    <div>
+                      <label class="ab-label">Válido hasta</label>
+                      <input type="date" name="valid_until" value="<?php echo esc_attr( $c->valid_until ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
+                    </div>
+                    <div>
+                      <label class="ab-label">Límite de usos (vacío = ilimitado)</label>
+                      <input type="number" name="usage_limit" min="<?php echo (int) $c->times_used; ?>" value="<?php echo esc_attr( $c->usage_limit ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
+                    </div>
+                  </div>
+                  <div style="margin-bottom:14px;max-width:340px;">
+                    <label class="ab-label">Aplica a</label>
+                    <select name="tour_id" style="<?php echo $this->input_style(); ?> width:100%;">
+                      <option value="">Todos los tours</option>
+                      <?php foreach ( $tours as $t ) : ?>
+                        <option value="<?php echo (int) $t->id; ?>" <?php selected( (int) $c->tour_id, (int) $t->id ); ?>><?php echo esc_html( $t->name_es ); ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div style="display:flex;gap:10px;">
+                    <button type="submit" class="button button-primary">Guardar cambios</button>
+                    <button type="button" onclick="document.getElementById('amir-edit-coupon-<?php echo (int) $c->id; ?>').style.display='none';" class="button">Cancelar</button>
+                  </div>
                 </form>
               </td>
             </tr>
@@ -187,6 +242,46 @@ class CouponsPage {
             $msg = $inserted
                 ? "Cupón {$code} creado correctamente."
                 : 'Error al crear el cupón — ¿ya existe ese código?';
+            set_transient( 'amir_coupon_message', $msg, 30 );
+        }
+
+        if ( $action === 'update_coupon' && ! empty( $_POST['id'] ) ) {
+            $id   = (int) $_POST['id'];
+            $code = strtoupper( sanitize_text_field( $_POST['code'] ?? '' ) );
+            if ( $code === '' ) {
+                set_transient( 'amir_coupon_message', 'El código no puede estar vacío.', 30 );
+                return;
+            }
+
+            // No permitir bajar el límite de usos por debajo de lo ya usado
+            // — evitaría seguir aplicando el cupón a reservas ya cargadas
+            // sin que nadie lo note, y confundiría el conteo mostrado.
+            $times_used  = (int) $wpdb->get_var( $wpdb->prepare( "SELECT times_used FROM {$wpdb->prefix}amir_coupons WHERE id = %d", $id ) );
+            $usage_limit = ! empty( $_POST['usage_limit'] ) ? absint( $_POST['usage_limit'] ) : null;
+            if ( $usage_limit !== null && $usage_limit < $times_used ) {
+                set_transient( 'amir_coupon_message', "El límite de usos no puede ser menor a los {$times_used} ya utilizados.", 30 );
+                return;
+            }
+
+            $updated = $wpdb->update(
+                "{$wpdb->prefix}amir_coupons",
+                [
+                    'code'           => $code,
+                    'discount_type'  => in_array( $_POST['discount_type'] ?? '', [ 'percent', 'fixed' ], true ) ? $_POST['discount_type'] : 'percent',
+                    'discount_value' => (float) ( $_POST['discount_value'] ?? 0 ),
+                    'valid_from'     => ! empty( $_POST['valid_from'] ) ? sanitize_text_field( $_POST['valid_from'] ) : null,
+                    'valid_until'    => ! empty( $_POST['valid_until'] ) ? sanitize_text_field( $_POST['valid_until'] ) : null,
+                    'usage_limit'    => $usage_limit,
+                    'tour_id'        => ! empty( $_POST['tour_id'] ) ? absint( $_POST['tour_id'] ) : null,
+                ],
+                [ 'id' => $id ],
+                [ '%s', '%s', '%f', '%s', '%s', '%d', '%d' ],
+                [ '%d' ]
+            );
+
+            $msg = $updated !== false
+                ? "Cupón {$code} actualizado correctamente."
+                : 'Error al actualizar el cupón — ¿ya existe ese código en otro cupón?';
             set_transient( 'amir_coupon_message', $msg, 30 );
         }
 

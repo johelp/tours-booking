@@ -366,6 +366,11 @@ class Shortcodes {
             'activeLanguages'  => Languages::active(),
             'progressLabels'   => \AmirBooking\Core\WidgetTheme::progress_labels(),
             'marketing'        => \AmirBooking\Core\Marketing::widget_config(),
+            // Texto de política de cancelación editable desde Configuración
+            // — si el operador no cargó nada, el widget sigue mostrando las
+            // 3 líneas fijas de siempre (i18n.js: policy_line1/2/3).
+            'policyTextEs'     => get_option( 'amir_policy_text_es', '' ),
+            'policyTextEn'     => get_option( 'amir_policy_text_en', '' ),
         ] );
     }
 

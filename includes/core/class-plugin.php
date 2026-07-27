@@ -96,7 +96,7 @@ final class Plugin {
         // — el monto quedaba calculado en la base sin avisarle nunca a la
         // pasarela. Se resuelve acá contra el gateway con el que se cobró
         // esa reserva específica (no necesariamente el gateway "default").
-        add_action( 'amir_process_stripe_refund', function ( int $booking_id, float $refund_mxn ) {
+        add_action( 'amir_process_gateway_refund', function ( int $booking_id, float $refund_mxn ) {
             global $wpdb;
             $booking = $wpdb->get_row( $wpdb->prepare(
                 "SELECT * FROM {$wpdb->prefix}amir_bookings WHERE id = %d", $booking_id

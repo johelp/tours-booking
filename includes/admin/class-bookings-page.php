@@ -194,7 +194,7 @@ class BookingsPage {
                     p.name as partner_name
              FROM {$wpdb->prefix}amir_bookings b
              JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
-             JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
+             LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
              LEFT JOIN {$wpdb->prefix}amir_partners p ON p.id = b.partner_id
              WHERE b.id = %d",
             $booking_id
@@ -499,7 +499,7 @@ class BookingsPage {
                 $b = (new \AmirBooking\Core\BookingManager())->get_booking($booking_id);
                 if ( $b && $b->status === 'pending' ) {
                     $manager = new \AmirBooking\Core\BookingManager();
-                    $manager->confirm( $booking_id, $b->stripe_charge_id ?? '' );
+                    $manager->confirm( $booking_id, $b->gateway_charge_id ?: ( $b->stripe_charge_id ?? '' ) );
                     return '✅ Reserva confirmada manualmente. Email y PDF en proceso.';
                 }
                 return 'La reserva no está en estado pendiente.';
@@ -618,7 +618,7 @@ class BookingsPage {
                     p.name as partner_name
              FROM {$wpdb->prefix}amir_bookings b
              JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
-             JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
+             LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
              LEFT JOIN {$wpdb->prefix}amir_partners p ON p.id = b.partner_id
              WHERE 1=1 {$where}
              ORDER BY b.created_at DESC

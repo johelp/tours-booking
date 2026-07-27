@@ -357,7 +357,7 @@ class DashboardPage {
                     t.max_capacity, t.gallery_images
              FROM {$wpdb->prefix}amir_bookings b
              JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
-             JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
+             LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
              WHERE b.tour_date = %s
                AND b.status IN ('confirmed','cancellation_requested')
              ORDER BY s.time_start ASC, t.name_es ASC",

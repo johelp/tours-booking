@@ -50,6 +50,13 @@ class BookingManager {
             return BookingResult::error( $policy_error );
         }
 
+        // El widget ya deshabilita el botón de confirmar hasta tildar el
+        // checkbox de política de cancelación — esto es la validación real,
+        // por si alguien llama la API directo sin pasar por el widget.
+        if ( empty( $data['policy_accepted'] ) ) {
+            return BookingResult::error( 'Debes aceptar la política de cancelación para continuar.' );
+        }
+
         // Validar disponibilidad
         $avail = $this->availability->check(
             (int) $data['tour_id'],
@@ -468,10 +475,16 @@ class BookingManager {
     // ── Confirmar reserva post-pago ───────────────────────────────────────
 
     /**
-     * Llamado desde el webhook de Stripe (payment_intent.succeeded).
+     * Llamado desde el webhook de la pasarela activa (Stripe o Mercado
+     * Pago, ambos pasan por acá — ver PaymentGatewayInterface).
      * Cambia estado a 'confirmed', genera QR y PDF, envía email.
+     *
+     * `stripe_charge_id` se sigue completando por compatibilidad hacia
+     * atrás (reportes/código viejo que todavía lo lee directo), pero
+     * `gateway_charge_id` es el campo genérico a usar de acá en más —
+     * ver CONTRIBUTING.md § 5.1 (higiene de nombres heredados de Stripe).
      */
-    public function confirm( int $booking_id, string $stripe_charge_id ): bool {
+    public function confirm( int $booking_id, string $charge_id ): bool {
         global $wpdb;
 
         $booking = $this->get_booking( $booking_id );
@@ -483,12 +496,13 @@ class BookingManager {
         $wpdb->update(
             "{$wpdb->prefix}amir_bookings",
             [
-                'status'          => 'confirmed',
-                'stripe_charge_id' => $stripe_charge_id,
-                'confirmed_at'    => current_time( 'mysql' ),
+                'status'             => 'confirmed',
+                'stripe_charge_id'   => $charge_id,
+                'gateway_charge_id'  => $charge_id,
+                'confirmed_at'       => current_time( 'mysql' ),
             ],
             [ 'id' => $booking_id ],
-            [ '%s', '%s', '%s' ],
+            [ '%s', '%s', '%s', '%s' ],
             [ '%d' ]
         );
 
@@ -568,9 +582,10 @@ class BookingManager {
             [ '%d' ]
         );
 
-        // Procesar reembolso en Stripe si corresponde
-        if ( $refund['refund_mxn'] > 0 && $booking->stripe_charge_id ) {
-            do_action( 'amir_process_stripe_refund', $booking_id, $refund['refund_mxn'] );
+        // Procesar reembolso con la pasarela que corresponda (Stripe o MP)
+        $charge_ref = $booking->gateway_charge_id ?: $booking->stripe_charge_id;
+        if ( $refund['refund_mxn'] > 0 && $charge_ref ) {
+            do_action( 'amir_process_gateway_refund', $booking_id, $refund['refund_mxn'] );
         }
 
         do_action( 'amir_booking_cancelled', $booking_id, $reason_type );

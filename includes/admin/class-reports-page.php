@@ -273,7 +273,7 @@ class ReportsPage {
                     b.created_at, p.name as partner_name
              FROM {$wpdb->prefix}amir_bookings b
              JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
-             JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
+             LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
              LEFT JOIN {$wpdb->prefix}amir_partners p ON p.id = b.partner_id
              WHERE b.status IN ('confirmed','completed')
                AND b.tour_date BETWEEN %s AND %s

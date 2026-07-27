@@ -450,6 +450,31 @@ class SettingsPage {
             </div>
           </div>
 
+          <!-- ── Política de cancelación en el widget ── -->
+          <div class="ab-settings-section">
+            <h3>📋 Política de cancelación (widget de reserva)</h3>
+            <p style="font-size:12px;color:#5a7068;margin:0 0 14px;">
+              Una línea por renglón. Se muestra en el paso de resumen antes de pagar, junto al checkbox de aceptación.
+              Vacío = se muestran las 3 líneas por defecto ("7+ días: reembolso completo", etc.).
+            </p>
+            <div class="ab-field-row">
+              <div class="ab-field">
+                <label>Política (Español)</label>
+                <textarea name="amir_policy_text_es" rows="4" style="<?php echo $this->input_style_ta(); ?>"
+                          placeholder="✓ 7+ días antes: reembolso completo&#10;▸ 3–6 días antes: reembolso del 50 %&#10;✕ Menos de 3 días: sin reembolso"><?php
+                  echo esc_textarea( get_option( 'amir_policy_text_es', '' ) );
+                ?></textarea>
+              </div>
+              <div class="ab-field">
+                <label>Policy (English)</label>
+                <textarea name="amir_policy_text_en" rows="4" style="<?php echo $this->input_style_ta(); ?>"
+                          placeholder="✓ 7+ days before: full refund&#10;▸ 3–6 days before: 50% refund&#10;✕ Less than 3 days: no refund"><?php
+                  echo esc_textarea( get_option( 'amir_policy_text_en', '' ) );
+                ?></textarea>
+              </div>
+            </div>
+          </div>
+
           <!-- Marketing: píxeles -->
           <div class="ab-settings-section">
             <h3>📣 Marketing (píxeles)</h3>
@@ -698,6 +723,8 @@ class SettingsPage {
             'amir_email_recs_en'           => 'sanitize_textarea_field',
             'amir_voucher_recs_es'         => 'sanitize_textarea_field',
             'amir_voucher_recs_en'         => 'sanitize_textarea_field',
+            'amir_policy_text_es'          => 'sanitize_textarea_field',
+            'amir_policy_text_en'          => 'sanitize_textarea_field',
             // Marketing (píxeles)
             'amir_meta_pixel_id'           => 'sanitize_text_field',
             'amir_gads_conversion_id'      => 'sanitize_text_field',

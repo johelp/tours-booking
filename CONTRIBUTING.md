@@ -54,10 +54,10 @@ Trabajo ya en curso, en este orden:
 | 2 | Log de eventos de pago (`wp_amir_payment_events` + pantalla admin) | ✅ Hecho |
 | 3 | Cupones (%, monto fijo, por fecha) | ✅ Hecho |
 | 4 | `MercadoPagoGateway` (Checkout Pro) | ✅ Hecho — ver § 5.2. País/moneda se maneja con la moneda ya configurable (§ 5.3 más abajo, o el selector de Configuración) — Argentina debería usar Mercado Pago como pasarela activa, Stripe no liquida bien en ARS |
-| 5 | "Cargar reserva + enviar link de pago" desde el admin | ⏳ Parcial — la infraestructura ya existe (`init-payment` + `PayBooking.jsx`, ver § 5.1 punto 6), falta la UI de admin para cargar la reserva directo en `awaiting_payment` |
-| 6 | Checkbox de aceptación de términos | ⏳ Parcial — **el widget ya tiene el checkbox** (`ab-policy-check`, campo `policyAccepted`), falta la validación server-side y el texto configurable de la política |
+| 5 | "Cargar reserva + enviar link de pago" desde el admin | ✅ Hecho — `BookingsPage::render_new_booking_form()`, checkbox "El cliente todavía no pagó" → `create_manual()` con `awaiting_payment` → `send_payment_link_notice()` (mismo mecanismo que wishlist) |
+| 6 | Checkbox de aceptación de términos | ✅ Hecho — validación server-side en `BookingManager::create_pending()` (`policy_accepted`) + texto configurable en Configuración (ES/EN, vacío = default de siempre) |
 | 7 | Lista de interés ("avísame cuando abra") para tours en borrador | ✅ Hecho — v2 con reserva real y link de pago, ver § 5.1. No confundir con "lista de espera" para tours llenos ya publicados (eso sigue pendiente, no se construyó) |
-| 8 | Add-ons en checkout (alquiler de equipo, foto, etc.) | ⏳ Pendiente — ya no está bloqueado por falta de fuente (recuperada), pero requiere UI nueva en `BookingWidget.jsx` |
+| 8 | Add-ons en checkout (alquiler de equipo, foto, etc.) | ✅ Hecho — `StepExtras` en `BookingWidget.jsx`, conectado a `ToursController::fetch_addons()` |
 | 9 | Cupón: campo en el checkout | ✅ Hecho (backend y frontend) |
 | 10 | Fix `lang_pref_hint` visible como texto crudo | ✅ Hecho |
 | 11 | Mejoras mobile (touch targets, font-size inputs) | ✅ Hecho, portado a `react-src/` |
@@ -147,6 +147,7 @@ Sin diseñar el resto todavía. Puntos a resolver antes de construirlo:
 - Páginas de admin: PHP plano con nonce (`wp_verify_nonce`) + `current_user_can()`, sin excepción — ver `class-coupons-page.php` como ejemplo reciente del patrón.
 - Cualquier cambio de esquema de base de datos: agregar a `Installer::create_tables()` (para instalaciones nuevas) *y* a `Installer::maybe_update()` con un `ALTER TABLE` explícito (para instalaciones existentes) — dbDelta solo no alcanza para todos los casos. Subir `AMIR_DB_VERSION`.
 - Tests: `tests/unit/`, bootstrap liviano sin WP real (`tests/bootstrap.php` + `FakeWpdb`) — no se pudo correr localmente en esta sesión por falta de PHP instalado; correrlos vos con `composer install && vendor/bin/phpunit` antes de confiar en que pasan.
+- **`amir_bookings.schedule_id` puede ser `0`** ("sin horario específico" — tours de un solo horario, o reservas manuales cargadas sin horario). Cualquier query que haga `JOIN {$wpdb->prefix}amir_tour_schedules` en vez de `LEFT JOIN` deja esas reservas invisibles en el resultado (bug real encontrado y corregido en `class-dashboard-page.php`, `class-reports-page.php` y `class-bookings-page.php` en jul-2026) — siempre `LEFT JOIN` para esa tabla.
 
 ## 7. Dudas de producto que quedaron sin resolver
 
