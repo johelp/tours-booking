@@ -302,3 +302,17 @@ Planteado por el cliente el 2026-07-27, dialogado y cerrado en la misma sesión,
 - **No probado en vivo todavía** (recién construido) — falta subir el ZIP al sandbox y hacer el flujo end-to-end completo: crear proveedor, asignarlo a un tour con costo, reservar y pagar de verdad, aprobar/rechazar desde el link real, confirmar que el ledger se genera.
 - **Texto del badge**: placeholder ("Operado por un partner local") marcado con `<!-- TODO -->` en `templates/single-amir_tour.php` — falta validarlo con el cliente antes de darlo por definitivo.
 - Confirmar que el `wp_mail()` de `ProviderNoticeEmail` llega bien a la bandeja del proveedor (mismo riesgo de spam que se vio con `TourOpenedEmail`, ver "Estado al cierre" de sesiones previas en CLAUDE.md).
+
+## 12. Idea de producto: embed/iframe para partners (sin plugin propio)
+
+Planteado por el cliente (2026-07-28), sin desarrollar todavía — solo anotado en el roadmap.
+
+**El problema que resuelve**: hoy un partner solo puede *referir* clientes con un link (`?ref=TOKEN`, `PartnerTracker`) — para vender un tour puntual necesita que el cliente llegue al sitio de TourFlow. La idea es que el partner pueda **incrustar el tour/checkout directo en su propia web**, sin importar qué plataforma use (Wix, Squarespace, un sitio a medida, lo que sea) — por eso un **iframe embebible**, no un plugin de WordPress: un plugin solo funciona en sitios WordPress, un iframe funciona en cualquier lado con un simple `<iframe src="...">`.
+
+**Spec, sin cerrar**:
+- Endpoint público (sin auth) que sirve el widget de reserva o la lista de tours ya preparado para vivir dentro de un `<iframe>` — reusaría `[amir_booking]`/`[amir_tour_list]`, pero servidos en una ruta propia pensada para iframe (sin el header/footer del tema del sitio).
+- Atribución al partner: el `src` del iframe llevaría el `?ref=TOKEN` de siempre — mismo mecanismo que `PartnerTracker`, sin inventar uno nuevo.
+- **Punto técnico a resolver antes de construir**: cookies de terceros — un iframe embebido en un dominio ajeno puede tener el tracking de `ref` bloqueado por `SameSite`/ITP de Safari según cómo esté armado hoy `PartnerTracker::capture_ref_token()` (cookie de primera parte en el dominio de TourFlow, no del sitio del partner) — hay que revisar si sigue funcionando igual dentro de un iframe cross-domain o si hace falta pasar el `ref` de otra forma (ej. en cada request en vez de cookie).
+- Sin decidir: ¿el checkout completo vive dentro del iframe (todo el flujo de pago ahí adentro) o el iframe muestra el catálogo/tour y al momento de pagar redirige a una pestaña nueva en el dominio de TourFlow? Lo segundo es más simple y evita varios dolores de cabeza de iframes con Stripe/Mercado Pago.
+
+Sin empezar a construir — es una idea para dialogar en otra sesión, como el marketplace de proveedores (§ 11) lo fue antes de cerrarse.

@@ -379,6 +379,7 @@ class Installer {
             provider_responded_at     DATETIME DEFAULT NULL,
             provider_reject_reason    VARCHAR(500) DEFAULT NULL,
             confirmed_at             DATETIME,
+            checked_in_at            DATETIME DEFAULT NULL,
             created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -857,6 +858,13 @@ class Installer {
         ) NOT NULL DEFAULT 'pending'" );
         add_option( 'amir_provider_reminder_hours', '24' );
         add_option( 'amir_provider_response_hours', '48' );
+
+        // 1.9.1: check-in por escaneo de voucher (Modo campo → 📷 Escanear
+        // voucher) — el QR ya existente del voucher codifica verify_url()
+        // (ref+token), se reusa tal cual, no hace falta un QR nuevo.
+        if ( ! in_array( 'checked_in_at', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN checked_in_at DATETIME DEFAULT NULL" );
+        }
 
         self::create_tables();
         self::create_verify_page();

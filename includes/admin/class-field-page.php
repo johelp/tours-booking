@@ -68,7 +68,7 @@ class FieldPage {
               <a href="<?php echo esc_url( admin_url( 'admin.php?page=amir-booking' ) ); ?>">Panel completo →</a>
             <?php else : ?>
               <a href="<?php echo esc_url( admin_url( 'admin.php?page=amir-field' ) ); ?>">← Volver</a>
-              <span class="amir-field-title"><?php echo $view === 'new' ? 'Nueva reserva' : 'Reserva'; ?></span>
+              <span class="amir-field-title"><?php echo esc_html( [ 'new' => 'Nueva reserva', 'scan' => 'Escanear voucher' ][ $view ] ?? 'Reserva' ); ?></span>
             <?php endif; ?>
           </div>
 
@@ -79,6 +79,8 @@ class FieldPage {
           <?php
           if ( $view === 'new' ) {
               $this->render_new_form();
+          } elseif ( $view === 'scan' ) {
+              $this->render_scan();
           } elseif ( $view === 'detail' && $id ) {
               $this->render_detail( $id );
           } else {
@@ -128,7 +130,84 @@ class FieldPage {
           </a>
         <?php endforeach; endif; ?>
 
+        <a class="amir-field-fab" href="<?php echo esc_url( admin_url( 'admin.php?page=amir-field&view=scan' ) ); ?>" style="right:96px;background:#1a2e24;" title="Escanear voucher">📷</a>
         <a class="amir-field-fab" href="<?php echo esc_url( admin_url( 'admin.php?page=amir-field&view=new' ) ); ?>">+</a>
+        <?php
+    }
+
+    // ── Escanear voucher (check-in) ──────────────────────────────────────
+
+    /**
+     * El voucher ya trae un QR con verify_url() (ref+token) — se reusa tal
+     * cual, no hace falta generar uno nuevo. BarcodeDetector es nativo del
+     * navegador (Chrome/Edge/Safari ya lo soportan), así que no hace falta
+     * bundlear ninguna librería de terceros — si no está disponible, se
+     * avisa y se cae al buscador manual de la lista.
+     */
+    private function render_scan(): void {
+        ?>
+        <div id="amir-scan-unsupported" class="amir-field-err" style="display:none;">
+          Tu navegador no soporta escaneo de QR (BarcodeDetector). Usá el buscador de la lista en su lugar.
+        </div>
+        <div id="amir-scan-wrap" style="border-radius:12px;overflow:hidden;background:#000;position:relative;">
+          <video id="amir-scan-video" style="width:100%;display:block;" playsinline autoplay muted></video>
+          <div style="position:absolute;inset:0;border:3px solid rgba(255,255,255,.5);border-radius:12px;pointer-events:none;margin:15%;"></div>
+        </div>
+        <p style="text-align:center;color:#5a7068;font-size:13px;margin-top:12px;">Apuntá al código QR del voucher del cliente.</p>
+
+        <form id="amir-scan-form" method="post" style="display:none;">
+          <?php wp_nonce_field( 'amir_field_action' ); ?>
+          <input type="hidden" name="amir_action" value="scan_lookup" />
+          <input type="hidden" name="ref" id="amir-scan-ref" />
+          <input type="hidden" name="token" id="amir-scan-token" />
+        </form>
+
+        <script>
+        (function(){
+          if (!('BarcodeDetector' in window)) {
+            document.getElementById('amir-scan-unsupported').style.display = 'block';
+            document.getElementById('amir-scan-wrap').style.display = 'none';
+            return;
+          }
+          var video    = document.getElementById('amir-scan-video');
+          var detector = new BarcodeDetector({ formats: ['qr_code'] });
+          var done     = false;
+
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(function(stream){
+              video.srcObject = stream;
+              var tick = function(){
+                if (done) return;
+                detector.detect(video).then(function(codes){
+                  if (codes.length > 0) {
+                    handleCode(codes[0].rawValue);
+                  } else {
+                    requestAnimationFrame(tick);
+                  }
+                }).catch(function(){ requestAnimationFrame(tick); });
+              };
+              requestAnimationFrame(tick);
+            })
+            .catch(function(){
+              document.getElementById('amir-scan-unsupported').textContent = 'No se pudo acceder a la cámara — revisá los permisos del navegador.';
+              document.getElementById('amir-scan-unsupported').style.display = 'block';
+            });
+
+          function handleCode(raw) {
+            var ref, token;
+            try {
+              var url = new URL(raw);
+              ref   = url.searchParams.get('ref');
+              token = url.searchParams.get('token');
+            } catch (e) { /* no era una URL válida */ }
+            if (!ref || !token) return; // seguir escaneando, no era un voucher nuestro
+            done = true;
+            document.getElementById('amir-scan-ref').value   = ref;
+            document.getElementById('amir-scan-token').value = token;
+            document.getElementById('amir-scan-form').submit();
+          }
+        })();
+        </script>
         <?php
     }
 
@@ -212,12 +291,35 @@ class FieldPage {
           </div>
         </div>
 
-        <?php if ( in_array( $b->status, [ 'pending', 'awaiting_payment' ], true ) ) : ?>
+        <?php if ( $b->checked_in_at ) : ?>
+        <div class="amir-field-msg">✓ Check-in registrado — <?php echo esc_html( mysql2date( 'd/m/Y H:i', $b->checked_in_at ) ); ?></div>
+        <?php elseif ( in_array( $b->status, [ 'confirmed', 'completed' ], true ) ) : ?>
+        <form method="post">
+          <?php wp_nonce_field( 'amir_field_action' ); ?>
+          <input type="hidden" name="amir_action" value="checkin" />
+          <input type="hidden" name="id" value="<?php echo (int) $b->id; ?>" />
+          <button type="submit" class="amir-field-btn amir-field-btn-primary">📷 Marcar check-in</button>
+        </form>
+        <?php endif; ?>
+
+        <?php if ( $b->status === 'pending' ) : ?>
         <form method="post">
           <?php wp_nonce_field( 'amir_field_action' ); ?>
           <input type="hidden" name="amir_action" value="confirm" />
           <input type="hidden" name="id" value="<?php echo (int) $b->id; ?>" />
           <button type="submit" class="amir-field-btn amir-field-btn-primary">✓ Confirmar reserva</button>
+        </form>
+        <?php endif; ?>
+
+        <?php if ( $b->status === 'awaiting_payment' ) : ?>
+        <!-- El cliente todavía no pagó — no hay "confirmar" válido para este
+             estado (BookingManager::confirm() exige status='pending'), la
+             única acción real es reenviarle el link de pago. -->
+        <form method="post">
+          <?php wp_nonce_field( 'amir_field_action' ); ?>
+          <input type="hidden" name="amir_action" value="resend_payment_link" />
+          <input type="hidden" name="id" value="<?php echo (int) $b->id; ?>" />
+          <button type="submit" class="amir-field-btn amir-field-btn-primary">💳 Reenviar link de pago</button>
         </form>
         <?php endif; ?>
 
@@ -363,14 +465,64 @@ class FieldPage {
             return [ 'ok' => false, 'text' => $result->error ];
         }
 
+        if ( $action === 'scan_lookup' ) {
+            $ref   = strtoupper( sanitize_text_field( $_POST['ref'] ?? '' ) );
+            $token = sanitize_text_field( $_POST['token'] ?? '' );
+            $booking = $ref ? $manager->get_booking_by_ref( $ref ) : null;
+
+            // Mismo token fuerte que usa el cliente para "ver mi reserva" —
+            // corroborar el voucher es justo lo que hace esta autorización.
+            if ( $booking && $manager->authorize_public_access( $booking, $token ) ) {
+                wp_redirect( admin_url( 'admin.php?page=amir-field&view=detail&id=' . $booking->id ) );
+                exit;
+            }
+            return [ 'ok' => false, 'text' => 'Voucher inválido — el código QR no corresponde a ninguna reserva, o el link venció.' ];
+        }
+
         $id = absint( $_POST['id'] ?? 0 );
         if ( ! $id ) {
             return [ 'ok' => false, 'text' => 'Reserva no válida.' ];
         }
 
         if ( $action === 'confirm' ) {
-            $manager->confirm( $id, '' );
-            return [ 'ok' => true, 'text' => 'Reserva confirmada. Email y voucher en camino.' ];
+            // confirm() exige status='pending' — devuelve false sin avisar si
+            // no lo está (ya confirmada, cancelada, etc.). Antes esto se
+            // ignoraba y siempre se mostraba éxito, aunque no pasara nada.
+            $ok = $manager->confirm( $id, '' );
+            return [
+                'ok'   => $ok,
+                'text' => $ok
+                    ? 'Reserva confirmada. Email y voucher en camino.'
+                    : 'No se pudo confirmar — la reserva ya no está en estado "pendiente" (puede que ya se haya confirmado, cancelado, o esté esperando pago/aprobación del proveedor).',
+            ];
+        }
+
+        if ( $action === 'resend_payment_link' ) {
+            $dispatcher = new \AmirBooking\Emails\EmailDispatcher();
+            $booking    = $dispatcher->get_booking_with_tour( $id );
+            if ( ! $booking || $booking->status !== 'awaiting_payment' ) {
+                return [ 'ok' => false, 'text' => 'La reserva no está en estado "esperando pago".' ];
+            }
+            $result = $dispatcher->send_payment_link_notice( $booking );
+            return [
+                'ok'   => $result['success'],
+                'text' => $result['success'] ? 'Link de pago reenviado al cliente.' : 'No se pudo enviar el email — revisá el log de errores del servidor.',
+            ];
+        }
+
+        if ( $action === 'checkin' ) {
+            global $wpdb;
+            // $wpdb->update() no puede expresar "WHERE checked_in_at IS NULL"
+            // (un null en el array de condiciones compara contra '', nunca
+            // contra NULL real) — query cruda para el guard atómico.
+            $updated = $wpdb->query( $wpdb->prepare(
+                "UPDATE {$wpdb->prefix}amir_bookings SET checked_in_at = %s WHERE id = %d AND checked_in_at IS NULL",
+                current_time( 'mysql' ), $id
+            ) );
+            return [
+                'ok'   => (bool) $updated,
+                'text' => $updated ? 'Check-in registrado.' : 'Ya tenía un check-in registrado.',
+            ];
         }
 
         if ( $action === 'cancel' ) {
