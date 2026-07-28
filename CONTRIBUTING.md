@@ -317,12 +317,38 @@ Planteado por el cliente (2026-07-28), sin desarrollar todavía — solo anotado
 
 Sin empezar a construir — es una idea para dialogar en otra sesión, como el marketplace de proveedores (§ 11) lo fue antes de cerrarse.
 
-## 13. Personalización de grilla, ficha de detalle e itinerario (Tarea 13, ampliada) — sin construir
+## 13. Personalización de grilla, ficha de detalle e itinerario (Tarea 13, ampliada) — spec cerrado, sin construir
 
-Pedido del cliente (2026-07-28), tres piezas relacionadas pero de tamaño bien distinto:
+Pedido del cliente (2026-07-28), dialogado a fondo en la misma sesión — incluye benchmark real contra GetYourGuide y Viator (navegados en vivo, no de memoria) para no reinventar patrones que el usuario final ya conoce. **Empezar por el punto 3 (itinerario) la próxima sesión — es el que tiene el spec más cerrado y el que más le importa al cliente después de la plantilla.**
 
-1. **Grilla de tours (`[amir_tour_list]`) — selector visual o generador de shortcode**: hoy `TourList.jsx` ya lee un montón de atributos (`columns`, `accent`, `bg_color`, `text_color`, `radius`, `image_ratio`, `show_excerpt/price/age/duration/languages/capacity`, `cta_text_es/en`, `ids`) pero el operador tiene que escribirlos a mano en el shortcode cada vez. Falta una UI (en Personalización, § arriba) que arme el shortcode con esos mismos atributos vía formulario — el cliente aceptó que sea "generador de shortcode" si es más simple que un builder visual en vivo. Bajo esfuerzo: la lógica de renderizado ya existe entera, es solo una pantalla nueva que arma texto.
-2. **Segunda plantilla de detalle de tour — la que más le importa al cliente**: hoy `templates/single-amir_tour.php` es la única estructura que existe. Hace falta una segunda con layout realmente distinto (no solo colores, que ya son configurables vía `WidgetTheme`) — ej. hero a pantalla completa + widget de reserva flotante/sticky, vs. la actual. Selector en Configuración/Personalización para elegir cuál usa cada instalación (o por tour, a definir). Esfuerzo real de diseño, no solo de código.
-3. **Itinerario con formato tipo timeline**: el cliente pasó una captura de referencia (estilo GetYourGuide/Viator) — timeline vertical con línea punteada conectando paradas, marcador circular por parada (ícono de pin distinto para "punto de partida"), título en negrita, contenido colapsable con chevron (▾/▴), un link "Collapse all" arriba. Hoy el itinerario es texto libre (`itinerary_es`/`itinerary_en`, sin estructura). Para este formato hace falta estructurar el dato: una lista de paradas con al menos título + descripción corta, posiblemente imagen — cambio de esquema (columna nueva o reusar `content_i18n`-style JSON), no solo de CSS.
+### 13.1 Itinerario tipo timeline — el más prioritario, spec cerrado
 
-Sin empezar ninguna de las tres — quedan documentadas para la próxima sesión de specs, después de la evaluación de producción (ver CLAUDE.md § "Estado al cierre").
+Referencia visual pasada por el cliente (estilo GetYourGuide/Viator): timeline vertical con línea punteada conectando paradas, marcador circular por parada (ícono de pin distinto y coloreado para "punto de partida" vs. círculo simple para el resto), título en negrita por parada, contenido colapsable con chevron, link "Collapse all" arriba.
+
+**Decisiones ya cerradas con el cliente:**
+- Cada parada lleva **título + descripción + imagen opcional** (no solo texto — el cliente lo confirmó explícitamente, "más parecido a Viator/GetYourGuide de verdad").
+- **Opcional por tour** — si el tour no tiene paradas cargadas, la sección del itinerario no se muestra (nunca vacía/rota). Confirmado con benchmark real: ni GetYourGuide ni Viator muestran timeline en todos sus tours (un self-guided GoCar tour visto en vivo usa descripción narrativa normal, sin pasos) — el timeline se usa selectivamente en tours con paradas secuenciales reales (caminatas guiadas, etc.), no es un requisito universal.
+- **Sin migración** de los `itinerary_es`/`itinerary_en` (texto libre) existentes — el cliente aceptó que se recarguen a mano en el formato nuevo (son pocos tours). Los campos viejos quedan en la base sin usarse, no hace falta borrarlos.
+
+**Sketch de implementación para la próxima sesión:**
+- Nueva columna `amir_tours.itinerary_stops` — `LONGTEXT` **sin** `DEFAULT` literal (la sesión de esta rama ya encontró que MySQL/MariaDB puede rechazar `DEFAULT` en columnas TEXT/LONGTEXT según el host — ver el bug de `content_i18n` en el historial de commits; el patrón seguro es `LONGTEXT NULL` y resolver el `'[]'` por defecto en PHP, no en la columna). JSON: array de `{ title_es, title_en, desc_es, desc_en, image_id, image_url, is_start }`. Sin soporte multi-idioma más allá de es/en por ahora (mismo alcance que el itinerario viejo — no es una regresión).
+- Migración: agregar a `Installer::create_tables()` y `Installer::maybe_update()` con el `ALTER TABLE` de siempre, subir `AMIR_DB_VERSION`.
+- Editor de tour (`class-tour-post-type.php`): meta box nueva o sección dentro de la existente, filas repetibles (mismo patrón que horarios/add-ons — botón "+ Agregar parada", cada fila con título ES/EN, descripción ES/EN, selector de imagen vía `wp.media` como el logo de marca, checkbox "¿Es el punto de partida?").
+- Frontend (`templates/single-amir_tour.php`): nueva sección condicional (`if (!empty($tour->itinerary_stops))`), timeline con `<details>`/`<summary>` nativos para el colapsado (mismo patrón que `.ab-shortcodes` del Dashboard), CSS con línea punteada + marcadores — no depende de ninguna librería nueva.
+
+### 13.2 Mejoras rápidas de grilla y detalle (mismo benchmark, más chicas)
+
+- **Grilla (`[amir_tour_list]`)**: badge "Cancelación gratis" en la tarjeta — Viator lo muestra directo en las tarjetas de resultados, no solo en el detalle. El dato (política de cancelación) ya existe, solo falta mostrarlo en `TourList.jsx`.
+- **Detalle**: sección "Highlights" — 4-5 bullets cortos arriba de la descripción larga (hoy solo hay descripción completa sin resumen rápido, visto en GetYourGuide). Campo nuevo, probablemente junto a `what_to_expect`.
+- **Detalle**: cross-sell "También te puede interesar" al pie de la ficha — reusa `[amir_tour_list ids="..."]` que ya existe, sin lógica nueva de fondo.
+- El checkout actual (Fecha → Horario → Personas → Extras → Datos → Resumen+política → Pago → Confirmación) se evaluó contra el benchmark y quedó confirmado como sólido — la comparación justa es contra software de reserva directa (Checkfront/FareHarbor/Xola), no marketplaces como GetYourGuide/Viator (que optimizan para comparar entre muchos operadores, no es el mismo problema). Sin cambios pendientes ahí.
+
+### 13.3 Grilla — generador de shortcode
+
+`TourList.jsx` ya lee un montón de atributos (`columns`, `accent`, `bg_color`, `text_color`, `radius`, `image_ratio`, `show_excerpt/price/age/duration/languages/capacity`, `cta_text_es/en`, `ids`) pero el operador tiene que escribirlos a mano cada vez. Falta una UI (en Personalización) que arme el shortcode con esos mismos atributos vía formulario — el cliente aceptó "generador de shortcode" (arma el texto para copiar) en vez de un builder visual en vivo, que sería bastante más trabajo. Bajo esfuerzo: la lógica de renderizado ya existe entera.
+
+### 13.4 Segunda plantilla de detalle de tour — la más grande, sin definir todavía
+
+Hoy `templates/single-amir_tour.php` es la única estructura que existe. Hace falta una segunda con layout realmente distinto (no solo colores, que ya son configurables vía `WidgetTheme`) — ej. hero a pantalla completa + widget de reserva flotante/sticky, vs. la actual. Selector en Personalización para elegir cuál usa cada instalación (o por tour, a definir). Esfuerzo real de diseño, no solo de código — el cliente prefirió dejarla para después de ver cómo queda el itinerario (§ 13.1), puede informar cómo encarar esta plantilla nueva.
+
+Nada de esto se empezó a construir — queda documentado para la próxima sesión, en el orden 13.1 → 13.2 → 13.3 → 13.4.
