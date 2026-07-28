@@ -75,14 +75,19 @@ class EmailTestPage {
               </td>
             </tr>
           </table>
-          <button type="submit" name="amir_send_test" class="button button-primary">Mandar email de prueba</button>
+          <button type="submit" name="amir_send_test" value="1" class="button button-primary">Mandar email de prueba</button>
         </form>
         </div>
         <?php
     }
 
     private function handle_submit(): ?array {
-        if ( empty( $_POST['amir_send_test'] ) || ! wp_verify_nonce( $_POST['_wpnonce'] ?? '', 'amir_email_test' ) ) {
+        // isset(), no empty(): el botón de submit no llevaba `value` antes,
+        // así que el navegador lo mandaba como '' — y empty('') es true en
+        // PHP, así que este chequeo fallaba SIEMPRE sin importar el click.
+        // Ese era el bug real detrás de "el test de emails no manda nada":
+        // nunca llegaba a intentar wp_mail(), para ningún tipo de email.
+        if ( ! isset( $_POST['amir_send_test'] ) || ! wp_verify_nonce( $_POST['_wpnonce'] ?? '', 'amir_email_test' ) ) {
             return null;
         }
 
