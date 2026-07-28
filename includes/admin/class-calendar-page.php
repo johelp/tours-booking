@@ -4,36 +4,15 @@ namespace AmirBooking\Admin;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Calendario mensual — pantalla completa, sin el chrome de WordPress
- * (ver AdminMenu::maybe_hide_admin_bar_fullscreen()/maybe_print_fullscreen_css()
- * — mismo mecanismo que usa FieldPage, el "modo campo" para el celular).
- * Pensado para tablet desde el muelle, igual que DashboardPage.
- *
- * Como el chrome de WP (admin bar + menú lateral) queda oculto, esta pantalla
- * necesita su propia barra de navegación de vuelta al resto del plugin —
- * antes no la tenía y dejaba al usuario sin forma de salir salvo "atrás"
- * del navegador.
+ * Calendario mensual — pantalla normal del admin, con el chrome de WP
+ * visible como cualquier otra (el cliente pidió explícitamente que no
+ * quedara distinta al resto — antes era fullscreen sin menú lateral,
+ * ver AdminMenu::FULLSCREEN_PAGES, que ya no la incluye).
  *
  * El detalle de un día reusa DashboardPage::get_day_summary()/render_day_tours()
  * tal cual — esos métodos ya funcionan para cualquier fecha, no solo hoy/mañana.
  */
 class CalendarPage {
-
-    /**
-     * Mismos destinos que el submenú de AdminMenu::add_menus(), para que la
-     * navegación dentro de la pantalla fullscreen no quede huérfana.
-     */
-    private function nav_links(): array {
-        return [
-            [ 'amir-booking',       '🏠 Dashboard'       ],
-            [ 'amir-calendar',      '📅 Calendario'      ],
-            [ 'amir-bookings-list', '📋 Reservas'        ],
-            [ 'amir-availability',  '🗓️ Disponibilidad'  ],
-            [ 'amir-partners',      '🤝 Partners'         ],
-            [ 'amir-wishlist',      '💌 Lista de interés' ],
-            [ 'amir-settings',      '⚙️ Configuración'   ],
-        ];
-    }
 
     public function render(): void {
         $month_param = sanitize_text_field( $_GET['month'] ?? '' );
@@ -50,12 +29,8 @@ class CalendarPage {
         $counts = $this->get_month_counts( $year, $month );
 
         ?>
+        <div class="wrap ab-admin-wrap">
         <style>
-        .amir-cal-topnav { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; background: #1a2e24; padding: 10px 24px; position: sticky; top: 0; z-index: 100; }
-        .amir-cal-topnav a { color: #cfe9df; text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 7px; white-space: nowrap; }
-        .amir-cal-topnav a:hover { background: rgba(255,255,255,.08); color: #fff; }
-        .amir-cal-topnav a.is-current { background: #1D9E75; color: #fff; }
-        .amir-cal-wrap { max-width: 1100px; margin: 0 auto; padding: 28px 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         .amir-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
         .amir-cal-title { font-size: 22px; font-weight: 700; color: #1a2e24; text-transform: capitalize; }
         .amir-cal-nav a { display: inline-block; padding: 8px 16px; border: 1px solid #d1e8df; border-radius: 8px; color: #1D9E75; text-decoration: none; font-weight: 600; font-size: 13px; margin-left: 8px; }
@@ -73,14 +48,8 @@ class CalendarPage {
         .amir-cal-detail-title { font-size: 16px; font-weight: 700; color: #1a2e24; margin-bottom: 14px; text-transform: capitalize; }
         </style>
 
-        <div class="amir-cal-topnav">
-          <?php foreach ( $this->nav_links() as [ $slug, $label ] ) : ?>
-            <a href="<?php echo esc_url( admin_url( 'admin.php?page=' . $slug ) ); ?>"
-               class="<?php echo $slug === 'amir-calendar' ? 'is-current' : ''; ?>"><?php echo esc_html( $label ); ?></a>
-          <?php endforeach; ?>
-        </div>
+        <h1>📅 <?php _e('Calendario', 'amir-booking'); ?></h1>
 
-        <div class="amir-cal-wrap">
         <div class="amir-cal-header">
           <div class="amir-cal-title"><?php echo esc_html( date_i18n( 'F Y', $month_ts ) ); ?></div>
           <div class="amir-cal-nav">

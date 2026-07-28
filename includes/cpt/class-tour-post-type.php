@@ -218,6 +218,7 @@ class TourPostType {
           </div>
         </div>
 
+        <?php if ( get_option( 'amir_module_marketplace', '1' ) === '1' ) : ?>
         <div class="amir-section-title">🤝 Proveedor externo (marketplace)</div>
         <p style="font-size:12px;color:#666;margin:0 0 12px;">
           Si este tour lo opera un <strong>proveedor externo</strong> (TourFlow lo revende con margen propio), asignalo acá.
@@ -238,7 +239,9 @@ class TourPostType {
             <p class="amir-hint">Se gestionan en TourFlow → 🤝 Proveedores</p>
           </div>
         </div>
+        <?php endif; ?>
 
+        <?php if ( get_option( 'amir_module_wishlist', '1' ) === '1' ) : ?>
         <div class="amir-section-title">📋 Lista de interés ("Próximamente")</div>
         <p style="font-size:12px;color:#666;margin:0 0 12px;">
           Mientras este tour esté en <strong>borrador</strong>, se puede mostrar en la sección "Próximamente" del sitio
@@ -263,6 +266,7 @@ class TourPostType {
             <p class="amir-hint">La fecha ya definida a la que la gente muestra interés — no hay calendario de disponibilidad mientras el tour está en borrador</p>
           </div>
         </div>
+        <?php endif; ?>
         <?php
     }
 

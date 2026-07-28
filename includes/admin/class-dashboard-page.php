@@ -113,7 +113,9 @@ class DashboardPage {
           <a href="<?php echo esc_url( admin_url('admin.php?page=amir-field') ); ?>">📱 Modo campo</a>
           <a href="<?php echo esc_url( admin_url('admin.php?page=amir-bookings-list&action=new') ); ?>">+ Nueva reserva</a>
           <a href="<?php echo esc_url( admin_url('admin.php?page=amir-calendar') ); ?>">📅 Calendario</a>
+          <?php if ( get_option( 'amir_module_wishlist', '1' ) === '1' ) : ?>
           <a href="<?php echo esc_url( admin_url('admin.php?page=amir-wishlist') ); ?>">📋 Lista de interés</a>
+          <?php endif; ?>
         </div>
 
         <?php if ( ! empty( $provider_pending ) ) : ?>
@@ -479,6 +481,9 @@ class DashboardPage {
      * cancela solo de verdad.
      */
     private function get_provider_pending_approvals(): array {
+        if ( get_option( 'amir_module_marketplace', '1' ) !== '1' ) {
+            return [];
+        }
         global $wpdb;
         $response_hours = (int) get_option( 'amir_provider_response_hours', 48 );
 

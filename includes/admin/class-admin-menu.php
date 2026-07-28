@@ -15,16 +15,18 @@ class AdminMenu {
         // La descarga del PDF debe ocurrir antes de que WordPress envíe cualquier HTML
         add_action( 'admin_init',   [ $this, 'maybe_stream_pdf' ] );
 
-        // Calendario y Modo campo: pantalla completa, sin nada del chrome de
-        // WP. La admin bar se decide temprano (antes de que WP la arme), por
-        // eso va en admin_init y no dentro del callback de la página — ahí
-        // ya es tarde.
+        // Modo campo: pantalla completa, sin nada del chrome de WP (pensada
+        // para el celular). La admin bar se decide temprano (antes de que WP
+        // la arme), por eso va en admin_init y no dentro del callback de la
+        // página — ahí ya es tarde. Calendario NO va acá — el cliente pidió
+        // que se vea como cualquier otra pantalla del plugin, con el menú de
+        // WP visible.
         add_action( 'admin_init', [ $this, 'maybe_hide_admin_bar_fullscreen' ] );
         add_action( 'admin_head', [ $this, 'maybe_print_fullscreen_css' ] );
     }
 
     /** Páginas que se muestran fullscreen, sin el chrome de WP admin. */
-    private const FULLSCREEN_PAGES = [ 'amir-calendar', 'amir-field' ];
+    private const FULLSCREEN_PAGES = [ 'amir-field' ];
 
     public function maybe_hide_admin_bar_fullscreen(): void {
         if ( in_array( $_GET['page'] ?? '', self::FULLSCREEN_PAGES, true ) ) {
@@ -91,6 +93,13 @@ class AdminMenu {
             30
         );
 
+        // Módulos apagables por instalación (Configuración → 🧩 Módulos) —
+        // por defecto todos prendidos (retrocompatible con instalaciones que
+        // ya los venían usando). Apagados, el submenú ni se registra.
+        $marketplace_on = get_option( 'amir_module_marketplace', '1' ) === '1';
+        $wishlist_on    = get_option( 'amir_module_wishlist',    '1' ) === '1';
+        $partners_on    = get_option( 'amir_module_partners',    '1' ) === '1';
+
         // Submenús — todos visibles para admin y tour manager
         $submenus = [
             [ 'amir-booking',        __( 'Dashboard',      'amir-booking' ), [ $this, 'page_dashboard'   ] ],
@@ -98,16 +107,22 @@ class AdminMenu {
             [ 'amir-field',          __( '📱 Modo campo',  'amir-booking' ), [ $this, 'page_field'       ] ],
             [ 'amir-bookings-list',  __( 'Reservas',       'amir-booking' ), [ $this, 'page_bookings'    ] ],
             [ 'amir-availability',   __( 'Disponibilidad', 'amir-booking' ), [ $this, 'page_availability'] ],
-            [ 'amir-partners',       __( 'Partners',       'amir-booking' ), [ $this, 'page_partners'    ] ],
-            [ 'amir-wishlist',       __( 'Lista de interés','amir-booking' ), [ $this, 'page_wishlist'    ] ],
-            [ 'amir-reports',        __( 'Reportes',       'amir-booking' ), [ $this, 'page_reports'     ] ],
-            [ 'amir-payment-log',    __( 'Log de pagos',   'amir-booking' ), [ $this, 'page_payment_log' ] ],
-            [ 'amir-coupons',        __( 'Cupones',        'amir-booking' ), [ $this, 'page_coupons'     ] ],
-            [ 'amir-providers',      __( '🤝 Proveedores', 'amir-booking' ), [ $this, 'page_providers'   ] ],
-            [ 'amir-provider-payouts', __( '💸 Liquidación', 'amir-booking' ), [ $this, 'page_provider_payouts' ] ],
-            [ 'amir-email-test',     __( '✉️ Probar emails','amir-booking' ), [ $this, 'page_email_test' ] ],
-            [ 'amir-settings',       __( 'Configuración',  'amir-booking' ), [ $this, 'page_settings'    ] ],
         ];
+        if ( $partners_on ) {
+            $submenus[] = [ 'amir-partners', __( 'Partners', 'amir-booking' ), [ $this, 'page_partners' ] ];
+        }
+        if ( $wishlist_on ) {
+            $submenus[] = [ 'amir-wishlist', __( 'Lista de interés', 'amir-booking' ), [ $this, 'page_wishlist' ] ];
+        }
+        $submenus[] = [ 'amir-reports',     __( 'Reportes',       'amir-booking' ), [ $this, 'page_reports'     ] ];
+        $submenus[] = [ 'amir-payment-log', __( 'Log de pagos',   'amir-booking' ), [ $this, 'page_payment_log' ] ];
+        $submenus[] = [ 'amir-coupons',     __( 'Cupones',        'amir-booking' ), [ $this, 'page_coupons'     ] ];
+        if ( $marketplace_on ) {
+            $submenus[] = [ 'amir-providers',         __( '🤝 Proveedores', 'amir-booking' ), [ $this, 'page_providers'        ] ];
+            $submenus[] = [ 'amir-provider-payouts',  __( '💸 Liquidación', 'amir-booking' ), [ $this, 'page_provider_payouts' ] ];
+        }
+        $submenus[] = [ 'amir-email-test', __( '✉️ Probar emails','amir-booking' ), [ $this, 'page_email_test' ] ];
+        $submenus[] = [ 'amir-settings',   __( 'Configuración',  'amir-booking' ), [ $this, 'page_settings'    ] ];
 
         foreach ( $submenus as [ $slug, $title, $callback ] ) {
             add_submenu_page(

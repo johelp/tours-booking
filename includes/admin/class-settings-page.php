@@ -503,6 +503,29 @@ class SettingsPage {
             </div>
           </div>
 
+          <!-- Módulos -->
+          <div class="ab-settings-section">
+            <h3>🧩 Módulos</h3>
+            <p class="ab-hint" style="margin-top:-8px;margin-bottom:14px;">Apagá lo que esta instalación no use — se oculta del menú (los datos que ya existan no se borran, por si lo volvés a activar después).</p>
+            <?php
+            $modules = [
+                'amir_module_marketplace' => [ 'label' => '🤝 Marketplace de proveedores', 'hint' => 'Oculta "Proveedores" y "Liquidación" del menú.' ],
+                'amir_module_wishlist'    => [ 'label' => '📋 Lista de interés',            'hint' => 'Oculta "Lista de interés" del menú y el checkbox correspondiente en el editor de tours.' ],
+                'amir_module_partners'    => [ 'label' => '🎯 Partners (afiliados)',        'hint' => 'Oculta "Partners" del menú.' ],
+            ];
+            foreach ( $modules as $opt => $m ) : ?>
+              <div class="ab-field">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-weight:400;">
+                  <input type="checkbox" name="<?php echo esc_attr($opt); ?>" value="1"
+                         <?php checked( get_option($opt, '1'), '1' ); ?>
+                         style="accent-color:#1D9E75;width:auto;" />
+                  <?php echo esc_html($m['label']); ?>
+                </label>
+                <p class="ab-hint"><?php echo esc_html($m['hint']); ?></p>
+              </div>
+            <?php endforeach; ?>
+          </div>
+
           <!-- Peligro -->
           <div class="ab-settings-section" style="border-color:#fecaca;">
             <h3 style="color:#e24b4a;">⚠ Zona de peligro</h3>
@@ -748,6 +771,11 @@ class SettingsPage {
 
         $delete = isset($_POST['amir_delete_data_on_uninstall']) ? '1' : '0';
         update_option('amir_delete_data_on_uninstall', $delete);
+
+        // Módulos — checkbox ausente en $_POST cuando está destildado
+        foreach ( [ 'amir_module_marketplace', 'amir_module_wishlist', 'amir_module_partners' ] as $module_opt ) {
+            update_option( $module_opt, isset( $_POST[ $module_opt ] ) ? '1' : '0' );
+        }
 
         // Widget de reserva: color validado como hex, el resto son selects
         // con valores fijos conocidos (WidgetTheme::*_key() ya valida contra
