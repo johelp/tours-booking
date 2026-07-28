@@ -122,14 +122,22 @@ class AdminMenu {
             $submenus[] = [ 'amir-provider-payouts',  __( '💸 Liquidación', 'amir-booking' ), [ $this, 'page_provider_payouts' ] ];
         }
         $submenus[] = [ 'amir-email-test', __( '✉️ Probar emails','amir-booking' ), [ $this, 'page_email_test' ] ];
-        $submenus[] = [ 'amir-settings',   __( 'Configuración',  'amir-booking' ), [ $this, 'page_settings'    ] ];
+        // Configuración y Personalización: solo-admin siempre, sin excepción
+        // — 'manage_options' explícito acá, no el $cap compartido de arriba,
+        // para que un Tour Manager (gestor de tienda) ni vea el ítem de menú.
+        // El render() de ambas páginas ya exigía manage_options por su cuenta
+        // (así que no había fuga real de datos), pero mostrar un ítem de menú
+        // que termina en wp_die() es mala UX — esto lo saca de raíz.
+        $submenus[] = [ 'amir-personalization', __( '🎨 Personalización', 'amir-booking' ), [ $this, 'page_personalization' ], 'manage_options' ];
+        $submenus[] = [ 'amir-settings',        __( 'Configuración',      'amir-booking' ), [ $this, 'page_settings'         ], 'manage_options' ];
 
-        foreach ( $submenus as [ $slug, $title, $callback ] ) {
+        foreach ( $submenus as $item ) {
+            [ $slug, $title, $callback ] = $item;
             add_submenu_page(
                 'amir-booking',
                 $title,
                 $title,
-                $cap,
+                $item[3] ?? $cap,
                 $slug,
                 $callback
             );
@@ -198,6 +206,9 @@ class AdminMenu {
     public function page_settings(): void {
         ( new \AmirBooking\Admin\SettingsPage() )->render();
     }
+    public function page_personalization(): void {
+        ( new \AmirBooking\Admin\PersonalizationPage() )->render();
+    }
 
     // ── Assets ─────────────────────────────────────────────────────────────
 
@@ -211,7 +222,7 @@ class AdminMenu {
         // Debe cargarse aquí (admin_enqueue_scripts) y NO dentro del callback
         // de la página — ese se ejecuta después del <head> y los scripts
         // de wp.media quedarían fuera del contexto correcto.
-        if ( strpos( $hook, 'amir-settings' ) !== false ) {
+        if ( strpos( $hook, 'amir-settings' ) !== false || strpos( $hook, 'amir-personalization' ) !== false ) {
             wp_enqueue_media();
         }
 

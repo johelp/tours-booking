@@ -316,3 +316,13 @@ Planteado por el cliente (2026-07-28), sin desarrollar todavía — solo anotado
 - Sin decidir: ¿el checkout completo vive dentro del iframe (todo el flujo de pago ahí adentro) o el iframe muestra el catálogo/tour y al momento de pagar redirige a una pestaña nueva en el dominio de TourFlow? Lo segundo es más simple y evita varios dolores de cabeza de iframes con Stripe/Mercado Pago.
 
 Sin empezar a construir — es una idea para dialogar en otra sesión, como el marketplace de proveedores (§ 11) lo fue antes de cerrarse.
+
+## 13. Personalización de grilla, ficha de detalle e itinerario (Tarea 13, ampliada) — sin construir
+
+Pedido del cliente (2026-07-28), tres piezas relacionadas pero de tamaño bien distinto:
+
+1. **Grilla de tours (`[amir_tour_list]`) — selector visual o generador de shortcode**: hoy `TourList.jsx` ya lee un montón de atributos (`columns`, `accent`, `bg_color`, `text_color`, `radius`, `image_ratio`, `show_excerpt/price/age/duration/languages/capacity`, `cta_text_es/en`, `ids`) pero el operador tiene que escribirlos a mano en el shortcode cada vez. Falta una UI (en Personalización, § arriba) que arme el shortcode con esos mismos atributos vía formulario — el cliente aceptó que sea "generador de shortcode" si es más simple que un builder visual en vivo. Bajo esfuerzo: la lógica de renderizado ya existe entera, es solo una pantalla nueva que arma texto.
+2. **Segunda plantilla de detalle de tour — la que más le importa al cliente**: hoy `templates/single-amir_tour.php` es la única estructura que existe. Hace falta una segunda con layout realmente distinto (no solo colores, que ya son configurables vía `WidgetTheme`) — ej. hero a pantalla completa + widget de reserva flotante/sticky, vs. la actual. Selector en Configuración/Personalización para elegir cuál usa cada instalación (o por tour, a definir). Esfuerzo real de diseño, no solo de código.
+3. **Itinerario con formato tipo timeline**: el cliente pasó una captura de referencia (estilo GetYourGuide/Viator) — timeline vertical con línea punteada conectando paradas, marcador circular por parada (ícono de pin distinto para "punto de partida"), título en negrita, contenido colapsable con chevron (▾/▴), un link "Collapse all" arriba. Hoy el itinerario es texto libre (`itinerary_es`/`itinerary_en`, sin estructura). Para este formato hace falta estructurar el dato: una lista de paradas con al menos título + descripción corta, posiblemente imagen — cambio de esquema (columna nueva o reusar `content_i18n`-style JSON), no solo de CSS.
+
+Sin empezar ninguna de las tres — quedan documentadas para la próxima sesión de specs, después de la evaluación de producción (ver CLAUDE.md § "Estado al cierre").
