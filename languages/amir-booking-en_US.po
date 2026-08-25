@@ -1,0 +1,1595 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: TourFlow\n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+
+msgid "\"Recién cuando confirme\" nunca cobra nada si el proveedor rechaza o no responde — no hace falta reembolsar."
+msgstr "\"Only once confirmed\" never charges anything if the provider rejects or doesn't respond — no refund needed."
+
+msgid "%1$d–%2$d personas"
+msgstr "%1$d–%2$d people"
+
+msgid "%d adultos"
+msgstr "%d adults"
+
+msgid "%d bebés"
+msgstr "%d babies"
+
+msgid "%d cupos libres"
+msgstr "%d spots left"
+
+msgid "%d niños"
+msgstr "%d children"
+
+msgid "%d personas"
+msgstr "%d people"
+
+msgid "%d personas confirmadas"
+msgstr "%d people confirmed"
+
+msgid "%d reservas"
+msgstr "%d bookings"
+
+msgid "(inactivo)"
+msgstr "(inactive)"
+
+msgid "(máx.)"
+msgstr "(max.)"
+
+msgid "+ Nueva habitación"
+msgstr "+ New room"
+
+msgid "+ Nuevo tour"
+msgstr "+ New tour"
+
+msgid "+52 983 000 0000"
+msgstr "+52 983 000 0000"
+
+msgid "0 = sin umbral, solo acumula interesados"
+msgstr "0 = no threshold, just accumulates interested people"
+
+msgid "0–3 años"
+msgstr "0–3 years"
+
+msgid "13+ años"
+msgstr "13+ years"
+
+msgid "3–6 días antes: %s"
+msgstr "3–6 days before: %s"
+
+msgid "3–6 días antes: reembolso del 50%"
+msgstr "3–6 days before: 50% refund"
+
+msgid "4–12 años"
+msgstr "4–12 years"
+
+msgid "7+ días antes: %s"
+msgstr "7+ days before: %s"
+
+msgid "7+ días antes: reembolso completo"
+msgstr "7+ days before: full refund"
+
+msgid "A cotizar"
+msgstr "To be quoted"
+
+msgid "Abril"
+msgstr "April"
+
+msgid "Acciones"
+msgstr "Actions"
+
+msgid "Activar lista de interés para este tour"
+msgstr "Enable waitlist for this tour"
+
+msgid "Activo"
+msgstr "Active"
+
+msgid "Actualizar DB en toda la red"
+msgstr "Update DB across the network"
+
+msgid "Actualizar ahora"
+msgstr "Update now"
+
+msgid "Admite bebés"
+msgstr "Allows babies"
+
+msgid "Admite niños"
+msgstr "Allows children"
+
+msgid "Adulto (13+)"
+msgstr "Adult (13+)"
+
+msgid "Adultos"
+msgstr "Adults"
+
+msgid "Agosto"
+msgstr "August"
+
+msgid "Agregar al calendario"
+msgstr "Add to calendar"
+
+msgid "Agregar amenity"
+msgstr "Add amenity"
+
+msgid "Agregar dato destacado"
+msgstr "Add highlighted fact"
+
+msgid "Agregar fotos a la galería"
+msgstr "Add photos to gallery"
+
+msgid "Agregar habitación"
+msgstr "Add room"
+
+msgid "Agregar horario"
+msgstr "Add schedule"
+
+msgid "Agregar imagen (opcional)"
+msgstr "Add image (optional)"
+
+msgid "Agregar parada"
+msgstr "Add stop"
+
+msgid "Agregar servicio"
+msgstr "Add service"
+
+msgid "Agregar tour"
+msgstr "Add tour"
+
+msgid "Al reservar (de siempre) — si el proveedor rechaza, se reembolsa"
+msgstr "At booking time (as always) — if the provider rejects it, it's refunded"
+
+msgid "Alergias, movilidad reducida, celebración especial…"
+msgstr "Allergies, reduced mobility, special celebration…"
+
+msgid "Anterior"
+msgstr "Previous"
+
+msgid "Aparece como una foto más al principio de la galería, con un ícono de play — el video no carga hasta que el visitante hace clic (§ 16.11/16.46 CONTRIBUTING.md, mismo patrón que el video de habitaciones en Pro Max). Disponible en las tres ediciones."
+msgstr "Shows up as another photo at the start of the gallery, with a play icon — the video doesn't load until the visitor clicks it (§ 16.11/16.46 CONTRIBUTING.md, same pattern as the room video in Pro Max). Available in all three editions."
+
+msgid "Aparece en el paso 1 del flujo continuo — solo tours propios marcados acá, ordenados por \"Orden de listado\"."
+msgstr "Appears in step 1 of the continuous flow — only your own tours marked here, ordered by \"Listing order\"."
+
+msgid "Aplicar"
+msgstr "Apply"
+
+msgid "Atrás"
+msgstr "Back"
+
+msgid "Automático (idioma del sitio)"
+msgstr "Automatic (site language)"
+
+msgid "Bebé (0–3) — 0 = gratis"
+msgstr "Baby (0–3) — 0 = free"
+
+msgid "Bebés"
+msgstr "Babies"
+
+msgid "Botón Reservar Tour"
+msgstr "Book Tour Button"
+
+msgid "Buscar habitaciones"
+msgstr "Search rooms"
+
+msgid "Buscar tours"
+msgstr "Search tours"
+
+msgid "Calendario"
+msgstr "Calendar"
+
+msgid "Cambiar imagen"
+msgstr "Change image"
+
+msgid "Cancelaciones por clima o mínimo de pasajeros: reembolso completo."
+msgstr "Cancellations due to weather or minimum passengers: full refund."
+
+msgid "Cancelación solicitada"
+msgstr "Cancellation requested"
+
+msgid "Cancelada"
+msgstr "Cancelled"
+
+msgid "Cancelada (clima)"
+msgstr "Cancelled (weather)"
+
+msgid "Cancelada (cupo)"
+msgstr "Cancelled (min. passengers)"
+
+msgid "Capacidad máxima"
+msgstr "Maximum capacity"
+
+msgid "Cargando…"
+msgstr "Loading…"
+
+msgid "Categoría"
+msgstr "Category"
+
+msgid "Categorías de tour"
+msgstr "Tour categories"
+
+msgid "Check-in"
+msgstr "Check-in"
+
+msgid "Check-out"
+msgstr "Check-out"
+
+msgid "Clave de licencia"
+msgstr "License key"
+
+msgid "Clic para copiar — es el room_id que va en [flow_discovery mode=\"room\" room_id=\"…\"]"
+msgstr "Click to copy — this is the room_id used in [flow_discovery mode=\"room\" room_id=\"…\"]"
+
+msgid "Clic para copiar — es el tour_id que va en los shortcodes ([flow_booking tour_id=\"…\"], etc.)"
+msgstr "Click to copy — this is the tour_id used in shortcodes ([flow_booking tour_id=\"…\"], etc.)"
+
+msgid "Cliente"
+msgstr "Customer"
+
+msgid "Cobrar solo un % como depósito"
+msgstr "Charge only a % as a deposit"
+
+msgid "Color de acento (precio y CTA)"
+msgstr "Accent color (price and CTA)"
+
+msgid "Color de fondo"
+msgstr "Background color"
+
+msgid "Color de texto"
+msgstr "Text color"
+
+msgid "Color del título"
+msgstr "Title color"
+
+msgid "Color principal"
+msgstr "Primary color"
+
+msgid "Colores y tipografía"
+msgstr "Colors and typography"
+
+msgid "Compartir por WhatsApp"
+msgstr "Share on WhatsApp"
+
+msgid "Completada"
+msgstr "Completed"
+
+msgid "Configuración"
+msgstr "Settings"
+
+msgid "Configuración de Red"
+msgstr "Network Settings"
+
+msgid "Configuración de red"
+msgstr "Network settings"
+
+msgid "Configuración de red guardada."
+msgstr "Network settings saved."
+
+msgid "Confirmada"
+msgstr "Confirmed"
+
+msgid "Confirmar y pagar"
+msgstr "Confirm and pay"
+
+msgid "Consulta tu reserva"
+msgstr "Check your booking"
+
+msgid "Contacto"
+msgstr "Contact"
+
+msgid "Contenido"
+msgstr "Content"
+
+msgid "Continuar"
+msgstr "Continue"
+
+msgid "Correo electrónico"
+msgstr "Email address"
+
+msgid "Costo del proveedor por persona (%s)"
+msgstr "Provider cost per person (%s)"
+
+msgid "Cuadrada"
+msgstr "Square"
+
+msgid "Cupones"
+msgstr "Coupons"
+
+msgid "Cupón aplicado"
+msgstr "Coupon applied"
+
+msgid "Código de cupón"
+msgstr "Coupon code"
+
+msgid "DB Ver."
+msgstr "DB Ver."
+
+msgid "Dashboard operativo"
+msgstr "Operational dashboard"
+
+msgid "Define qué días opera este tour. Las <strong>excepciones</strong> sobreescriben la regla base según su prioridad."
+msgstr "Sets which days this tour operates. <strong>Exceptions</strong> override the base rule according to their priority."
+
+msgid "Demasiados intentos. Intenta de nuevo en unos minutos."
+msgstr "Too many attempts. Try again in a few minutes."
+
+msgid "Descargar voucher PDF"
+msgstr "Download PDF voucher"
+
+msgid "Descripción"
+msgstr "Description"
+
+msgid "Descripción (ES) — opcional"
+msgstr "Description (ES) — optional"
+
+msgid "Description (EN) — optional"
+msgstr "Description (EN) — optional"
+
+msgid "Detalle del tour"
+msgstr "Tour details"
+
+msgid "Determina qué campos de precio de abajo aplican."
+msgstr "Determines which price fields below apply."
+
+msgid "Diciembre"
+msgstr "December"
+
+msgid "Disponible"
+msgstr "Available"
+
+msgid "Dominio"
+msgstr "Domain"
+
+msgid "Duración"
+msgstr "Duration"
+
+msgid "Duración (minutos)"
+msgstr "Duration (minutes)"
+
+msgid "Días operativos por defecto"
+msgstr "Default operating days"
+
+msgid "Edad mínima"
+msgstr "Minimum age"
+
+msgid "Edad mínima \"niño\" (vs. bebé)"
+msgstr "Minimum \"child\" age (vs. baby)"
+
+msgid "Editar emails"
+msgstr "Edit emails"
+
+msgid "Editar habitación"
+msgstr "Edit room"
+
+msgid "Editar tour"
+msgstr "Edit tour"
+
+msgid "Ej: 10"
+msgstr "E.g.: 10"
+
+msgid "Ej: 20"
+msgstr "E.g.: 20"
+
+msgid "Ej: Equipo de snorkel"
+msgstr "E.g.: Snorkel gear"
+
+msgid "Ej: Salida amanecer"
+msgstr "E.g.: Sunrise departure"
+
+msgid "El <strong>título y editor principal</strong> de WordPress son el nombre y descripción en <strong>Español</strong>.<br>Aquí completa los campos adicionales bilingües."
+msgstr "WordPress's <strong>title and main editor</strong> are the name and description in <strong>Spanish</strong>.<br>Here you fill in the additional bilingual fields."
+
+msgid "El cliente paga solo este % online al reservar (flujo Explorar/combinado) — el resto lo cobrás después, en efectivo el día de la experiencia o mandando un link de pago desde la reserva. No aplica a habitaciones, solo a este tour."
+msgstr "The customer pays only this % online when booking (Explore/combined flow) — you charge the rest later, in cash on the day of the experience or by sending a payment link from the booking. Doesn't apply to rooms, only to this tour."
+
+msgid "El cliente sigue viendo el calendario normal y elige fecha/horario como siempre, pero <strong>ninguna reserva se cobra al instante</strong> — queda como solicitud (en Reservas, filtro \"📅 Fecha solicitada\") hasta que la aprobás manualmente. Al aprobar se manda el link de pago (mismo mecanismo que \"solicitar fecha\" en tours de fecha fija). Pensado para tours que necesitan que confirmes disponibilidad real antes de cobrar."
+msgstr "The customer still sees the normal calendar and picks a date/schedule as usual, but <strong>no booking is charged instantly</strong> — it stays as a request (in Bookings, filter \"📅 Date requested\") until you approve it manually. Approving it sends the payment link (same mechanism as \"request a date\" for fixed-date tours). Meant for tours where you need to confirm real availability before charging."
+
+msgid "El tour solo se puede reservar ese día exacto — las reglas de Disponibilidad se ignoran mientras esto esté cargado."
+msgstr "The tour can only be booked on that exact day — Availability rules are ignored while this is set."
+
+msgid "Elige tu fecha"
+msgstr "Choose your date"
+
+msgid "Email con el que reservaste"
+msgstr "Email you booked with"
+
+msgid "En modo SaaS gestionado usar \"saas-managed\". Para distribución futura: clave EDD/LemonSqueezy."
+msgstr "In managed SaaS mode use \"saas-managed\". For future distribution: EDD/LemonSqueezy key."
+
+msgid "En modo SaaS gestionado, el plan aplica a toda la red. En el futuro se podrá asignar por site."
+msgstr "In managed SaaS mode, the plan applies to the whole network. In the future it will be assignable per site."
+
+msgid "Enero"
+msgstr "January"
+
+msgid "English"
+msgstr "English"
+
+msgid "Entre 1 y 99. Ej: 20 = el cliente paga 20% ahora, 80% después."
+msgstr "Between 1 and 99. E.g.: 20 = the customer pays 20% now, 80% later."
+
+msgid "Error al procesar el pago. Por favor intenta de nuevo."
+msgstr "Error processing the payment. Please try again."
+
+msgid "Escanea para verificar"
+msgstr "Scan to verify"
+
+msgid "Ese email no coincide con esta reserva."
+msgstr "That email doesn't match this booking."
+
+msgid "Español"
+msgstr "Spanish"
+
+msgid "Español, English"
+msgstr "Spanish, English"
+
+msgid "Esta reserva ya fue procesada."
+msgstr "This booking has already been processed."
+
+msgid "Estado"
+msgstr "Status"
+
+msgid "Este campo es obligatorio"
+msgstr "This field is required"
+
+msgid "Este link ya no es válido — puede que ya se haya usado o que haya vencido."
+msgstr "This link is no longer valid — it may have already been used or expired."
+
+msgid "Este tour no combina con otros — reservar directo"
+msgstr "This tour doesn't combine with others — book directly"
+
+msgid "Este tour no tiene precio fijo — el cliente arma su pedido y yo cotizo"
+msgstr "This tour has no fixed price — the customer builds their request and I quote it"
+
+msgid "Estilo de la tarjeta"
+msgstr "Card style"
+
+msgid "Estilo del botón"
+msgstr "Button style"
+
+msgid "Extra general"
+msgstr "Flat extra"
+
+msgid "Extras"
+msgstr "Extras"
+
+msgid "Extras opcionales que el cliente puede sumar al reservar (alquiler de equipo, cena, etc.). <strong>Por unidad</strong>: el cliente elige cuántos quiere (tope = personas de la reserva). <strong>Extra general</strong>: precio fijo, se agrega o no, sin cantidad."
+msgstr "Optional extras the customer can add when booking (equipment rental, dinner, etc.). <strong>Per unit</strong>: the customer chooses how many they want (capped at the booking's people count). <strong>Flat extra</strong>: fixed price, added or not, no quantity."
+
+msgid "Febrero"
+msgstr "February"
+
+msgid "Fecha"
+msgstr "Date"
+
+msgid "Fecha del tour"
+msgstr "Tour date"
+
+msgid "Fecha del tour/retiro"
+msgstr "Tour/departure date"
+
+msgid "Fecha fija"
+msgstr "Fixed date"
+
+msgid "Fecha pasada"
+msgstr "Past date"
+
+msgid "Fuente del tour"
+msgstr "Tour source"
+
+msgid "Galería del tour"
+msgstr "Tour gallery"
+
+msgid "Gratis"
+msgstr "Free"
+
+msgid "Guardar configuración de red"
+msgstr "Save network settings"
+
+msgid "HOY"
+msgstr "TODAY"
+
+msgid "Habitaciones"
+msgstr "Rooms"
+
+msgid "Habitación"
+msgstr "Room"
+
+msgid "He leído y acepto la política de cancelación"
+msgstr "I've read and accept the cancellation policy"
+
+msgid "Highlights (EN) — one per line"
+msgstr "Highlights (EN) — one per line"
+
+msgid "Highlights (ES) — una por línea, 4-5 recomendado"
+msgstr "Highlights (ES) — one per line, 4-5 recommended"
+
+msgid "Highlights — una por línea, 4-5 recomendado"
+msgstr "Highlights — one per line, 4-5 recommended"
+
+msgid "Hola <strong>%s</strong>,<br>Actualizamos las fechas de tu estadía. Estos son los detalles vigentes de tu reserva:"
+msgstr "Hi <strong>%s</strong>,<br>We've updated your stay dates. Here are the current details of your booking:"
+
+msgid "Hola <strong>%s</strong>,<br>Todo está listo para tu estadía. Aquí están los detalles de tu reserva:"
+msgstr "Hi <strong>%s</strong>,<br>Everything is ready for your stay. Here are your booking details:"
+
+msgid "Hora de salida"
+msgstr "Departure time"
+
+msgid "Horarios"
+msgstr "Schedules"
+
+msgid "Hoy"
+msgstr "Today"
+
+msgid "Huéspedes"
+msgstr "Guests"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "Idioma"
+msgstr "Language"
+
+msgid "Idioma del widget"
+msgstr "Widget language"
+
+msgid "Idioma para tu email de confirmación"
+msgstr "Language for your confirmation email"
+
+msgid "Idioma preferido"
+msgstr "Preferred language"
+
+msgid "Idiomas"
+msgstr "Languages"
+
+msgid "Idiomas disponibles"
+msgstr "Languages available"
+
+msgid "Imagen de la parada"
+msgstr "Stop image"
+
+msgid "Imprimir / Guardar PDF"
+msgstr "Print / Save PDF"
+
+msgid "Includes (EN) — one per line"
+msgstr "Includes (EN) — one per line"
+
+msgid "Incluir"
+msgstr "Add"
+
+msgid "Incluye"
+msgstr "Includes"
+
+msgid "Incluye (ES) — una por línea"
+msgstr "Includes (ES) — one per line"
+
+msgid "Incluye — una por línea"
+msgstr "Includes — one per line"
+
+msgid "Ingresa tu referencia de reserva y el email con el que reservaste."
+msgstr "Enter your booking reference and the email you booked with."
+
+msgid "Ingresa un correo válido"
+msgstr "Enter a valid email"
+
+msgid "Ingresos este mes"
+msgstr "Revenue this month"
+
+msgid "Itinerario (ES) — opcional"
+msgstr "Itinerary (ES) — optional"
+
+msgid "Itinerario — opcional"
+msgstr "Itinerary — optional"
+
+msgid "Itinerary (EN) — optional"
+msgstr "Itinerary (EN) — optional"
+
+msgid "Julio"
+msgstr "July"
+
+msgid "Junio"
+msgstr "June"
+
+msgid "LLENO"
+msgstr "FULL"
+
+msgid "La <strong>edad mínima</strong> de arriba ya se muestra en la ficha del tour y en las tarjetas del listado. Acá además controlás si el widget de reserva deja elegir niños/bebés — por ejemplo, para un tour <strong>solo para adultos</strong>, destildá ambos y esos contadores directamente desaparecen del paso de personas."
+msgstr "The <strong>minimum age</strong> above already shows on the tour page and listing cards. Here you also control whether the booking widget lets people choose children/babies — for example, for an <strong>adults-only</strong> tour, uncheck both and those counters simply disappear from the people step."
+
+msgid "La <strong>imagen destacada</strong> (panel derecho) es la foto principal del tour.<br>Aquí agrega las fotos de la galería."
+msgstr "The <strong>featured image</strong> (right panel) is the tour's main photo.<br>Here you add the gallery photos."
+
+msgid "La fecha ya definida a la que la gente muestra interés — no hay calendario de disponibilidad mientras el tour está en borrador"
+msgstr "The date already set that people are showing interest in — there's no availability calendar while the tour is in draft"
+
+msgid "La reserva fue rechazada y se notificó al cliente. Gracias por responder."
+msgstr "The booking was rejected and the customer was notified. Thanks for responding."
+
+msgid "Las reglas de excepción se gestionan desde <strong>%s</strong>"
+msgstr "Exception rules are managed from <strong>%s</strong>"
+
+msgid "Latitud"
+msgstr "Latitude"
+
+msgid "Link a página del tour"
+msgstr "Link to tour page"
+
+msgid "Link inválido."
+msgstr "Invalid link."
+
+msgid "Lista de interés"
+msgstr "Waitlist"
+
+msgid "Lista para pagar"
+msgstr "Ready to pay"
+
+msgid "Lo que TourFlow le paga al proveedor — separado del precio de venta de arriba."
+msgstr "What TourFlow pays the provider — separate from the sale price above."
+
+msgid "Longitud"
+msgstr "Longitude"
+
+msgid "MAÑANA"
+msgstr "TOMORROW"
+
+msgid "Marcar todas como leídas"
+msgstr "Mark all as read"
+
+msgid "Margen: %s"
+msgstr "Margin: %s"
+
+msgid "Marzo"
+msgstr "March"
+
+msgid "Mayo"
+msgstr "May"
+
+msgid "Mañana"
+msgstr "Tomorrow"
+
+msgid "Meeting point (EN)"
+msgstr "Meeting point (EN)"
+
+msgid "Menos de 3 días: %s"
+msgstr "Less than 3 days: %s"
+
+msgid "Menos de 3 días: sin reembolso"
+msgstr "Less than 3 days: no refund"
+
+msgid "Mientras este tour esté en <strong>borrador</strong>, se puede mostrar en la sección \"Próximamente\" del sitio para que la gente se anote — completando fecha, personas y datos como una reserva normal, pero sin pagar todavía. Al publicar el tour (o usar \"TourFlow → Lista de interés\"), cada anotado recibe un email con el link para pagar."
+msgstr "While this tour is in <strong>draft</strong>, it can show in the site's \"Coming soon\" section so people can sign up — filling in date, people, and details like a normal booking, but without paying yet. When you publish the tour (or use \"TourFlow → Waitlist\"), everyone signed up gets an email with the payment link."
+
+msgid "Modal / Popup"
+msgstr "Modal / Popup"
+
+msgid "Modelo de precio"
+msgstr "Pricing model"
+
+msgid "Modo campo"
+msgstr "Field mode"
+
+msgid "Modo: %s · Plan: %s · Clave: %s"
+msgstr "Mode: %s · Plan: %s · Key: %s"
+
+msgid "Mostrar como"
+msgstr "Display as"
+
+msgid "Mostrar duración"
+msgstr "Show duration"
+
+msgid "Mostrar edad mín."
+msgstr "Show min. age"
+
+msgid "Mostrar precio"
+msgstr "Show price"
+
+msgid "Motivo (opcional) — se le mostrará al cliente"
+msgstr "Reason (optional) — will be shown to the customer"
+
+msgid "Máximo {n} personas"
+msgstr "Maximum {n} people"
+
+msgid "Mín. personas por reserva"
+msgstr "Min. people per booking"
+
+msgid "Name (EN)"
+msgstr "Name (EN)"
+
+msgid "Necesita update"
+msgstr "Needs update"
+
+msgid "Ninguna reserva individual puede tener menos personas que este número (ej. un tour que solo tiene sentido operar en pareja o más). También se usa para avisarte si una salida no llega a este total sumando todas sus reservas confirmadas."
+msgstr "No individual booking can have fewer people than this number (e.g. a tour that only makes sense for two or more). Also used to warn you if a departure doesn't reach this total by adding up all its confirmed bookings."
+
+msgid "Niño (4–12)"
+msgstr "Child (4–12)"
+
+msgid "Niños"
+msgstr "Children"
+
+msgid "No aparece como \"otro tour sugerido\" en el paso de extras de otra reserva."
+msgstr "Doesn't appear as an \"other suggested tour\" in the extras step of another booking."
+
+msgid "No aparece en [flow_tour_list], ni en destacados (Flujo A) ni en el catálogo completo (Flujo B) — gana sobre \"Destacado\" si los dos están tildados."
+msgstr "Doesn't appear in [flow_tour_list], nor in featured (Flow A) nor in the full catalog (Flow B) — wins over \"Featured\" if both are checked."
+
+msgid "No disponible"
+msgstr "Not available"
+
+msgid "No hay cupos disponibles para esta fecha"
+msgstr "No spots available for this date"
+
+msgid "No incluye"
+msgstr "Not included"
+
+msgid "No incluye (ES)"
+msgstr "Not included (ES)"
+
+msgid "No incluye — una por línea"
+msgstr "Not included — one per line"
+
+msgid "No se encontraron habitaciones"
+msgstr "No rooms found"
+
+msgid "No se encontraron tours"
+msgstr "No tours found"
+
+msgid "No se pudo procesar la reserva. Contactá a TourFlow."
+msgstr "Couldn't process the booking. Please contact TourFlow."
+
+msgid "No se pudo validar la solicitud — volvé a intentarlo desde el link del email."
+msgstr "Couldn't validate the request — try again from the link in the email."
+
+msgid "No tienes permisos para acceder a esta página."
+msgstr "You don't have permission to access this page."
+
+msgid "No tienes permisos suficientes para acceder a esta página."
+msgstr "You do not have sufficient permissions to access this page."
+
+msgid "Nombre"
+msgstr "Name"
+
+msgid "Nombre (ES)"
+msgstr "Name (ES)"
+
+msgid "Nombre completo"
+msgstr "Full name"
+
+msgid "Nombre de la habitación (ES)"
+msgstr "Room name (ES)"
+
+msgid "Nombre de marca"
+msgstr "Brand name"
+
+msgid "Nombre del pasajero"
+msgstr "Passenger name"
+
+msgid "Nombre del tour"
+msgstr "Tour name"
+
+msgid "Nombre del tour (ES)"
+msgstr "Tour name (ES)"
+
+msgid "Nombre en inglés"
+msgstr "Name in English"
+
+msgid "Nombre en inglés (EN)"
+msgstr "Name in English (EN)"
+
+msgid "Nombre que aparece en el menú de administración de cada site. Default: TourFlow."
+msgstr "Name shown in the admin menu of each site. Default: TourFlow."
+
+msgid "Not included (EN)"
+msgstr "Not included (EN)"
+
+msgid "Notas"
+msgstr "Notes"
+
+msgid "Noviembre"
+msgstr "November"
+
+msgid "Nueva habitación"
+msgstr "New room"
+
+msgid "Nueva reserva"
+msgstr "New booking"
+
+msgid "Nuevo tour"
+msgstr "New tour"
+
+msgid "Número de reserva"
+msgstr "Booking number"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Octubre"
+msgstr "October"
+
+msgid "Ocultar de listas/grillas"
+msgstr "Hide from lists/grids"
+
+msgid "Ocultar de sugerencias"
+msgstr "Hide from suggestions"
+
+msgid "Ocurrió un error. Por favor intenta de nuevo."
+msgstr "An error occurred. Please try again."
+
+msgid "Opcional — 2 a 4 datos que quieras resaltar arriba de la descripción (ej. idioma, cantidad de personas, edad mínima, nivel de dificultad). El ícono es un emoji, se pega directo (🗣️ 👥 🎂 ⛰️ ⏱️...)."
+msgstr "Optional — 2 to 4 facts you want to highlight above the description (e.g. language, group size, minimum age, difficulty level). The icon is an emoji, paste it directly (🗣️ 👥 🎂 ⛰️ ⏱️...)."
+
+msgid "Opcional — dejá esta lista vacía si el tour <strong>no</strong> tiene un horario de salida fijo (se reserva sin horario asignado). Si cargás uno o más, el cliente elige entre ellos al reservar."
+msgstr "Optional — leave this list empty if the tour has <strong>no</strong> fixed departure time (it's booked without an assigned schedule). If you add one or more, the customer picks between them when booking."
+
+msgid "Opcional — si no cargas paradas, la sección de itinerario no se muestra en la página del tour. Marcá una parada como \"punto de partida\" para que se resalte distinto en el timeline (como en GetYourGuide/Viator)."
+msgstr "Optional — if you don't add stops, the itinerary section doesn't show on the tour page. Mark one stop as \"starting point\" so it's highlighted differently in the timeline (like on GetYourGuide/Viator)."
+
+msgid "Opcional — si se deja vacío, el sitio en inglés muestra el nombre de arriba tal cual."
+msgstr "Optional — if left empty, the English site shows the name above as-is."
+
+msgid "Opcional — si se deja vacío, el sitio en inglés muestra el nombre en español tal cual."
+msgstr "Optional — if left empty, the English site shows the Spanish name as-is."
+
+msgid "Operadora"
+msgstr "Operator"
+
+msgid "Orden de listado"
+msgstr "Listing order"
+
+msgid "Origen"
+msgstr "Source"
+
+msgid "Pago"
+msgstr "Payment"
+
+msgid "Pago seguro con Stripe"
+msgstr "Secure payment with Stripe"
+
+msgid "Panel"
+msgstr "Panel"
+
+msgid "Para guardar como PDF, haz clic en"
+msgstr "To save as PDF, click"
+
+msgid "Para obtener coordenadas: abre Google Maps → clic derecho en la ubicación → copiar lat,lng"
+msgstr "To get coordinates: open Google Maps → right-click the location → copy lat,lng"
+
+msgid "Para un tour que <strong>no tiene precio ni horario fijo</strong> porque depende de lo que pida cada cliente (ej. un itinerario a medida). Con esto activo, el cliente no ve calendario ni precio — solo indica cuántas personas son y describe qué quiere armar. Vos cargás el precio real al aprobar la solicitud, antes de mandar el link de pago."
+msgstr "For a tour that <strong>has no fixed price or schedule</strong> because it depends on what each customer asks for (e.g. a custom itinerary). With this on, the customer sees no calendar or price — they just state how many people and describe what they want. You set the real price when approving the request, before sending the payment link."
+
+msgid "Para un tour que se realiza <strong>una sola vez</strong> en una fecha puntual (ej. un evento especial). Con esto cargado, el widget de reserva <strong>no muestra calendario</strong> — va directo a esa fecha (y al horario, si hay uno solo configurado abajo). Dejalo vacío para el comportamiento normal (calendario con disponibilidad por reglas)."
+msgstr "For a tour that runs <strong>only once</strong> on a specific date (e.g. a special event). With this set, the booking widget <strong>shows no calendar</strong> — it goes straight to that date (and to the schedule, if only one is set up below). Leave it empty for normal behavior (calendar with rule-based availability)."
+
+msgid "Para un tour que solo tiene sentido reservar por su cuenta (ej. un traslado) — se sigue reservando normal desde su propia ficha, solo cambia dónde aparece listado."
+msgstr "For a tour that only makes sense to book on its own (e.g. a transfer) — it still books normally from its own page, only where it's listed changes."
+
+msgid "Pasajero"
+msgstr "Passenger"
+
+msgid "Pasajeros"
+msgstr "Passengers"
+
+msgid "Pendiente de pago"
+msgstr "Pending payment"
+
+msgid "Pendientes de pago"
+msgstr "Pending payment"
+
+msgid "Personas"
+msgstr "People"
+
+msgid "Personas del grupo"
+msgstr "People in the group"
+
+msgid "Plan de la red"
+msgstr "Network plan"
+
+msgid "Política de cancelación"
+msgstr "Cancellation policy"
+
+msgid "Por clima o mínimo de pasajeros: reembolso completo."
+msgstr "Due to weather or minimum passengers: full refund."
+
+msgid "Por debajo de esta edad cuenta como bebé, no como niño"
+msgstr "Below this age counts as a baby, not a child"
+
+msgid "Por defecto, reservar este tour desde su ficha entra al flujo combinado (sugiere habitaciones/extras antes de pagar — \"upsell siempre\"). Activá esto para tours que no tiene sentido combinar con nada más (ej. un traslado puntual): la ficha usa el widget clásico directo, con el calendario visible de entrada, sin pasos de upsell."
+msgstr "By default, booking this tour from its page enters the combined flow (suggests rooms/extras before paying — \"always upsell\"). Turn this on for tours that don't make sense to combine with anything else (e.g. a one-off transfer): the page uses the classic widget directly, with the calendar visible right away, no upsell steps."
+
+msgid "Por persona (adulto / niño / bebé)"
+msgstr "Per person (adult / child / baby)"
+
+msgid "Por unidad"
+msgstr "Per unit"
+
+msgid "Porcentaje del depósito"
+msgstr "Deposit percentage"
+
+msgid "Precio fijo por grupo (privado)"
+msgstr "Fixed group price (private)"
+
+msgid "Precios por grupo (%s)"
+msgstr "Prices per group (%s)"
+
+msgid "Precios por persona (%s)"
+msgstr "Prices per person (%s)"
+
+msgid "Procesando…"
+msgstr "Processing…"
+
+msgid "Proporción de la imagen"
+msgstr "Image ratio"
+
+msgid "Proveedor"
+msgstr "Provider"
+
+msgid "Punto de encuentro"
+msgstr "Meeting point"
+
+msgid "Punto de encuentro (ES)"
+msgstr "Meeting point (ES)"
+
+msgid "Quitar"
+msgstr "Remove"
+
+msgid "Qué esperar"
+msgstr "What to expect"
+
+msgid "Qué esperar (ES)"
+msgstr "What to expect (ES)"
+
+msgid "RESERVA CONFIRMADA"
+msgstr "BOOKING CONFIRMED"
+
+msgid "Radio de borde"
+msgstr "Border radius"
+
+msgid "Radio de esquinas"
+msgstr "Corner radius"
+
+msgid "Recién cuando el proveedor confirme — el cliente paga después, por link"
+msgstr "Only once the provider confirms — the customer pays later, via link"
+
+msgid "Recuerda llevar"
+msgstr "Remember to bring"
+
+msgid "Referencia"
+msgstr "Reference"
+
+msgid "Referencia (ej. %s)"
+msgstr "Reference (e.g. %s)"
+
+msgid "Reportes"
+msgstr "Reports"
+
+msgid "Reprogramada"
+msgstr "Rescheduled"
+
+msgid "Requiere tildar primero \"Todas las reservas de este tour requieren mi aprobación\", arriba."
+msgstr "Requires checking \"All bookings for this tour require my approval\" above first."
+
+msgid "Reserva"
+msgstr "Booking"
+
+msgid "Reserva no encontrada"
+msgstr "Booking not found"
+
+msgid "Reserva no encontrada."
+msgstr "Booking not found."
+
+msgid "Reserva verificada"
+msgstr "Booking verified"
+
+msgid "Reservado el"
+msgstr "Booked on"
+
+msgid "Reservar ahora"
+msgstr "Book now"
+
+msgid "Reservas"
+msgstr "Bookings"
+
+msgid "Reservas hoy"
+msgstr "Bookings today"
+
+msgid "Reservas mañana"
+msgstr "Bookings tomorrow"
+
+msgid "Resumen"
+msgstr "Summary"
+
+msgid "Saldo pendiente"
+msgstr "Balance due"
+
+msgid "Salida"
+msgstr "Departure"
+
+msgid "Salida amanecer"
+msgstr "Sunrise departure"
+
+msgid "Se excede el máximo de {n} personas"
+msgstr "Exceeds the maximum of {n} people"
+
+msgid "Se gestionan en TourFlow → 🤝 Proveedores"
+msgstr "Managed in TourFlow → 🤝 Providers"
+
+msgid "Se guardan al publicar/actualizar el tour — no hace falta un botón aparte."
+msgstr "Saved when you publish/update the tour — no separate button needed."
+
+msgid "Se muestran como bullets cortos arriba de la descripción larga en la ficha del tour — pensado como resumen rápido, no reemplaza \"Qué esperar\"."
+msgstr "Shown as short bullets above the long description on the tour page — meant as a quick summary, it doesn't replace \"What to expect\"."
+
+msgid "Selecciona horario"
+msgstr "Select a time"
+
+msgid "Selecciona una fecha en el calendario"
+msgstr "Select a date on the calendar"
+
+msgid "Seleccionar tour"
+msgstr "Select tour"
+
+msgid "Separados por coma"
+msgstr "Comma-separated"
+
+msgid "Septiembre"
+msgstr "September"
+
+msgid "Si este tour lo opera un <strong>proveedor externo</strong> (TourFlow lo revende con margen propio), asignalo acá. Las reservas de este tour van a quedar pendientes de que el proveedor confirme disponibilidad por email antes de darse por confirmadas. Dejalo en \"— Tour propio —\" para el flujo normal."
+msgstr "If this tour is operated by an <strong>external provider</strong> (TourFlow resells it with its own margin), assign it here. Bookings for this tour will stay pending until the provider confirms availability by email before being considered confirmed. Leave it on \"— Own tour —\" for the normal flow."
+
+msgid "Siguiente"
+msgstr "Next"
+
+msgid "Siguiente →"
+msgstr "Next →"
+
+msgid "Sin activar"
+msgstr "Not activated"
+
+msgid "Sin cupos"
+msgstr "Sold out"
+
+msgid "Sin permisos."
+msgstr "No permission."
+
+msgid "Sin reservas confirmadas."
+msgstr "No confirmed bookings."
+
+msgid "Sin salidas disponibles para esta fecha."
+msgstr "No departures available for this date."
+
+msgid "Sin tours programados para este día."
+msgstr "No tours scheduled for this day."
+
+msgid "Sites"
+msgstr "Sites"
+
+msgid "Solicitud no confirmada"
+msgstr "Request not confirmed"
+
+msgid "Solicitud recibida"
+msgstr "Request received"
+
+msgid "Solicitudes de cancelación (%d)"
+msgstr "Cancellation requests (%d)"
+
+msgid "Solicitudes especiales (opcional)"
+msgstr "Special requests (optional)"
+
+msgid "Solo lectura — editalo en ⚙ Configuración del tour, arriba."
+msgstr "Read-only — edit it from ⚙ Tour settings, above."
+
+msgid "Solo lectura — editá el nombre en inglés desde ⚙ Configuración del tour, arriba."
+msgstr "Read-only — edit the English name from ⚙ Tour settings, above."
+
+msgid "Stop title (EN)"
+msgstr "Stop title (EN)"
+
+msgid "Subtotal"
+msgstr "Subtotal"
+
+msgid "Sí, confirmar disponibilidad"
+msgstr "Yes, confirm availability"
+
+msgid "Sí, rechazar esta reserva"
+msgstr "Yes, reject this booking"
+
+msgid "Tamaño de fuente"
+msgstr "Font size"
+
+msgid "Tarjeta de Tour"
+msgstr "Tour Card"
+
+msgid "Tarjeta, Apple Pay, Google Pay"
+msgstr "Card, Apple Pay, Google Pay"
+
+msgid "Te enviamos todos los detalles a tu correo."
+msgstr "We sent all the details to your email."
+
+msgid "Texto del CTA"
+msgstr "CTA text"
+
+msgid "Texto del botón"
+msgstr "Button text"
+
+msgid "Tipografía"
+msgstr "Typography"
+
+msgid "Todas las reservas de este tour requieren mi aprobación"
+msgstr "All bookings for this tour require my approval"
+
+msgid "Total"
+msgstr "Total"
+
+msgid "Total pagado"
+msgstr "Total paid"
+
+msgid "Total personas"
+msgstr "Total people"
+
+msgid "Tour"
+msgstr "Tour"
+
+msgid "Tour Data"
+msgstr "Tour Data"
+
+msgid "Tour Manager"
+msgstr "Tour Manager"
+
+msgid "Tour actual (Loop Builder)"
+msgstr "Current tour (Loop Builder)"
+
+msgid "Tour de proveedor externo (marketplace)"
+msgstr "External provider tour (marketplace)"
+
+msgid "Tour específico"
+msgstr "Specific tour"
+
+msgid "Tour name (EN)"
+msgstr "Tour name (EN)"
+
+msgid "Tour: Descripción"
+msgstr "Tour: Description"
+
+msgid "Tour: Duración"
+msgstr "Tour: Duration"
+
+msgid "Tour: Edad mínima"
+msgstr "Tour: Minimum age"
+
+msgid "Tour: Incluye"
+msgstr "Tour: Includes"
+
+msgid "Tour: Itinerario"
+msgstr "Tour: Itinerary"
+
+msgid "Tour: No incluye"
+msgstr "Tour: Not included"
+
+msgid "Tour: Nombre (idioma actual)"
+msgstr "Tour: Name (current language)"
+
+msgid "Tour: Nombre EN"
+msgstr "Tour: Name EN"
+
+msgid "Tour: Precio desde"
+msgstr "Tour: Price from"
+
+msgid "Tour: Punto de encuentro"
+msgstr "Tour: Meeting point"
+
+msgid "Tour: Qué esperar"
+msgstr "Tour: What to expect"
+
+msgid "Tour: URL foto principal"
+msgstr "Tour: Main photo URL"
+
+msgid "TourFlow"
+msgstr "TourFlow"
+
+msgid "TourFlow v%s · DB schema v%s"
+msgstr "TourFlow v%s · DB schema v%s"
+
+msgid "TourFlow — Configuración de Red"
+msgstr "TourFlow — Network Settings"
+
+msgid "TourFlow — Widget de reserva"
+msgstr "TourFlow — Booking widget"
+
+msgid "Tours"
+msgstr "Tours"
+
+msgid "Tu nombre y apellido"
+msgstr "Your first and last name"
+
+msgid "Tu reserva fue reprogramada 🔄"
+msgstr "Your booking was rescheduled 🔄"
+
+msgid "Tus datos"
+msgstr "Your details"
+
+msgid "Tus requerimientos especiales:"
+msgstr "Your special requests:"
+
+msgid "Título de la parada (ES)"
+msgstr "Stop title (ES)"
+
+msgid "Umbral para avisar al admin"
+msgstr "Threshold to notify the admin"
+
+msgid "Variantes oscuro/claro se calculan solas — mismo criterio que Configuración → 🎨 Widget de reserva."
+msgstr "Dark/light variants are calculated automatically — same behavior as Settings → 🎨 Booking widget."
+
+msgid "Ver detalle →"
+msgstr "View detail →"
+
+msgid "Ver en Google Maps"
+msgstr "View on Google Maps"
+
+msgid "Ver en mapa"
+msgstr "View on map"
+
+msgid "Ver estado de mi reserva"
+msgstr "View my booking status"
+
+msgid "Ver habitación"
+msgstr "View room"
+
+msgid "Ver mi reserva"
+msgstr "View my booking"
+
+msgid "Ver reserva →"
+msgstr "View booking →"
+
+msgid "Ver reservas de ese tour →"
+msgstr "View that tour's bookings →"
+
+msgid "Ver reservas →"
+msgstr "View bookings →"
+
+msgid "Ver tour"
+msgstr "View tour"
+
+msgid "Versión del plugin instalada en este sitio"
+msgstr "Plugin version installed on this site"
+
+msgid "Vertical"
+msgstr "Vertical"
+
+msgid "Video (YouTube o Vimeo) — opcional"
+msgstr "Video (YouTube or Vimeo) — optional"
+
+msgid "What to expect (EN)"
+msgstr "What to expect (EN)"
+
+msgid "WhatsApp / Teléfono"
+msgstr "WhatsApp / Phone"
+
+msgid "Widget inline (en la misma página)"
+msgstr "Inline widget (same page)"
+
+msgid "adultos"
+msgstr "adults"
+
+msgid "años"
+msgstr "years"
+
+msgid "bebés"
+msgstr "babies"
+
+msgid "hoy"
+msgstr "today"
+
+msgid "mañana"
+msgstr "tomorrow"
+
+msgid "min"
+msgstr "min"
+
+msgid "niños"
+msgstr "children"
+
+msgid "por persona"
+msgstr "per person"
+
+msgid "reembolso completo"
+msgstr "full refund"
+
+msgid "reembolso del 50%"
+msgstr "50% refund"
+
+msgid "reservas en estado pending"
+msgstr "bookings in pending status"
+
+msgid "sin reembolso"
+msgstr "no refund"
+
+msgid "tu@correo.com"
+msgstr "you@email.com"
+
+msgid "vence en %dh"
+msgstr "expires in %dh"
+
+msgid "vencida (esperando cron)"
+msgstr "expired (waiting for cron)"
+
+msgid "y selecciona \"Guardar como PDF\""
+msgstr "and select \"Save as PDF\""
+
+msgid "{n} lugares disponibles"
+msgstr "{n} spots available"
+
+msgid "¡Listo! La reserva quedó confirmada. Gracias por responder."
+msgstr "Done! The booking is confirmed. Thanks for responding."
+
+msgid "¡Reservado!"
+msgstr "Booked!"
+
+msgid "¡Tu reserva está confirmada!"
+msgstr "Your booking is confirmed!"
+
+msgid "¡Tu reserva está confirmada! 🎉"
+msgstr "Your booking is confirmed! 🎉"
+
+msgid "¿Confirmar esta reserva?"
+msgstr "Confirm this booking?"
+
+msgid "¿Cuándo se cobra?"
+msgstr "When is it charged?"
+
+msgid "¿Dudas? Escríbenos cuando quieras."
+msgstr "Questions? Message us anytime."
+
+msgid "¿Ejecutar migraciones de DB en todos los sites?"
+msgstr "Run DB migrations on all sites?"
+
+msgid "¿Necesitas ayuda? Escríbenos por WhatsApp"
+msgstr "Need help? Message us on WhatsApp"
+
+msgid "¿Querés sumar algún servicio extra?"
+msgstr "Want to add any extra service?"
+
+msgid "¿Rechazar esta reserva?"
+msgstr "Reject this booking?"
+
+msgid "¿Tienes un cupón de descuento?"
+msgstr "Have a discount coupon?"
+
+msgid "— Comunicación y reportes —"
+msgstr "— Communication & reports —"
+
+msgid "— Configuración —"
+msgstr "— Settings —"
+
+msgid "— Contenido —"
+msgstr "— Content —"
+
+msgid "— Habitación propia —"
+msgstr "— Own room —"
+
+msgid "— Seleccionar —"
+msgstr "— Select —"
+
+msgid "— Tour propio —"
+msgstr "— Own tour —"
+
+msgid "— Ventas y captación —"
+msgstr "— Sales & lead capture —"
+
+msgid "≈ USD {amount} (referencia)"
+msgstr "≈ USD {amount} (reference)"
+
+msgid "▸ 3–6 días antes: reembolso del 50 %"
+msgstr "▸ 3–6 days before: 50% refund"
+
+msgid "⚙ Configuración de la habitación"
+msgstr "⚙ Room settings"
+
+msgid "⚙ Configuración del tour"
+msgstr "⚙ Tour settings"
+
+msgid "⚙️ Configuración"
+msgstr "⚙️ Settings"
+
+msgid "✅ Disp. habitaciones"
+msgstr "✅ Room availability"
+
+msgid "✅ Disponibilidad"
+msgstr "✅ Availability"
+
+msgid "✅ Tu reserva de habitación está confirmada — %s"
+msgstr "✅ Your room booking is confirmed — %s"
+
+msgid "✉️ Emails"
+msgstr "✉️ Emails"
+
+msgid "✓ 7+ días antes: reembolso completo"
+msgstr "✓ 7+ days before: full refund"
+
+msgid "✕ Menos de 3 días: sin reembolso"
+msgstr "✕ Less than 3 days: no refund"
+
+msgid "✨ Amenities"
+msgstr "✨ Amenities"
+
+msgid "✨ Datos destacados"
+msgstr "✨ Highlighted facts"
+
+msgid "⭐ Destacado (Flujo de descubrimiento)"
+msgstr "⭐ Featured (Discovery flow)"
+
+msgid "🌐 Otros idiomas"
+msgstr "🌐 Other languages"
+
+msgid "🎁 Extras globales"
+msgstr "🎁 Global extras"
+
+msgid "🎁 Servicios extra"
+msgstr "🎁 Extra services"
+
+msgid "🎨 Personalización"
+msgstr "🎨 Personalization"
+
+msgid "🎯 Reserva directa (Pro Max)"
+msgstr "🎯 Direct booking (Pro Max)"
+
+msgid "🏄 Tours"
+msgstr "🏄 Tours"
+
+msgid "🏠 Dashboard"
+msgstr "🏠 Dashboard"
+
+msgid "🏷️ Cupones"
+msgstr "🏷️ Coupons"
+
+msgid "👶 Restricciones de edad"
+msgstr "👶 Age restrictions"
+
+msgid "💰 Depósito parcial (Pro Max)"
+msgstr "💰 Partial deposit (Pro Max)"
+
+msgid "💰 Precios y horarios"
+msgstr "💰 Prices and schedules"
+
+msgid "💳 Log de pagos"
+msgstr "💳 Payment log"
+
+msgid "💸 Liquidación"
+msgstr "💸 Payouts"
+
+msgid "📅 Calendario"
+msgstr "📅 Calendar"
+
+msgid "📅 Disponibilidad"
+msgstr "📅 Availability"
+
+msgid "📊 Reportes"
+msgstr "📊 Reports"
+
+msgid "📋 Lista de interés (\"Próximamente\")"
+msgstr "📋 Waitlist (\"Coming soon\")"
+
+msgid "📌 Fecha fija (evento único, opcional)"
+msgstr "📌 Fixed date (one-time event, optional)"
+
+msgid "📍 Punto de encuentro"
+msgstr "📍 Meeting point"
+
+msgid "📍 ¿Es el punto de partida?"
+msgstr "📍 Is this the starting point?"
+
+msgid "📖 Reservas"
+msgstr "📖 Bookings"
+
+msgid "📝 Contenido bilingüe (EN)"
+msgstr "📝 Bilingual content (EN)"
+
+msgid "📱 Modo campo"
+msgstr "📱 Field mode"
+
+msgid "🔄 Tu reserva de habitación fue reprogramada — %s"
+msgstr "🔄 Your room booking was rescheduled — %s"
+
+msgid "🔔 Lista de interés"
+msgstr "🔔 Waitlist"
+
+msgid "🔗 Integraciones externas"
+msgstr "🔗 External integrations"
+
+msgid "🔗 Partners"
+msgstr "🔗 Partners"
+
+msgid "🖼 Galería de fotos"
+msgstr "🖼 Photo gallery"
+
+msgid "🗺 Itinerario (timeline)"
+msgstr "🗺 Itinerary (timeline)"
+
+msgid "🙈 Venta separada (opcional)"
+msgstr "🙈 Sold separately (optional)"
+
+msgid "🙋 Solo a pedido (sin cobro inmediato)"
+msgstr "🙋 On request only (no immediate charge)"
+
+msgid "🛏 Habitaciones"
+msgstr "🛏 Rooms"
+
+msgid "🤝 Proveedor externo (marketplace)"
+msgstr "🤝 External provider (marketplace)"
+
+msgid "🤝 Proveedores"
+msgstr "🤝 Providers"
+
+msgid "🧩 Armá tu tour — sin precio fijo (opcional)"
+msgstr "🧩 Build your own tour — no fixed price (optional)"
+
+msgctxt "abreviatura de domingo, 2 letras"
+msgid "Do"
+msgstr "Su"
+
+msgctxt "abreviatura de jueves, 2 letras"
+msgid "Ju"
+msgstr "Th"
+
+msgctxt "abreviatura de lunes, 2 letras"
+msgid "Lu"
+msgstr "Mo"
+
+msgctxt "abreviatura de martes, 2 letras"
+msgid "Ma"
+msgstr "Tu"
+
+msgctxt "abreviatura de miércoles, 2 letras"
+msgid "Mi"
+msgstr "We"
+
+msgctxt "abreviatura de sábado, 2 letras"
+msgid "Sá"
+msgstr "Sa"
+
+msgctxt "abreviatura de viernes, 2 letras"
+msgid "Vi"
+msgstr "Fr"
+
+msgctxt "entre hora de inicio y fin de un horario, ej. \"6:00 a 9:00\""
+msgid "a"
+msgstr "to"
+
+msgctxt "formato de fecha corto, día+mes"
+msgid "j \\d\\e F"
+msgstr "j F"
+
+msgctxt "formato de fecha largo con día de semana"
+msgid "l j \\d\\e F"
+msgstr "l j F"
+
+msgid "%d alerta pendiente"
+msgid_plural "%d alertas pendientes"
+msgstr[0] "%d pending alert"
+msgstr[1] "%d pending alerts"
+
+msgid "%d persona"
+msgid_plural "%d personas"
+msgstr[0] "%d person"
+msgstr[1] "%d people"
+
+msgid "%d requerimiento especial a coordinar (hoy/mañana)"
+msgid_plural "%d requerimientos especiales a coordinar (hoy/mañana)"
+msgstr[0] "%d special request to coordinate (today/tomorrow)"
+msgstr[1] "%d special requests to coordinate (today/tomorrow)"
+
+msgid "%d reserva esperando aprobación del proveedor"
+msgid_plural "%d reservas esperando aprobación del proveedor"
+msgstr[0] "%d booking waiting for provider approval"
+msgstr[1] "%d bookings waiting for provider approval"
+
+msgid "%d site necesita actualización de base de datos."
+msgid_plural "%d sites necesitan actualización de base de datos."
+msgstr[0] "%d site needs a database update."
+msgstr[1] "%d sites need a database update."

@@ -10,16 +10,41 @@ defined( 'ABSPATH' ) || exit;
  */
 class ReportsPage {
 
+    /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private function lang(): string {
+        return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
+    }
+
+    /** Traducción es/en para esta pantalla — ver lang(). */
+    private function tt( string $es, string $en ): string {
+        return $this->lang() === 'en' ? $en : $es;
+    }
+
     public function render(): void {
-        if ( ( $_GET['export'] ?? '' ) === 'csv' ) {
-            $this->export_csv();
+        // Defensa en profundidad — el menú ya gatea el acceso, pero esta
+        // pantalla exporta PII (nombre/email/teléfono) y no debe depender
+        // solo de eso.
+        if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
+            wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
         }
+
+        // Bug real reportado por el cliente (2026-08-24): el CSV se mostraba
+        // en pantalla en vez de descargarse — llamar a export_csv() ACÁ es
+        // tarde, WordPress ya mandó las cabeceras HTTP + el HTML del admin
+        // (menú, header) antes de invocar el callback de render() de esta
+        // página, así que header('Content-Type: text/csv...') fallaba en
+        // silencio y el navegador mostraba el texto como si fuera HTML.
+        // Corregido moviendo el disparo a AdminMenu::maybe_export_reports_csv()
+        // (hook admin_init, corre ANTES de cualquier HTML) — mismo patrón
+        // que ya usa maybe_stream_pdf() para el voucher. export_csv() pasa
+        // a public para que AdminMenu pueda llamarlo desde ahí.
 
         $from  = sanitize_text_field( $_GET['from']  ?? date('Y-m-01') );
         $until = sanitize_text_field( $_GET['until'] ?? date('Y-m-t')  );
 
         $summary = $this->get_summary( $from, $until );
         $by_tour = $this->get_by_tour( $from, $until );
+        $by_room = AMIR_EDITION === 'pro_max' ? $this->get_by_room( $from, $until ) : [];
         $by_source = $this->get_by_source( $from, $until );
         $by_month  = $this->get_by_month();
         ?>
@@ -44,54 +69,76 @@ class ReportsPage {
         </style>
 
         <h1 style="display:flex;align-items:center;justify-content:space-between;">
-          <span>📊 Reportes</span>
+          <span>📊 <?php echo esc_html( $this->tt( 'Reportes', 'Reports' ) ); ?></span>
           <a href="<?php echo esc_url(add_query_arg(['export'=>'csv','from'=>$from,'until'=>$until])); ?>"
-             class="button">⬇ Exportar CSV</a>
+             class="button">⬇ <?php echo esc_html( $this->tt( 'Exportar CSV', 'Export CSV' ) ); ?></a>
         </h1>
 
         <!-- Filtro de fechas -->
         <form method="get" style="display:flex;gap:10px;align-items:center;margin-bottom:24px;background:#f8fdfb;padding:14px 16px;border-radius:10px;border:1px solid #e1f5ee;">
           <input type="hidden" name="page" value="amir-reports" />
-          <label style="font-size:13px;font-weight:600;">Período:</label>
+          <label style="font-size:13px;font-weight:600;"><?php echo esc_html( $this->tt( 'Período:', 'Period:' ) ); ?></label>
           <input type="date" name="from"  value="<?php echo esc_attr($from); ?>"  style="border:1px solid #c3d9d0;border-radius:6px;padding:6px 10px;font-size:13px;" />
           <span style="color:#5a7068;">—</span>
           <input type="date" name="until" value="<?php echo esc_attr($until); ?>" style="border:1px solid #c3d9d0;border-radius:6px;padding:6px 10px;font-size:13px;" />
-          <button type="submit" class="button button-primary">Ver</button>
+          <button type="submit" class="button button-primary"><?php echo esc_html( $this->tt( 'Ver', 'View' ) ); ?></button>
           <?php foreach ([
-            ['Este mes',       date('Y-m-01'), date('Y-m-t')],
-            ['Mes anterior',   date('Y-m-01',strtotime('first day of last month')), date('Y-m-t',strtotime('last day of last month'))],
-            ['Últimos 3 meses',date('Y-m-01',strtotime('-2 months')), date('Y-m-t')],
-            ['Este año',       date('Y-01-01'), date('Y-12-31')],
+            [ $this->tt('Este mes','This month'), date('Y-m-01'), date('Y-m-t') ],
+            [ $this->tt('Mes anterior','Last month'), date('Y-m-01',strtotime('first day of last month')), date('Y-m-t',strtotime('last day of last month')) ],
+            [ $this->tt('Últimos 3 meses','Last 3 months'), date('Y-m-01',strtotime('-2 months')), date('Y-m-t') ],
+            [ $this->tt('Este año','This year'), date('Y-01-01'), date('Y-12-31') ],
           ] as [$label,$f,$u]) : ?>
             <a href="<?php echo esc_url(admin_url("admin.php?page=amir-reports&from={$f}&until={$u}")); ?>"
                style="font-size:12px;color:#1D9E75;text-decoration:none;padding:6px 10px;border-radius:6px;
                       background:<?php echo ($from===$f&&$until===$u)?'#e1f5ee':'transparent'; ?>;">
-              <?php echo $label; ?>
+              <?php echo esc_html( $label ); ?>
             </a>
           <?php endforeach; ?>
+        </form>
+
+        <!-- Manifiesto de pasajeros en PDF (pedido del cliente 2026-08-24) —
+             mismo período que arriba, opcionalmente filtrado a un solo tour.
+             El link dispara AdminMenu::maybe_export_manifest_pdf() (hook
+             admin_init, corre antes de cualquier HTML) — mismo criterio que
+             el CSV de arriba, para no repetir el bug de "se muestra en
+             pantalla en vez de descargar". -->
+        <form method="get" style="display:flex;gap:10px;align-items:center;margin-bottom:24px;background:#fff8e7;padding:14px 16px;border-radius:10px;border:1px solid #fde68a;">
+          <input type="hidden" name="page" value="amir-reports" />
+          <input type="hidden" name="export" value="manifest" />
+          <input type="hidden" name="from" value="<?php echo esc_attr($from); ?>" />
+          <input type="hidden" name="until" value="<?php echo esc_attr($until); ?>" />
+          <label style="font-size:13px;font-weight:600;">🪪 <?php echo esc_html( $this->tt( 'Manifiesto de pasajeros:', 'Passenger manifest:' ) ); ?></label>
+          <select name="tour_id" style="border:1px solid #c3d9d0;border-radius:6px;padding:6px 10px;font-size:13px;">
+            <option value="0"><?php echo esc_html( $this->tt( '— Todos los tours del período —', '— All tours in the period —' ) ); ?></option>
+            <?php foreach ( $this->get_tours_for_manifest() as $tour_opt ) : ?>
+              <option value="<?php echo (int) $tour_opt->id; ?>"><?php echo esc_html( $tour_opt->name_es ); ?></option>
+            <?php endforeach; ?>
+          </select>
+          <button type="submit" class="button">⬇ PDF</button>
+          <span style="font-size:12px;color:#78350f;"><?php echo esc_html( $this->tt( 'Usa el período de arriba — cambialo y volvé a hacer clic si necesitás otro rango.', 'Uses the period above — change it and click again for a different range.' ) ); ?></span>
         </form>
 
         <!-- KPIs -->
         <div class="ab-rep-grid">
           <div class="ab-rep-card green">
-            <div class="label">Ingresos</div>
+            <div class="label"><?php echo esc_html( $this->tt( 'Ingresos', 'Revenue' ) ); ?></div>
             <div class="value">$<?php echo number_format($summary['revenue'],0,'.',','); ?></div>
-            <div class="sub">MXN en el período</div>
+            <div class="sub"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?> <?php echo esc_html( $this->tt( 'en el período', 'in the period' ) ); ?></div>
           </div>
           <div class="ab-rep-card">
-            <div class="label">Reservas confirmadas</div>
+            <div class="label"><?php echo esc_html( $this->tt( 'Reservas confirmadas', 'Confirmed bookings' ) ); ?></div>
             <div class="value"><?php echo $summary['bookings']; ?></div>
-            <div class="sub">Completadas + activas</div>
+            <div class="sub"><?php echo esc_html( $this->tt( 'Completadas + activas', 'Completed + active' ) ); ?></div>
           </div>
           <div class="ab-rep-card">
-            <div class="label">Personas totales</div>
+            <div class="label"><?php echo esc_html( $this->tt( 'Personas totales', 'Total people' ) ); ?></div>
             <div class="value"><?php echo $summary['pax']; ?></div>
-            <div class="sub">Adultos + niños + bebés</div>
+            <div class="sub"><?php echo esc_html( $this->tt( 'Adultos + niños + bebés', 'Adults + children + babies' ) ); ?></div>
           </div>
           <div class="ab-rep-card">
-            <div class="label">Ticket promedio</div>
+            <div class="label"><?php echo esc_html( $this->tt( 'Ticket promedio', 'Average ticket' ) ); ?></div>
             <div class="value">$<?php echo $summary['bookings'] > 0 ? number_format($summary['revenue']/$summary['bookings'],0,'.',',') : '0'; ?></div>
-            <div class="sub">MXN por reserva</div>
+            <div class="sub"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?> <?php echo esc_html( $this->tt( 'por reserva', 'per booking' ) ); ?></div>
           </div>
         </div>
 
@@ -99,9 +146,9 @@ class ReportsPage {
 
           <!-- Por tour -->
           <div class="ab-section">
-            <h3>Ingresos por tour</h3>
+            <h3><?php echo esc_html( $this->tt( 'Ingresos por tour', 'Revenue by tour' ) ); ?></h3>
             <?php if (empty($by_tour)) : ?>
-              <p style="color:#5a7068;font-size:13px;">Sin datos para el período.</p>
+              <p style="color:#5a7068;font-size:13px;"><?php echo esc_html( $this->tt( 'Sin datos para el período.', 'No data for this period.' ) ); ?></p>
             <?php else :
               $max_rev = max(array_column($by_tour,'revenue')) ?: 1;
               foreach ($by_tour as $row) :
@@ -110,19 +157,46 @@ class ReportsPage {
               <div style="margin-bottom:12px;">
                 <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
                   <span style="font-weight:600;color:#1a2e24;"><?php echo esc_html($row['tour_name']); ?></span>
-                  <span style="color:#1D9E75;font-weight:700;">$<?php echo number_format($row['revenue'],0,'.',','); ?> <span style="font-weight:400;color:#5a7068;">(<?php echo $row['bookings']; ?> res.)</span></span>
+                  <span style="color:#1D9E75;font-weight:700;">$<?php echo number_format($row['revenue'],0,'.',','); ?> <span style="font-weight:400;color:#5a7068;">(<?php echo esc_html( sprintf( $this->tt( '%d res.', '%d bkg.' ), $row['bookings'] ) ); ?>)</span></span>
                 </div>
                 <div class="ab-bar"><div class="ab-bar-fill" style="width:<?php echo $pct; ?>%"></div></div>
               </div>
             <?php endforeach; endif; ?>
           </div>
 
+          <!-- Por habitación (Pro Max, § 16 CONTRIBUTING.md) — get_by_tour()
+               de arriba hace INNER JOIN con amir_tours a propósito (es un
+               reporte específico de tours), así que el ingreso de
+               habitaciones no aparece ahí. Esta tabla lo muestra aparte para
+               que "por tour" + "por habitación" reconcilien con el KPI
+               "Ingresos" de arriba (que sí incluye todo, sin JOIN). -->
+          <?php if ( AMIR_EDITION === 'pro_max' ) : ?>
+          <div class="ab-section">
+            <h3>🛏 <?php echo esc_html( $this->tt( 'Ingresos por habitación', 'Revenue by room' ) ); ?></h3>
+            <?php if (empty($by_room)) : ?>
+              <p style="color:#5a7068;font-size:13px;"><?php echo esc_html( $this->tt( 'Sin datos para el período.', 'No data for this period.' ) ); ?></p>
+            <?php else :
+              $max_rev_room = max(array_column($by_room,'revenue')) ?: 1;
+              foreach ($by_room as $row) :
+                $pct = round(($row['revenue']/$max_rev_room)*100);
+            ?>
+              <div style="margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
+                  <span style="font-weight:600;color:#1a2e24;"><?php echo esc_html($row['room_name']); ?></span>
+                  <span style="color:#1D9E75;font-weight:700;">$<?php echo number_format($row['revenue'],0,'.',','); ?> <span style="font-weight:400;color:#5a7068;">(<?php echo esc_html( sprintf( $this->tt( '%d res.', '%d bkg.' ), $row['bookings'] ) ); ?>)</span></span>
+                </div>
+                <div class="ab-bar"><div class="ab-bar-fill" style="width:<?php echo $pct; ?>%"></div></div>
+              </div>
+            <?php endforeach; endif; ?>
+          </div>
+          <?php endif; ?>
+
           <!-- Por origen -->
           <div class="ab-section">
-            <h3>Ingresos por origen</h3>
+            <h3><?php echo esc_html( $this->tt( 'Ingresos por origen', 'Revenue by source' ) ); ?></h3>
             <table class="ab-table">
               <thead><tr>
-                <th>Origen</th><th>Reservas</th><th>Ingresos MXN</th><th>%</th>
+                <th><?php echo esc_html( $this->tt( 'Origen', 'Source' ) ); ?></th><th><?php echo esc_html( $this->tt( 'Reservas', 'Bookings' ) ); ?></th><th><?php echo esc_html( $this->tt( 'Ingresos', 'Revenue' ) ); ?> <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></th><th>%</th>
               </tr></thead>
               <tbody>
               <?php
@@ -132,8 +206,13 @@ class ReportsPage {
               ?>
                 <tr>
                   <td><?php
-                    $badges = ['direct'=>'🌐 Directo','partner'=>'🤝 Partner','tripadvisor'=>'⭐ TripAdvisor','getyourguide'=>'🔖 GetYourGuide'];
-                    echo $badges[$row['source']] ?? esc_html($row['source']);
+                    $badges = [
+                      'direct'=>'🌐 ' . $this->tt('Directo','Direct'),
+                      'partner'=>'🤝 Partner',
+                      'tripadvisor'=>'⭐ TripAdvisor',
+                      'getyourguide'=>'🔖 GetYourGuide',
+                    ];
+                    echo esc_html( $badges[$row['source']] ?? $row['source'] );
                   ?></td>
                   <td><?php echo $row['bookings']; ?></td>
                   <td style="font-weight:700;">$<?php echo number_format($row['revenue'],0,'.',','); ?></td>
@@ -148,10 +227,10 @@ class ReportsPage {
 
         <!-- Por mes (últimos 12 meses) -->
         <div class="ab-section">
-          <h3>Evolución mensual — últimos 12 meses</h3>
+          <h3><?php echo esc_html( $this->tt( 'Evolución mensual — últimos 12 meses', 'Monthly trend — last 12 months' ) ); ?></h3>
           <table class="ab-table">
             <thead><tr>
-              <th>Mes</th><th>Reservas</th><th>Personas</th><th>Ingresos MXN</th><th>Ticket promedio</th>
+              <th><?php echo esc_html( $this->tt( 'Mes', 'Month' ) ); ?></th><th><?php echo esc_html( $this->tt( 'Reservas', 'Bookings' ) ); ?></th><th><?php echo esc_html( $this->tt( 'Personas', 'People' ) ); ?></th><th><?php echo esc_html( $this->tt( 'Ingresos', 'Revenue' ) ); ?> <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></th><th><?php echo esc_html( $this->tt( 'Ticket promedio', 'Average ticket' ) ); ?></th>
             </tr></thead>
             <tbody>
             <?php foreach ($by_month as $row) : ?>
@@ -172,6 +251,14 @@ class ReportsPage {
     }
 
     // ── Queries ───────────────────────────────────────────────────────────
+
+    /** Lista simple para el <select> del manifiesto — solo id+nombre, no hace falta más. */
+    private function get_tours_for_manifest(): array {
+        global $wpdb;
+        return $wpdb->get_results(
+            "SELECT id, name_es FROM {$wpdb->prefix}amir_tours WHERE status = 'active' ORDER BY sort_order, name_es"
+        ) ?? [];
+    }
 
     private function get_summary( string $from, string $until ): array {
         global $wpdb;
@@ -215,6 +302,29 @@ class ReportsPage {
         ], $rows );
     }
 
+    /** Espejo de get_by_tour() para habitaciones (Pro Max) — ver comentario en render(). */
+    private function get_by_room( string $from, string $until ): array {
+        global $wpdb;
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT r.name_es AS room_name,
+                    COUNT(*) AS bookings,
+                    COALESCE(SUM(b.total_mxn),0) AS revenue
+             FROM {$wpdb->prefix}amir_bookings b
+             JOIN {$wpdb->prefix}flow_rooms r ON r.id = b.room_id
+             WHERE b.item_type = 'room'
+               AND b.status IN ('confirmed','completed')
+               AND b.tour_date BETWEEN %s AND %s
+             GROUP BY b.room_id
+             ORDER BY revenue DESC",
+            $from, $until
+        ) ) ?? [];
+        return array_map( fn($r) => [
+            'room_name' => $r->room_name,
+            'bookings'  => (int)$r->bookings,
+            'revenue'   => (float)$r->revenue,
+        ], $rows );
+    }
+
     private function get_by_source( string $from, string $until ): array {
         global $wpdb;
         $rows = $wpdb->get_results( $wpdb->prepare(
@@ -237,7 +347,9 @@ class ReportsPage {
 
     private function get_by_month(): array {
         global $wpdb;
-        $months_es = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        $months_es = $this->lang() === 'en'
+            ? ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            : ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
         $rows = $wpdb->get_results(
             "SELECT DATE_FORMAT(tour_date,'%Y-%m') AS ym,
                     MONTH(tour_date)               AS month_num,
@@ -261,19 +373,28 @@ class ReportsPage {
 
     // ── CSV export ────────────────────────────────────────────────────────
 
-    private function export_csv(): void {
+    /** Pública para que AdminMenu::maybe_export_reports_csv() (admin_init) pueda llamarla — ver comentario en render(). */
+    public function export_csv(): void {
         $from  = sanitize_text_field( $_GET['from']  ?? date('Y-m-01') );
         $until = sanitize_text_field( $_GET['until'] ?? date('Y-m-t') );
 
         global $wpdb;
+        // LEFT JOIN (no JOIN) en amir_tours/flow_rooms — antes esto era un
+        // INNER JOIN con amir_tours, así que el export financiero excluía en
+        // silencio TODAS las reservas de habitación confirmadas (§ 16
+        // CONTRIBUTING.md, cierre de gaps 2026-08-01). Un reporte de
+        // ingresos que omite ingresos reales sin avisar es el peor tipo de
+        // bug de reporting — se corrige acá.
         $rows = $wpdb->get_results( $wpdb->prepare(
-            "SELECT b.booking_ref, t.name_es as tour_name, b.tour_date, s.time_start,
+            "SELECT b.booking_ref, b.item_type, t.name_es as tour_name, r.name_es as room_name,
+                    b.tour_date, b.check_out_date, s.time_start,
                     b.status, b.booking_source, b.customer_name, b.customer_email,
                     b.adults, b.children, b.babies, b.total_mxn, b.usd_reference,
                     b.created_at, p.name as partner_name
              FROM {$wpdb->prefix}amir_bookings b
-             JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
-             JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
+             LEFT JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
+             LEFT JOIN {$wpdb->prefix}flow_rooms r ON r.id = b.room_id
+             LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
              LEFT JOIN {$wpdb->prefix}amir_partners p ON p.id = b.partner_id
              WHERE b.status IN ('confirmed','completed')
                AND b.tour_date BETWEEN %s AND %s
@@ -286,14 +407,23 @@ class ReportsPage {
         $out = fopen('php://output','w');
         fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
 
-        fputcsv($out, ['Referencia','Tour','Fecha','Hora','Estado','Origen','Partner',
-                       'Cliente','Email','Adultos','Niños','Bebés','Total MXN','Ref. USD','Reservado el']);
+        fputcsv($out, [
+            $this->tt('Referencia','Reference'), $this->tt('Tour/Habitación','Tour/Room'), $this->tt('Fecha','Date'),
+            $this->tt('Fecha checkout (si aplica)','Checkout date (if applicable)'), $this->tt('Hora','Time'),
+            $this->tt('Estado','Status'), $this->tt('Origen','Source'), 'Partner',
+            $this->tt('Cliente','Customer'), 'Email', $this->tt('Adultos','Adults'), $this->tt('Niños','Children'),
+            $this->tt('Bebés','Babies'), $this->tt('Total','Total') . ' ' . \AmirBooking\Core\Currency::code(),
+            $this->tt('Ref. USD','USD ref.'), $this->tt('Reservado el','Booked on'),
+        ]);
 
         foreach ($rows as $r) {
+            $item_label = $r->item_type === 'room' ? ('🛏 ' . $r->room_name) : $r->tour_name;
             fputcsv($out, [
-                $r->booking_ref, $r->tour_name, $r->tour_date, $r->time_start,
+                $r->booking_ref, $item_label, $r->tour_date,
+                $r->item_type === 'room' ? $r->check_out_date : '',
+                $r->time_start,
                 $r->status, $r->booking_source, $r->partner_name ?? '',
-                $r->customer_name, $r->customer_email,
+                $this->csv_safe($r->customer_name), $this->csv_safe($r->customer_email),
                 $r->adults, $r->children, $r->babies,
                 $r->total_mxn, $r->usd_reference ?? '',
                 $r->created_at,
@@ -301,5 +431,14 @@ class ReportsPage {
         }
         fclose($out);
         exit;
+    }
+
+    /** Ver AmirBooking\Admin\BookingsPage::csv_safe() — misma protección contra inyección de fórmulas CSV. */
+    private function csv_safe( $value ): string {
+        $value = (string) $value;
+        if ( $value !== '' && strpbrk( $value[0], "=+-@\t\r" ) !== false ) {
+            return "'" . $value;
+        }
+        return $value;
     }
 }

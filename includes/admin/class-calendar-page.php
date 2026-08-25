@@ -1,0 +1,164 @@
+<?php
+namespace AmirBooking\Admin;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Calendario mensual — pantalla normal del admin, con el chrome de WP
+ * visible como cualquier otra (el cliente pidió explícitamente que no
+ * quedara distinta al resto — antes era fullscreen sin menú lateral,
+ * ver AdminMenu::FULLSCREEN_PAGES, que ya no la incluye).
+ *
+ * El detalle de un día reusa DashboardPage::get_day_summary()/render_day_tours()
+ * tal cual — esos métodos ya funcionan para cualquier fecha, no solo hoy/mañana.
+ */
+class CalendarPage {
+
+    /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private function lang(): string {
+        return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
+    }
+
+    public function render(): void {
+        $month_param = sanitize_text_field( $_GET['month'] ?? '' );
+        $month_ts    = $month_param && preg_match( '/^\d{4}-\d{2}$/', $month_param )
+            ? strtotime( $month_param . '-01' )
+            : strtotime( 'first day of this month' );
+
+        $day_param = sanitize_text_field( $_GET['day'] ?? '' );
+        $day       = $day_param && strtotime( $day_param ) ? $day_param : '';
+
+        $year  = (int) date( 'Y', $month_ts );
+        $month = (int) date( 'n', $month_ts );
+
+        $counts = $this->get_month_counts( $year, $month );
+
+        ?>
+        <div class="wrap ab-admin-wrap">
+        <style>
+        .amir-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+        .amir-cal-title { font-size: 22px; font-weight: 700; color: #1a2e24; text-transform: capitalize; }
+        .amir-cal-nav a { display: inline-block; padding: 8px 16px; border: 1px solid #d1e8df; border-radius: 8px; color: #1D9E75; text-decoration: none; font-weight: 600; font-size: 13px; margin-left: 8px; }
+        .amir-cal-nav a:hover { background: #f0faf6; }
+        .amir-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+        .amir-cal-dow { text-align: center; font-size: 11px; font-weight: 700; color: #5a7068; text-transform: uppercase; letter-spacing: .4px; padding-bottom: 6px; }
+        .amir-cal-cell { min-height: 76px; border-radius: 10px; padding: 8px 10px; text-decoration: none; display: block; border: 1px solid #e1f5ee; background: #fff; }
+        .amir-cal-cell.empty { border: none; background: transparent; }
+        .amir-cal-cell.has-bookings { background: #f0faf6; border-color: #1D9E75; }
+        .amir-cal-cell.is-selected { outline: 2px solid #1D9E75; outline-offset: -2px; }
+        .amir-cal-daynum { font-size: 13px; font-weight: 700; color: #1a2e24; }
+        .amir-cal-cell.today .amir-cal-daynum { color: #1D9E75; }
+        .amir-cal-badge { margin-top: 6px; display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: #1D9E75; color: #fff; }
+        .amir-cal-detail { margin-top: 28px; border-top: 1px solid #e1f5ee; padding-top: 20px; }
+        .amir-cal-detail-title { font-size: 16px; font-weight: 700; color: #1a2e24; margin-bottom: 14px; text-transform: capitalize; }
+        <?php \AmirBooking\Admin\DashboardPage::day_list_styles(); ?>
+        </style>
+
+        <h1>📅 <?php _e('Calendario', 'amir-booking'); ?></h1>
+
+        <div class="amir-cal-header">
+          <div class="amir-cal-title"><?php echo esc_html( date_i18n( 'F Y', $month_ts ) ); ?></div>
+          <div class="amir-cal-nav">
+            <a href="<?php echo esc_url( $this->month_url( $year, $month - 1 ) ); ?>">← <?php _e('Anterior', 'amir-booking'); ?></a>
+            <a href="<?php echo esc_url( admin_url( 'admin.php?page=amir-calendar' ) ); ?>"><?php _e('Hoy', 'amir-booking'); ?></a>
+            <a href="<?php echo esc_url( $this->month_url( $year, $month + 1 ) ); ?>"><?php _e('Siguiente →', 'amir-booking'); ?></a>
+          </div>
+        </div>
+
+        <div class="amir-cal-grid">
+          <?php
+          $dow_labels = $this->lang() === 'en'
+              ? [ 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun' ]
+              : [ 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom' ];
+          foreach ( $dow_labels as $dow ) : ?>
+            <div class="amir-cal-dow"><?php echo esc_html( $dow ); ?></div>
+          <?php endforeach; ?>
+
+          <?php
+          $first_dow    = (int) date( 'N', $month_ts ); // 1 (lunes) .. 7 (domingo)
+          $days_in_month = (int) date( 't', $month_ts );
+          $today        = current_time( 'Y-m-d' );
+
+          for ( $i = 1; $i < $first_dow; $i++ ) {
+              echo '<div class="amir-cal-cell empty"></div>';
+          }
+
+          for ( $d = 1; $d <= $days_in_month; $d++ ) {
+              $date_str = sprintf( '%04d-%02d-%02d', $year, $month, $d );
+              $count    = $counts[ $date_str ]['bookings_count'] ?? 0;
+              $classes  = [ 'amir-cal-cell' ];
+              if ( $count > 0 )        $classes[] = 'has-bookings';
+              if ( $date_str === $today ) $classes[] = 'today';
+              if ( $date_str === $day )   $classes[] = 'is-selected';
+              ?>
+              <a class="<?php echo esc_attr( implode( ' ', $classes ) ); ?>"
+                 href="<?php echo esc_url( $this->month_url( $year, $month, $date_str ) ); ?>">
+                <div class="amir-cal-daynum"><?php echo $d; ?></div>
+                <?php if ( $count > 0 ) : ?>
+                  <span class="amir-cal-badge"><?php echo (int) $count; ?></span>
+                <?php endif; ?>
+              </a>
+              <?php
+          }
+          ?>
+        </div>
+
+        <?php if ( $day ) : ?>
+          <div class="amir-cal-detail">
+            <div class="amir-cal-detail-title"><?php echo esc_html( date_i18n( _x( 'l j \d\e F', 'formato de fecha largo con día de semana', 'amir-booking' ), strtotime( $day ) ) ); ?></div>
+            <?php
+            $dashboard = new \AmirBooking\Admin\DashboardPage();
+            $dashboard->render_day_tours( $dashboard->get_day_summary( $day )['tours'] );
+            // Habitaciones (Pro Max, § 16 CONTRIBUTING.md) — check-ins/outs de este día.
+            if ( AMIR_EDITION === 'pro_max' ) {
+                $dashboard->render_day_rooms( $dashboard->get_room_day_summary( $day ) );
+            }
+            ?>
+          </div>
+        <?php endif; ?>
+
+        </div>
+        <?php
+    }
+
+    /**
+     * Conteo de reservas por día del mes en UNA sola query — evita el N+1
+     * que tendría llamar get_day_summary() día por día para armar la grilla.
+     * Mismo filtro de estado que get_day_summary() (class-dashboard-page.php)
+     * para que el número acá coincida con lo que se ve al entrar al día.
+     */
+    private function get_month_counts( int $year, int $month ): array {
+        global $wpdb;
+
+        $from = sprintf( '%04d-%02d-01', $year, $month );
+        $to   = date( 'Y-m-t', strtotime( $from ) );
+
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT tour_date, COUNT(*) AS bookings_count, SUM(adults+children+babies) AS pax_count
+             FROM {$wpdb->prefix}amir_bookings
+             WHERE status IN ('confirmed','cancellation_requested')
+               AND tour_date BETWEEN %s AND %s
+             GROUP BY tour_date",
+            $from, $to
+        ) ) ?? [];
+
+        $map = [];
+        foreach ( $rows as $r ) {
+            $map[ $r->tour_date ] = [
+                'bookings_count' => (int) $r->bookings_count,
+                'pax_count'      => (int) $r->pax_count,
+            ];
+        }
+        return $map;
+    }
+
+    private function month_url( int $year, int $month, string $day = '' ): string {
+        // Normalizar mes fuera de 1-12 (navegación a mes anterior/siguiente)
+        $ts = mktime( 0, 0, 0, $month, 1, $year );
+        $args = [ 'page' => 'amir-calendar', 'month' => date( 'Y-m', $ts ) ];
+        if ( $day ) {
+            $args['day'] = $day;
+        }
+        return add_query_arg( $args, admin_url( 'admin.php' ) );
+    }
+}
