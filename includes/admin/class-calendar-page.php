@@ -14,6 +14,11 @@ defined( 'ABSPATH' ) || exit;
  */
 class CalendarPage {
 
+    /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private function lang(): string {
+        return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
+    }
+
     public function render(): void {
         $month_param = sanitize_text_field( $_GET['month'] ?? '' );
         $month_ts    = $month_param && preg_match( '/^\d{4}-\d{2}$/', $month_param )
@@ -46,6 +51,7 @@ class CalendarPage {
         .amir-cal-badge { margin-top: 6px; display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: #1D9E75; color: #fff; }
         .amir-cal-detail { margin-top: 28px; border-top: 1px solid #e1f5ee; padding-top: 20px; }
         .amir-cal-detail-title { font-size: 16px; font-weight: 700; color: #1a2e24; margin-bottom: 14px; text-transform: capitalize; }
+        <?php \AmirBooking\Admin\DashboardPage::day_list_styles(); ?>
         </style>
 
         <h1>📅 <?php _e('Calendario', 'amir-booking'); ?></h1>
@@ -53,14 +59,18 @@ class CalendarPage {
         <div class="amir-cal-header">
           <div class="amir-cal-title"><?php echo esc_html( date_i18n( 'F Y', $month_ts ) ); ?></div>
           <div class="amir-cal-nav">
-            <a href="<?php echo esc_url( $this->month_url( $year, $month - 1 ) ); ?>">← Anterior</a>
-            <a href="<?php echo esc_url( admin_url( 'admin.php?page=amir-calendar' ) ); ?>">Hoy</a>
-            <a href="<?php echo esc_url( $this->month_url( $year, $month + 1 ) ); ?>">Siguiente →</a>
+            <a href="<?php echo esc_url( $this->month_url( $year, $month - 1 ) ); ?>">← <?php _e('Anterior', 'amir-booking'); ?></a>
+            <a href="<?php echo esc_url( admin_url( 'admin.php?page=amir-calendar' ) ); ?>"><?php _e('Hoy', 'amir-booking'); ?></a>
+            <a href="<?php echo esc_url( $this->month_url( $year, $month + 1 ) ); ?>"><?php _e('Siguiente →', 'amir-booking'); ?></a>
           </div>
         </div>
 
         <div class="amir-cal-grid">
-          <?php foreach ( [ 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom' ] as $dow ) : ?>
+          <?php
+          $dow_labels = $this->lang() === 'en'
+              ? [ 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun' ]
+              : [ 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom' ];
+          foreach ( $dow_labels as $dow ) : ?>
             <div class="amir-cal-dow"><?php echo esc_html( $dow ); ?></div>
           <?php endforeach; ?>
 
@@ -95,10 +105,14 @@ class CalendarPage {
 
         <?php if ( $day ) : ?>
           <div class="amir-cal-detail">
-            <div class="amir-cal-detail-title"><?php echo esc_html( date_i18n( 'l j \d\e F', strtotime( $day ) ) ); ?></div>
+            <div class="amir-cal-detail-title"><?php echo esc_html( date_i18n( _x( 'l j \d\e F', 'formato de fecha largo con día de semana', 'amir-booking' ), strtotime( $day ) ) ); ?></div>
             <?php
             $dashboard = new \AmirBooking\Admin\DashboardPage();
             $dashboard->render_day_tours( $dashboard->get_day_summary( $day )['tours'] );
+            // Habitaciones (Pro Max, § 16 CONTRIBUTING.md) — check-ins/outs de este día.
+            if ( AMIR_EDITION === 'pro_max' ) {
+                $dashboard->render_day_rooms( $dashboard->get_room_day_summary( $day ) );
+            }
             ?>
           </div>
         <?php endif; ?>

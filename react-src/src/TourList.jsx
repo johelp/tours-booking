@@ -3,10 +3,11 @@ import { getTours } from './api.js';
 import { useT }     from './i18n.js';
 
 /**
- * Grilla de tours — [amir_tour_list]
+ * Grilla de tours — [flow_tour_list] (alias legacy: [amir_tour_list])
  *
  * Shortcode atributos:
- *   columns="3"           columnas (1-3)
+ *   columns="3"           columnas (1-4)
+ *   limit="0"             máximo de tours a mostrar (0 = sin límite)
  *   accent="#1D9E75"      color de acento (precio, chips, CTA)
  *   bg_color="#ffffff"    color de fondo de la tarjeta
  *   text_color="#1a2e24"  color del título
@@ -18,9 +19,13 @@ import { useT }     from './i18n.js';
  *   show_duration="yes"   mostrar duración
  *   show_languages="yes"  mostrar chip de idiomas del tour
  *   show_capacity="yes"   mostrar badge de capacidad máxima
+ *   show_free_cancellation="yes"  mostrar chip de cancelación gratis (política de 7+ días, fija para todos los tours)
  *   cta_text_es="..."     texto botón ES
  *   cta_text_en="..."     texto botón EN
  *   ids="1,2,3"           filtrar tours por ID
+ *   category="barco"      filtrar por categoría (slug de amir_tour_category)
+ *   source="all|own|provider"  "own" = solo tours propios, "provider" = solo de proveedores externos (marketplace)
+ *   provider_id="5"        filtrar a un proveedor puntual (implica source="provider")
  */
 export default function TourList({ lang = 'es', rootEl = null }) {
   const [ tours,   setTours   ] = useState( [] );
@@ -29,8 +34,27 @@ export default function TourList({ lang = 'es', rootEl = null }) {
   const t = useT( lang );
 
   const cfg = {
-    columns      : Math.min( 3, Math.max( 1, parseInt( rootEl?.dataset?.columns || '3', 10 ) ) ),
-    accent       : rootEl?.dataset?.accent       || '#1D9E75',
+    // Bug real reportado 2026-08-12: el generador de shortcode (Personalización)
+    // ya ofrece "4" como opción de columnas — acá quedaba topeado a 3 en
+    // silencio, sin CSS para .c4 tampoco (ver más abajo).
+    columns      : Math.min( 4, Math.max( 1, parseInt( rootEl?.dataset?.columns || '3', 10 ) ) ),
+    // Bug real reportado 2026-08-12: el atributo limit ya lo mandaba el
+    // shortcode (class-shortcodes.php) y lo ofrecía el generador, pero acá
+    // nunca se leía — se mostraban siempre TODOS los tours devueltos por
+    // la API, sin importar el límite pedido.
+    limit        : parseInt( rootEl?.dataset?.limit, 10 ) || 0,
+    // Bug real reportado 2026-08-21: sin accent="..." explícito en el
+    // shortcode, esto caía siempre al teal fijo de fábrica — ignoraba por
+    // completo el color de marca configurado en Personalización → 🎨 Widget
+    // de reserva. --ab-teal es la misma variable que ya usan TourCard/
+    // RoomCard (shared.jsx) para lo mismo — WidgetTheme la inyecta global
+    // en cualquier página con el bundle del widget cargado. Se lee el
+    // valor YA RESUELTO por el navegador (no el string "var(--ab-teal)"
+    // literal) porque shade() de acá abajo hace matemática de color sobre
+    // un hex real — pasarle un var() como si fuera hex rompería en NaN.
+    accent       : rootEl?.dataset?.accent
+                     || getComputedStyle( document.documentElement ).getPropertyValue( '--ab-teal' ).trim()
+                     || '#1D9E75',
     bgColor      : rootEl?.dataset?.bgColor      || '#ffffff',
     textColor    : rootEl?.dataset?.textColor    || '#1a2e24',
     radius       : parseInt( rootEl?.dataset?.radius, 10 ) || 16,
@@ -41,11 +65,15 @@ export default function TourList({ lang = 'es', rootEl = null }) {
     showDuration : rootEl?.dataset?.showDuration !== 'no',
     showLanguages: rootEl?.dataset?.showLanguages !== 'no',
     showCapacity : rootEl?.dataset?.showCapacity !== 'no',
+    showFreeCancellation: rootEl?.dataset?.showFreeCancellation !== 'no',
     ctaEs        : rootEl?.dataset?.ctaEs        || 'Reservar ahora',
     ctaEn        : rootEl?.dataset?.ctaEn        || 'Book now',
     ids          : rootEl?.dataset?.ids
       ? rootEl.dataset.ids.split(',').map(Number).filter(Boolean)
       : [],
+    category     : rootEl?.dataset?.category || '',
+    source       : rootEl?.dataset?.source    || 'all',
+    providerId   : parseInt( rootEl?.dataset?.providerId, 10 ) || 0,
   };
 
   const partnerRef = document.cookie
@@ -54,16 +82,16 @@ export default function TourList({ lang = 'es', rootEl = null }) {
     ?.split('=')[1] ?? '';
 
   useEffect( () => {
-    getTours( lang )
+    getTours( lang, { category: cfg.category, source: cfg.source, providerId: cfg.providerId } )
       .then( data => {
         const filtered = cfg.ids.length
           ? data.filter( tour => cfg.ids.includes( tour.id ) )
           : data;
-        setTours( filtered );
+        setTours( cfg.limit > 0 ? filtered.slice( 0, cfg.limit ) : filtered );
         setLoading( false );
       } )
-      .catch( e => { setError( e.message ); setLoading( false ); } );
-  }, [ lang ] );
+      .catch( e => { setError( e.message || t('err_generic') ); setLoading( false ); } );
+  }, [ lang, cfg.category, cfg.source, cfg.providerId ] );
 
   const tourUrl = ( tour ) => {
     const base = window.amirBooking?.siteUrl ?? '';
@@ -91,10 +119,43 @@ export default function TourList({ lang = 'es', rootEl = null }) {
   const accentDark  = shade( cfg.accent, -20 );
   const accentLight = shade( cfg.accent, 90 );
 
+  // Antes: spinner + "Cargando tours…" — un texto plano mientras el resto
+  // de la grilla (tarjetas reales) usa animación/diseño propio, así que el
+  // salto de "spinner centrado" a "grilla de tarjetas" se sentía como un
+  // parpadeo sin relación. Ahora arma tarjetas fantasma con la MISMA forma
+  // real (imagen + título + precio + botón), reusando el shimmer que ya
+  // existía para el precio individual (.al-price-sk) — pedido explícito del
+  // cliente, auditoría de UX 2026-08-24.
   if ( loading ) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'48px 20px', gap:'12px', color:'#5a7068', fontFamily:'inherit' }}>
-      <div style={{ width:'22px', height:'22px', border:`2.5px solid ${accentLight}`, borderTopColor:cfg.accent, borderRadius:'50%', animation:'al-spin .7s linear infinite', flexShrink:0 }} />
-      <span>{t('loading') || 'Cargando tours…'}</span>
+    <div style={{ fontFamily:'inherit' }}>
+      <style>{`
+        @keyframes al-spin    { to { transform:rotate(360deg); } }
+        @keyframes al-shimmer { 0%,100%{opacity:.6} 50%{opacity:.3} }
+        .al-grid { display:grid; gap:26px; }
+        @media(min-width:901px)  { .al-grid.c4,.al-grid.c3{grid-template-columns:repeat(3,1fr)} .al-grid.c2{grid-template-columns:repeat(2,1fr)} }
+        @media(min-width:1140px) { .al-grid.c4{grid-template-columns:repeat(4,1fr)} }
+        @media(min-width:601px) and (max-width:900px) { .al-grid.c4,.al-grid.c3,.al-grid.c2{grid-template-columns:repeat(2,1fr)} }
+        @media(max-width:600px) { .al-grid{grid-template-columns:1fr!important;gap:18px} }
+        .al-grid.c1 { grid-template-columns:1fr; max-width:500px; margin:0 auto; }
+        .al-card-sk { background:#fff; border-radius:${cfg.radius}px; overflow:hidden; border:1px solid #eef6f2; box-shadow:0 2px 14px rgba(0,0,0,.055); }
+        .al-img-sk  { width:100%; aspect-ratio:${cfg.imageRatio}; background:#f0f0f0; animation:al-shimmer 1.3s infinite; }
+        .al-body-sk { padding:16px 18px 18px; }
+        .al-line-sk { height:14px; border-radius:6px; background:#f0f0f0; animation:al-shimmer 1.3s infinite; }
+        .al-cta-sk  { height:44px; border-radius:10px; background:#f0f0f0; animation:al-shimmer 1.3s infinite; margin-top:16px; }
+      `}</style>
+      <div className={`al-grid c${cfg.columns}`}>
+        { Array.from( { length: cfg.limit > 0 ? Math.min( cfg.limit, 6 ) : 6 }, ( _, i ) => (
+          <div className="al-card-sk" key={i} aria-hidden="true">
+            <div className="al-img-sk" />
+            <div className="al-body-sk">
+              <div className="al-line-sk" style={{ width:'75%', marginBottom:10 }} />
+              <div className="al-line-sk" style={{ width:'45%', height:11, marginBottom:16 }} />
+              <div className="al-price-sk" />
+              <div className="al-cta-sk" />
+            </div>
+          </div>
+        ) ) }
+      </div>
     </div>
   );
 
@@ -113,10 +174,18 @@ export default function TourList({ lang = 'es', rootEl = null }) {
 
         .al-root { font-family:inherit; }
 
-        /* Grid */
+        /* Grid — .c4 agregado (bug real 2026-08-12): el generador de shortcode
+           ya ofrecía "4 columnas" como opción, pero acá no había ni el tope
+           (ver cfg.columns) ni la regla CSS para ese caso. */
         .al-grid { display:grid; gap:26px; }
-        @media(min-width:901px)  { .al-grid.c3{grid-template-columns:repeat(3,1fr)} .al-grid.c2{grid-template-columns:repeat(2,1fr)} }
-        @media(min-width:601px) and (max-width:900px) { .al-grid.c3,.al-grid.c2{grid-template-columns:repeat(2,1fr)} }
+        @media(min-width:901px)  { .al-grid.c4,.al-grid.c3{grid-template-columns:repeat(3,1fr)} .al-grid.c2{grid-template-columns:repeat(2,1fr)} }
+        /* .c4 vuelve a pisarse acá, DESPUÉS del bloque de 901px a propósito —
+           ambos media queries matchean a la vez desde 1140px en adelante, y en
+           CSS gana la regla que viene última en el código entre dos reglas
+           con la misma especificidad (no la que tiene el min-width más alto) —
+           bug real que se filtró en el primer intento de este mismo fix. */
+        @media(min-width:1140px) { .al-grid.c4{grid-template-columns:repeat(4,1fr)} }
+        @media(min-width:601px) and (max-width:900px) { .al-grid.c4,.al-grid.c3,.al-grid.c2{grid-template-columns:repeat(2,1fr)} }
         @media(max-width:600px) { .al-grid{grid-template-columns:1fr!important;gap:18px} }
         .al-grid.c1 { grid-template-columns:1fr; max-width:500px; margin:0 auto; }
 
@@ -156,6 +225,7 @@ export default function TourList({ lang = 'es', rootEl = null }) {
         .al-chip { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px;
           background:${accentLight}; color:${accentDark}; display:inline-flex; align-items:center; gap:4px; }
         .al-chip-group { background:#f0f4ff; color:#3b4ea6; }
+        .al-chip-free { background:#eafaf1; color:var(--ab-teal,#1D9E75); }
 
         /* Precio */
         .al-price { display:flex; align-items:baseline; gap:4px; margin-bottom:16px; }
@@ -166,12 +236,13 @@ export default function TourList({ lang = 'es', rootEl = null }) {
 
         /* Botón CTA */
         .al-cta {
-          display:block; width:100%; padding:13px 20px; box-sizing:border-box;
-          background:${cfg.accent}; color:#fff!important; text-align:center; border-radius:10px;
-          font-size:15px; font-weight:700; text-decoration:none; border:none; cursor:pointer;
-          transition:background .15s,transform .1s; margin-top:auto; font-family:inherit;
+          display:block; width:100% !important; margin-top:auto; padding:13px 20px; box-sizing:border-box;
+          background-color:${cfg.accent} !important; background-image:none !important; box-shadow:none !important;
+          color:#fff!important; text-align:center; border-radius:10px;
+          font-size:15px; font-weight:700; text-decoration:none!important; border:none; cursor:pointer;
+          transition:background .15s,transform .1s; font-family:inherit;
         }
-        .al-cta:hover { background:${accentDark}; color:#fff!important; }
+        .al-cta:hover { background-color:${accentDark} !important; color:#fff!important; }
         .al-cta:active { transform:scale(.98); }
       `}</style>
 
@@ -211,11 +282,16 @@ export default function TourList({ lang = 'es', rootEl = null }) {
                 <a href={tourUrl(tour)}>{tour.name}</a>
               </h3>
 
-              { cfg.showExcerpt && tour.excerpt && (
-                <p className="al-excerpt">{tour.excerpt}</p>
+              { cfg.showExcerpt && tour.short_description && (
+                <p className="al-excerpt">{tour.short_description}</p>
               )}
 
               <div className="al-chips">
+                { cfg.showFreeCancellation && (
+                  <span className="al-chip al-chip-free">
+                    ✓ {t('free_cancellation')}
+                  </span>
+                )}
                 { cfg.showAge && tour.min_age > 0 && (
                   <span className="al-chip">
                     👤 {t('age_short')} {tour.min_age}+

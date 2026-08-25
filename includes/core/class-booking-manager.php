@@ -18,6 +18,30 @@ class BookingManager {
         $this->pricing      = new PricingEngine();
     }
 
+    /**
+     * Registro de consentimiento (GDPR, § 15.3 CONTRIBUTING.md, pieza 3 de
+     * 4) — hasta 2026-08-04 el plugin solo guardaba un booleano
+     * ("aceptó") sin cuándo ni qué texto vio, insuficiente para poder
+     * demostrar consentimiento real si hiciera falta. `consent_recorded_at`
+     * es el timestamp del momento exacto de la reserva (nunca se pisa
+     * después — a diferencia de `created_at`, que sí se resetea al
+     * transicionar una reserva de wishlist/manual a pending vía
+     * init-payment, § BookingController::init_payment()). `consent_text_hash`
+     * es un hash de los textos de política+términos configurados en ese
+     * idioma al momento — permite detectar después si el operador cambió
+     * el texto sin tener que guardar el texto completo en cada reserva.
+     * Reusado tal cual por RoomBookingManager (mismo criterio, sin duplicar).
+     */
+    public static function consent_snapshot( string $lang ): array {
+        $lang = in_array( $lang, [ 'es', 'en' ], true ) ? $lang : 'es';
+        $policy_text = get_option( "amir_policy_text_{$lang}", '' );
+        $terms_text  = get_option( "amir_terms_text_{$lang}", '' );
+        return [
+            'consent_recorded_at' => current_time( 'mysql' ),
+            'consent_text_hash'   => md5( $lang . '|' . $policy_text . '|' . $terms_text ),
+        ];
+    }
+
     // ── Crear reserva (estado pending) ────────────────────────────────────
 
     /**
@@ -57,6 +81,60 @@ class BookingManager {
             return BookingResult::error( 'Debes aceptar la política de cancelación para continuar.' );
         }
 
+        // Mismo criterio que arriba: el widget ya deshabilita el botón hasta
+        // tildar ambos checkboxes, esto es la validación real del lado server.
+        // Checkbox separado del de cancelación a propósito (GDPR pide
+        // consentimientos específicos, no empaquetados en uno solo).
+        if ( empty( $data['terms_accepted'] ) ) {
+            return BookingResult::error( 'Debes aceptar los términos y condiciones para continuar.' );
+        }
+
+        // Mínimo de personas POR RESERVA (amir_tours.min_passengers) —
+        // pedido del cliente 2026-08-21, ver CONTRIBUTING.md § 16.81. El
+        // widget/flujos ya bloquean el botón de continuar en este caso —
+        // esto es la validación real, por si alguien llama la API directo.
+        // Distinto del mínimo AGREGADO que ya usa class-cron-manager.php
+        // (suma TODAS las reservas confirmadas de una salida para avisar si
+        // conviene cancelar) — este es el piso de UNA reserva puntual, y se
+        // aplica sin importar el tipo de tour (fecha fija, "solo a pedido",
+        // proveedor externo, etc. — todos pasan por acá antes de bifurcar).
+        $min_pax_error = $this->min_passengers_error(
+            (int) $data['tour_id'],
+            (int) $data['adults'] + (int) ( $data['children'] ?? 0 ) + (int) ( $data['babies'] ?? 0 ),
+            $data['lang'] ?? 'es'
+        );
+        if ( $min_pax_error ) {
+            return BookingResult::error( $min_pax_error );
+        }
+
+        // "Requiere nombre de cada integrante" (amir_tours.require_participant_
+        // names, pedido del cliente 2026-08-24) — opt-in por tour, la mayoría
+        // no lo necesita. El widget ya pide un input por persona cuando el
+        // tour lo requiere; esto es la validación real del lado server.
+        // Bebés quedan afuera a propósito (no se identifican individualmente
+        // en un manifiesto de pasajeros) — ver participant_names_error().
+        $names_error = $this->participant_names_error(
+            (int) $data['tour_id'],
+            (int) $data['adults'] + (int) ( $data['children'] ?? 0 ),
+            is_array( $data['participant_names'] ?? null ) ? $data['participant_names'] : [],
+            $data['lang'] ?? 'es'
+        );
+        if ( $names_error ) {
+            return BookingResult::error( $names_error );
+        }
+
+        // "Armá tu tour" (amir_tours.custom_quote, variante de request_only,
+        // pedido 2026-08-16) — el tour no tiene precio ni horario cargado a
+        // propósito, así que nada de lo que sigue (disponibilidad, cupos,
+        // PricingEngine) aplica: se delega a un camino sin calendario ni
+        // cotización, el operador carga el precio real al aprobar.
+        $is_custom_quote = (bool) $wpdb->get_var( $wpdb->prepare(
+            "SELECT custom_quote FROM {$wpdb->prefix}amir_tours WHERE id = %d", (int) $data['tour_id']
+        ) );
+        if ( $is_custom_quote ) {
+            return $this->create_custom_quote_request( $data );
+        }
+
         // Validar disponibilidad
         $avail = $this->availability->check(
             (int) $data['tour_id'],
@@ -72,7 +150,7 @@ class BookingManager {
         $pax = (int)$data['adults'] + (int)$data['children'] + (int)$data['babies'];
         if ( $pax > $avail->slots_remaining ) {
             return BookingResult::error(
-                sprintf( 'Solo quedan %d cupos disponibles', $avail->slots_remaining )
+                $this->slots_left_error( $avail->slots_remaining, $data['lang'] ?? 'es' )
             );
         }
 
@@ -117,47 +195,111 @@ class BookingManager {
             $data['date']
         ) );
 
-        $max_capacity = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT max_capacity FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+        $tour_row = $wpdb->get_row( $wpdb->prepare(
+            "SELECT max_capacity, provider_id, provider_charge_mode, request_only, deposit_enabled, deposit_pct FROM {$wpdb->prefix}amir_tours WHERE id = %d",
             (int) $data['tour_id']
         ) );
+        $max_capacity = (int) ( $tour_row->max_capacity ?? 0 );
 
         if ( $pax > ( $max_capacity - $booked_pax ) ) {
             $wpdb->query( 'ROLLBACK' );
             return BookingResult::error(
-                sprintf( 'Solo quedan %d cupos disponibles', max( 0, $max_capacity - $booked_pax ) )
+                $this->slots_left_error( max( 0, $max_capacity - $booked_pax ), $data['lang'] ?? 'es' )
             );
         }
 
+        // Cobro diferido a la confirmación del proveedor (§ 11.0
+        // CONTRIBUTING.md) — si el tour es de un proveedor activo Y está en
+        // modo 'on_approval', la reserva arranca directo en
+        // pending_provider_approval SIN cobrar nada; recién cuando el
+        // proveedor aprueba se manda el link de pago real (provider_approve()).
+        // Así, si rechaza o vence el plazo, no hay nada que reembolsar.
+        $provider_id_for_tour = (int) ( $tour_row->provider_id ?? 0 );
+        $provider_active = $provider_id_for_tour > 0 && (bool) $wpdb->get_var( $wpdb->prepare(
+            "SELECT active FROM {$wpdb->prefix}amir_providers WHERE id = %d", $provider_id_for_tour
+        ) );
+        $is_deferred_charge = $provider_active && ( $tour_row->provider_charge_mode ?? 'immediate' ) === 'on_approval';
+
+        // Tours "solo a pedido" (amir_tours.request_only, § CLAUDE.md) —
+        // conservan su calendario normal (el cliente elige fecha/horario
+        // como siempre), pero CADA reserva nace en 'date_requested' en vez
+        // de confirmarse/cobrarse: mismo mecanismo que "solicitar fecha" en
+        // tours de fecha fija (§ 16.37 CONTRIBUTING.md), reusado acá como
+        // el camino principal en vez del fallback. Mutuamente excluyente
+        // con el cobro diferido de proveedor (ese ya tiene su propio flujo
+        // de aprobación con cobro de entrada).
+        $is_request_only = ! $is_deferred_charge && (bool) ( $tour_row->request_only ?? 0 );
+
+        $booking_status = $is_deferred_charge
+            ? 'pending_provider_approval'
+            : ( $is_request_only ? 'date_requested' : 'pending' );
+
+        // Depósito parcial por tour (Pro Max, "Depósito parcial por tour" en
+        // CONTRIBUTING.md) — mutuamente excluyente con cobro diferido de
+        // proveedor y "solo a pedido" (esos ya tienen su propio "cuánto y
+        // cuándo cobrar", un tour no puede ser las dos cosas a la vez). El %
+        // se snapshotea en la reserva — si el operador lo cambia después en
+        // el tour, no afecta reservas ya hechas (mismo criterio que
+        // cancellation_policy_pct).
+        $deposit_pct_applied = 0;
+        if ( ! $is_deferred_charge && ! $is_request_only && (bool) ( $tour_row->deposit_enabled ?? 0 ) ) {
+            $cfg_pct = (int) ( $tour_row->deposit_pct ?? 0 );
+            if ( $cfg_pct >= 1 && $cfg_pct <= 99 ) {
+                $deposit_pct_applied = $cfg_pct;
+            }
+        }
+        $charge_mxn = $deposit_pct_applied > 0
+            ? round( $quote->total_mxn * $deposit_pct_applied / 100, 2 )
+            : $quote->total_mxn;
+
+        // Cupón que cubre el 100% del total (Dudas de producto, CLAUDE.md:
+        // "un cupón de 100% deja el cobro en $0, que Stripe no puede
+        // procesar"). No es un modo de tour aparte como cobro diferido/solo
+        // a pedido — puede pasarle a cualquier tour normal si el cupón
+        // alcanza. Nace 'pending' igual que siempre y se confirma con
+        // confirm() apenas se inserta (mismo camino que dispara un webhook
+        // real: email de confirmación, voucher, Google Calendar) — así no
+        // hay que duplicar esa lógica ni pasar por ninguna pasarela.
+        $is_free_booking = ! $is_deferred_charge && ! $is_request_only && $charge_mxn <= 0;
+
         // Insertar en DB
-        $inserted = $wpdb->insert(
-            "{$wpdb->prefix}amir_bookings",
-            [
-                'booking_ref'     => $booking_ref,
-                'access_token'    => $access_token,
-                'tour_id'         => (int) $data['tour_id'],
-                'schedule_id'     => (int) $data['schedule_id'],
-                'partner_id'      => $partner_id,
-                'tour_date'       => $data['date'],
-                'status'          => 'pending',
-                'booking_source'  => $booking_source,
-                'lang'            => $data['lang'] ?? 'es',
-                'customer_name'   => sanitize_text_field( $data['customer_name'] ),
-                'customer_email'  => sanitize_email( $data['customer_email'] ),
-                'customer_phone'  => sanitize_text_field( $data['customer_phone'] ?? '' ),
-                'adults'          => (int) $data['adults'],
-                'children'        => (int) $data['children'],
-                'babies'          => (int) $data['babies'],
-                'total_mxn'       => $quote->total_mxn,
-                'usd_reference'   => $quote->usd_reference,
-                'exchange_rate'   => $this->pricing->get_exchange_rate(),
-                'coupon_code'     => $quote->coupon_code,
-                'discount_mxn'    => $quote->discount_mxn,
-                'special_requests'=> sanitize_textarea_field( $data['special_requests'] ?? '' ),
-                'created_at'      => current_time( 'mysql' ),
-            ],
-            [ '%s','%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%f','%f','%s','%f','%s','%s' ]
-        );
+        $insert_data = [
+            'booking_ref'     => $booking_ref,
+            'access_token'    => $access_token,
+            'tour_id'         => (int) $data['tour_id'],
+            'schedule_id'     => (int) $data['schedule_id'],
+            'partner_id'      => $partner_id,
+            'tour_date'       => $data['date'],
+            'status'          => $booking_status,
+            'booking_source'  => $booking_source,
+            'lang'            => $data['lang'] ?? 'es',
+            'customer_name'   => sanitize_text_field( $data['customer_name'] ),
+            'customer_email'  => sanitize_email( $data['customer_email'] ),
+            'customer_phone'  => sanitize_text_field( $data['customer_phone'] ?? '' ),
+            'adults'          => (int) $data['adults'],
+            'children'        => (int) $data['children'],
+            'babies'          => (int) $data['babies'],
+            'total_mxn'       => $quote->total_mxn,
+            'usd_reference'   => $quote->usd_reference,
+            'exchange_rate'   => $this->pricing->get_exchange_rate(),
+            'coupon_code'     => $quote->coupon_code,
+            'discount_mxn'    => $quote->discount_mxn,
+            'deposit_pct'     => $deposit_pct_applied,
+            'special_requests'=> sanitize_textarea_field( $data['special_requests'] ?? '' ),
+            'participant_names' => $this->encode_participant_names( $data['participant_names'] ?? [] ),
+            'created_at'      => current_time( 'mysql' ),
+        ];
+        $insert_data     += self::consent_snapshot( $data['lang'] ?? 'es' );
+        $insert_formats = [ '%s','%s','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%d','%d','%d','%f','%f','%f','%s','%f','%d','%s','%s','%s','%s' ];
+
+        if ( $is_deferred_charge ) {
+            $insert_data['provider_response_token'] = self::generate_access_token();
+            $insert_data['provider_notified_at']    = current_time( 'mysql' );
+            $insert_formats[] = '%s';
+            $insert_formats[] = '%s';
+        }
+
+        $inserted = $wpdb->insert( "{$wpdb->prefix}amir_bookings", $insert_data, $insert_formats );
 
         if ( ! $inserted ) {
             $wpdb->query( 'ROLLBACK' );
@@ -206,7 +348,106 @@ class BookingManager {
             delete_transient( "amir_avail_{$data['tour_id']}_{$date_parts[0]}_{$date_parts[1]}" );
         }
 
-        return new BookingResult( true, $booking_id, $booking_ref, $quote->total_mxn, $quote );
+        if ( $is_deferred_charge ) {
+            // Mismos tres emails que dispara confirm() para el modo normal
+            // (proveedor + aviso interino al cliente + admin) — acá arrancan
+            // en el momento de crear la reserva, no después de cobrar, porque
+            // en este modo no hay cobro previo.
+            do_action( 'amir_booking_pending_provider_approval', $booking_id );
+        } elseif ( $is_request_only ) {
+            do_action( 'amir_booking_date_requested', $booking_id );
+        } elseif ( $is_free_booking ) {
+            // Reusa confirm() tal cual — mismo efecto que si un webhook real
+            // hubiera avisado un cobro exitoso (email de confirmación,
+            // voucher, Google Calendar), sin duplicar esa lógica. charge_id
+            // sintético para que quede trazable en Log de pagos que esto no
+            // pasó por ninguna pasarela real.
+            $this->confirm( $booking_id, 'coupon-100pct' );
+        }
+
+        $result = new BookingResult( true, $booking_id, $booking_ref, $quote->total_mxn, $quote );
+        $result->charge_mxn       = $charge_mxn;
+        $result->requires_payment = ! $is_deferred_charge && ! $is_request_only && ! $is_free_booking;
+        $result->status           = $is_free_booking ? 'confirmed' : $booking_status;
+        return $result;
+    }
+
+    // ── "Armá tu tour" — solicitud sin fecha ni precio ──────────────────────
+
+    /**
+     * Variante de create_pending() para tours `custom_quote` (§ CLAUDE.md,
+     * "armá tu tour" — pedido 2026-08-16): a diferencia del resto de los
+     * modos, acá NO hay calendario que validar ni cupo que bloquear (el tour
+     * no tiene horarios cargados), así que no tiene sentido reusar la
+     * transacción con FOR UPDATE de create_pending() — esta reserva no
+     * compite por un cupo de una fecha real. `tour_date` guarda la fecha en
+     * que se hizo la SOLICITUD (la columna es NOT NULL, no se puede dejar
+     * vacía) — el pedido real del cliente vive en `special_requests`, el
+     * admin ve esto reflejado en el panel (BookingsPage::render_detail()).
+     * El precio nace en $0 — el operador lo carga a mano al aprobar
+     * (BookingsPage::handle_detail_action(), case 'approve_date_request').
+     */
+    private function create_custom_quote_request( array $data ): BookingResult {
+        global $wpdb;
+
+        if ( empty( $data['customer_name'] ) || empty( $data['customer_email'] ) ) {
+            return BookingResult::error( 'Nombre y email del cliente son obligatorios.' );
+        }
+        if ( ! is_email( $data['customer_email'] ) ) {
+            return BookingResult::error( 'Email del cliente no válido.' );
+        }
+
+        $adults   = max( 1, (int) ( $data['adults']   ?? 1 ) );
+        $children = max( 0, (int) ( $data['children'] ?? 0 ) );
+        $babies   = max( 0, (int) ( $data['babies']   ?? 0 ) );
+
+        $policy_error = $this->child_baby_policy_error( (int) $data['tour_id'], $children, $babies );
+        if ( $policy_error ) {
+            return BookingResult::error( $policy_error );
+        }
+
+        $booking_ref  = $this->generate_ref();
+        $access_token = self::generate_access_token();
+
+        $insert_data = [
+            'booking_ref'      => $booking_ref,
+            'access_token'     => $access_token,
+            'tour_id'          => (int) $data['tour_id'],
+            'schedule_id'      => 0,
+            'tour_date'        => current_time( 'Y-m-d' ),
+            'status'           => 'date_requested',
+            'booking_source'   => 'date_request',
+            'lang'             => $data['lang'] ?? 'es',
+            'customer_name'    => sanitize_text_field( $data['customer_name'] ),
+            'customer_email'   => sanitize_email( $data['customer_email'] ),
+            'customer_phone'   => sanitize_text_field( $data['customer_phone'] ?? '' ),
+            'adults'           => $adults,
+            'children'         => $children,
+            'babies'           => $babies,
+            'total_mxn'        => 0.0,
+            'usd_reference'    => 0.0,
+            'exchange_rate'    => $this->pricing->get_exchange_rate(),
+            'special_requests' => sanitize_textarea_field( $data['special_requests'] ?? '' ),
+            'created_at'       => current_time( 'mysql' ),
+        ];
+        $insert_data   += self::consent_snapshot( $data['lang'] ?? 'es' );
+        $insert_formats = [
+            '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s',
+            '%s', '%d', '%d', '%d', '%f', '%f', '%f', '%s', '%s', '%s', '%s',
+        ];
+
+        $inserted = $wpdb->insert( "{$wpdb->prefix}amir_bookings", $insert_data, $insert_formats );
+
+        if ( ! $inserted ) {
+            return BookingResult::error( 'Error al guardar tu solicitud. Por favor intenta de nuevo.' );
+        }
+
+        $booking_id = (int) $wpdb->insert_id;
+        do_action( 'amir_booking_date_requested', $booking_id );
+
+        $result = new BookingResult( true, $booking_id, $booking_ref, 0.0, null );
+        $result->requires_payment = false;
+        return $result;
     }
 
     // ── Crear reserva de lista de interés (estado 'wishlist') ──────────────
@@ -325,6 +566,120 @@ class BookingManager {
         return new BookingResult( true, $booking_id, $booking_ref, $row['total_mxn'], $quote->is_valid() ? $quote : null );
     }
 
+    // ── Crear solicitud de fecha (estado 'date_requested') ─────────────────
+
+    /**
+     * Un tour de fecha fija (amir_tours.fixed_date) solo se reserva en ESA
+     * fecha — esto crea el pedido de una fecha distinta, para que el
+     * operador la evalúe manualmente. Mismo patrón que create_wishlist():
+     * reserva real con precio ya congelado, SIN cobrar y SIN pasar por
+     * AvailabilityEngine (la fecha pedida no es una fecha abierta todavía,
+     * no hay cupo que verificar contra ella). A diferencia de wishlist, acá
+     * $date es la fecha que el CLIENTE propone, no la fecha fija del tour.
+     *
+     * Decisión cerrada con el cliente 2026-08-08: NO es el patrón de
+     * proveedores externos (que cobra de entrada y aprueba/rechaza lo ya
+     * pagado) — es "aprobar → mandar link de pago", igual que Lista de
+     * interés. Ver WishlistPage::notify_interested() para el mecanismo de
+     * aprobación (reusado tal cual para una sola reserva en BookingsPage).
+     */
+    public function create_date_request( array $data ): BookingResult {
+        global $wpdb;
+
+        $tour_id     = (int) ( $data['tour_id'] ?? 0 );
+        $schedule_id = (int) ( $data['schedule_id'] ?? 0 );
+        $date        = sanitize_text_field( $data['date'] ?? '' );
+        $adults      = max( 1, (int) ( $data['adults'] ?? 1 ) );
+        $children    = max( 0, (int) ( $data['children'] ?? 0 ) );
+        $babies      = max( 0, (int) ( $data['babies'] ?? 0 ) );
+
+        if ( ! $tour_id || ! $date || ! strtotime( $date ) ) {
+            return BookingResult::error( 'Tour y fecha son obligatorios.' );
+        }
+        if ( empty( $data['customer_name'] ) || empty( $data['customer_email'] ) ) {
+            return BookingResult::error( 'Nombre y email son obligatorios.' );
+        }
+        if ( ! is_email( $data['customer_email'] ) ) {
+            return BookingResult::error( 'Email no válido.' );
+        }
+
+        $policy_error = $this->child_baby_policy_error( $tour_id, $children, $babies );
+        if ( $policy_error ) {
+            return BookingResult::error( $policy_error );
+        }
+
+        $min_pax_error = $this->min_passengers_error(
+            $tour_id, $adults + $children + $babies, $data['lang'] ?? 'es'
+        );
+        if ( $min_pax_error ) {
+            return BookingResult::error( $min_pax_error );
+        }
+
+        // Sin schedule_id explícito, tomar el primero configurado del tour
+        // — los horarios no dependen de la fecha, mismo criterio que
+        // create_wishlist().
+        if ( $schedule_id === 0 ) {
+            $first = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}amir_tour_schedules WHERE tour_id = %d AND active = 1 ORDER BY sort_order ASC, time_start ASC LIMIT 1",
+                $tour_id
+            ) );
+            $schedule_id = (int) $first;
+        }
+
+        $lang  = in_array( $data['lang'] ?? '', [ 'es', 'en' ], true ) ? $data['lang'] : 'es';
+        $quote = $this->pricing->quote( $tour_id, $schedule_id, $date, $adults, $children, $babies );
+
+        $booking_ref  = $this->generate_ref();
+        $access_token = self::generate_access_token();
+
+        $inserted = $wpdb->insert(
+            "{$wpdb->prefix}amir_bookings",
+            [
+                'booking_ref'      => $booking_ref,
+                'access_token'     => $access_token,
+                'tour_id'          => $tour_id,
+                'schedule_id'      => $schedule_id,
+                'tour_date'        => $date,
+                'status'           => 'date_requested',
+                'booking_source'   => 'date_request',
+                'lang'             => $lang,
+                'customer_name'    => sanitize_text_field( $data['customer_name'] ),
+                'customer_email'   => sanitize_email( $data['customer_email'] ),
+                'customer_phone'   => sanitize_text_field( $data['customer_phone'] ?? '' ),
+                'adults'           => $adults,
+                'children'         => $children,
+                'babies'           => $babies,
+                'total_mxn'        => $quote->is_valid() ? $quote->total_mxn : 0.0,
+                'usd_reference'    => $quote->is_valid() ? $quote->usd_reference : 0.0,
+                'exchange_rate'    => $this->pricing->get_exchange_rate(),
+                'special_requests' => sanitize_textarea_field( $data['special_requests'] ?? '' ),
+                'created_at'       => current_time( 'mysql' ),
+            ],
+            [
+                '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s',
+                '%s', '%d', '%d', '%d', '%f', '%f', '%f', '%s', '%s',
+            ]
+        );
+
+        if ( ! $inserted ) {
+            return BookingResult::error( 'Error al guardar tu solicitud. Por favor intenta de nuevo.' );
+        }
+
+        $booking_id = (int) $wpdb->insert_id;
+
+        // Mismo hook que dispara el camino "solo a pedido" de create_pending()
+        // — antes este camino ("solicitar otra fecha" en tour de fecha fija)
+        // no disparaba nada acá, y BookingController::request_date() armaba
+        // a mano solo el registro interno para el admin (sin email a nadie,
+        // ni admin ni cliente). Bug real reportado por el cliente
+        // (2026-08-14): el widget le prometía al cliente un email que nunca
+        // llegaba. Unificado para que ambos orígenes de 'date_requested'
+        // avisen igual (admin + cliente).
+        do_action( 'amir_booking_date_requested', $booking_id );
+
+        return new BookingResult( true, $booking_id, $booking_ref, $quote->is_valid() ? $quote->total_mxn : 0.0, $quote->is_valid() ? $quote : null );
+    }
+
     // ── Crear reserva manual (confirmada directamente) ────────────────────
 
     /**
@@ -333,6 +688,13 @@ class BookingManager {
      */
     public function create_manual( array $data ): BookingResult {
         global $wpdb;
+
+        // wp_unslash() acá, no en cada caller — ambos call sites
+        // (BookingsPage/FieldPage) pasan $_POST tal cual, y WordPress le
+        // agrega backslashes a todo $_POST (wp_magic_quotes()) antes de que
+        // el código del plugin lo vea. Sin esto, un nombre de cliente con
+        // comilla se guarda corrupto (bug real reportado 2026-08-05).
+        $data = wp_unslash( $data );
 
         $tour_id     = (int) ( $data['tour_id'] ?? 0 );
         $schedule_id = (int) ( $data['schedule_id'] ?? 0 );
@@ -370,7 +732,7 @@ class BookingManager {
         if ( $pax > $avail->slots_remaining ) {
             $wpdb->query( 'ROLLBACK' );
             return BookingResult::error(
-                sprintf( 'Solo quedan %d cupos disponibles para esa fecha.', $avail->slots_remaining )
+                $this->slots_left_error( $avail->slots_remaining, $data['lang'] ?? 'es' )
             );
         }
 
@@ -396,7 +758,11 @@ class BookingManager {
                 'partner_id'        => $partner_id,
                 'tour_date'         => $date,
                 'status'            => $awaiting_payment ? 'awaiting_payment' : 'confirmed',
-                'booking_source'    => 'manual',
+                // Selector de plataforma agregado 2026-08-04 — antes quedaba
+                // hardcodeado a 'manual' sin importar lo que el admin eligiera
+                // (cable suelto documentado, CONTRIBUTING.md Tarea 15).
+                'booking_source'    => in_array( $data['booking_source'] ?? '', [ 'manual', 'tripadvisor', 'getyourguide' ], true )
+                    ? $data['booking_source'] : 'manual',
                 'lang'              => in_array( $data['lang'] ?? '', array('es','en'), true ) ? $data['lang'] : 'es',
                 'customer_name'     => sanitize_text_field( $data['customer_name'] ),
                 'customer_email'    => sanitize_email( $data['customer_email'] ),
@@ -488,7 +854,39 @@ class BookingManager {
         global $wpdb;
 
         $booking = $this->get_booking( $booking_id );
-        if ( ! $booking || $booking->status !== 'pending' ) {
+
+        // Depósito parcial ("Depósito parcial por tour") — un cobro que
+        // llega sobre una reserva YA `confirmed`, con depósito cobrado y
+        // saldo pendiente, es el pago del SALDO restante (link de "saldo
+        // restante" mandado aparte vía init_payment()), no una confirmación
+        // nueva: no hay que reenviar el email/voucher de "reserva
+        // confirmada" completo — la reserva ya estaba confirmada — solo
+        // registrar que el saldo se cobró.
+        if ( $booking && $booking->status === 'confirmed'
+             && ( $booking->item_type ?? 'tour' ) === 'tour'
+             && (int) ( $booking->deposit_pct ?? 0 ) > 0
+             && empty( $booking->balance_paid_at )
+        ) {
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings",
+                [ 'balance_paid_at' => current_time( 'mysql' ) ],
+                [ 'id' => $booking_id ],
+                [ '%s' ],
+                [ '%d' ]
+            );
+            do_action( 'amir_booking_balance_paid', $booking_id );
+            return true;
+        }
+
+        // 'awaiting_payment' (lista de interés ya publicada, o solicitud de
+        // fecha ya aprobada — en ambos casos el cliente todavía no pagó, solo
+        // tiene el link) se suma acá a propósito: antes esta función SOLO
+        // aceptaba 'pending', así que no había forma de que el admin marcara
+        // como pagada a mano una reserva en ese estado (ej. pago recibido
+        // por transferencia en vez de por el link) — quedaba atascada sin
+        // ninguna acción posible. finalize_confirmation() de abajo no
+        // depende de cuál era el estado previo, así que no hay riesgo.
+        if ( ! $booking || ! in_array( $booking->status, [ 'pending', 'awaiting_payment' ], true ) ) {
             return false;
         }
 
@@ -506,7 +904,12 @@ class BookingManager {
             [ '%d' ]
         );
 
-        if ( $this->tour_has_active_provider( (int) $booking->tour_id ) ) {
+        // provider_responded_at ya seteado = este booking pasó por
+        // provider_approve() en modo 'on_approval' (§ 11.0 CONTRIBUTING.md):
+        // el proveedor YA aprobó antes, sin cobrar nada — este confirm() es
+        // el pago que llegó recién ahora, por el link. No corresponde
+        // volver a pedirle aprobación al proveedor una segunda vez.
+        if ( $this->tour_has_active_provider( (int) $booking->tour_id ) && empty( $booking->provider_responded_at ) ) {
             $wpdb->update(
                 "{$wpdb->prefix}amir_bookings",
                 [
@@ -526,6 +929,16 @@ class BookingManager {
         }
 
         $this->finalize_confirmation( $booking_id, $charge_id );
+
+        // Cobro diferido (§ 11.0): el proveedor ya había aprobado sin cobrar
+        // nada — recién ahora, con el pago del cliente ya confirmado de
+        // verdad, corresponde generar la fila de liquidación (antes de esto
+        // hubiera sido prematuro: la aprobación no garantizaba que el
+        // cliente fuera a completar el pago del link).
+        if ( ! empty( $booking->provider_responded_at ) ) {
+            do_action( 'amir_provider_booking_approved', $booking_id );
+        }
+
         return true;
     }
 
@@ -550,6 +963,33 @@ class BookingManager {
             [ '%s', '%s', '%s', '%s' ],
             [ '%d' ]
         );
+
+        // Reserva de habitación (§ 16 CONTRIBUTING.md, item_type='room'):
+        // amir_booking_confirmed no hace nada acá — get_booking_with_tour()
+        // hace INNER JOIN con amir_tours, que no existe para esta reserva
+        // (tour_id NULL), así que el email de siempre nunca se dispara. Hook
+        // propio en vez de dejarlo fallar en silencio sin avisarle al
+        // cliente. Voucher/QR quedan sin construir todavía para habitaciones
+        // (VoucherGenerator también asume tour vía el mismo tipo de JOIN).
+        $booking = $this->get_booking( $booking_id );
+        if ( ( $booking->item_type ?? 'tour' ) === 'room' ) {
+            do_action( 'flow_room_booking_confirmed', $booking_id );
+            $this->create_admin_notification( 'new_booking', $booking_id );
+            return;
+        }
+
+        // Venta suelta de un producto digital (§ 16.9x CONTRIBUTING.md,
+        // item_type='product') — mismo motivo que 'room' arriba: sin tour,
+        // el email/voucher de siempre no aplican. Hook propio, escuchado en
+        // EmailDispatcher, que manda el link tokenizado de descarga
+        // (GET /flow/v1/addons/download/{booking_addon_id}?token=...) — el
+        // mismo endpoint que ya usa cualquier extra digital comprado dentro
+        // de un carrito con tour, sin cambios.
+        if ( ( $booking->item_type ?? 'tour' ) === 'product' ) {
+            do_action( 'flow_product_order_confirmed', $booking_id );
+            $this->create_admin_notification( 'new_booking', $booking_id );
+            return;
+        }
 
         // Email de confirmación — disparado por el hook amir_booking_confirmed
         // (no usar cron + do_action simultáneamente: causaría doble envío)
@@ -620,6 +1060,31 @@ class BookingManager {
         }
 
         $charge_id = $booking->gateway_charge_id ?: $booking->stripe_charge_id;
+
+        // Modo 'on_approval' (§ 11.0 CONTRIBUTING.md): esta reserva nunca se
+        // cobró (no hay charge_id) — recién ahora, con la aprobación en
+        // mano, se manda el link de pago real (mismo mecanismo que wishlist/
+        // reserva manual). amir_provider_booking_approved (ledger de
+        // liquidación) se dispara recién en confirm(), cuando el cliente
+        // efectivamente pague — acá todavía no hay nada que liquidar.
+        if ( empty( $charge_id ) ) {
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings",
+                [ 'status' => 'awaiting_payment', 'created_at' => current_time( 'mysql' ) ],
+                [ 'id' => $booking_id ],
+                [ '%s', '%s' ],
+                [ '%d' ]
+            );
+
+            // Desacoplado vía hook (igual que el resto de esta clase, ver
+            // amir_process_gateway_refund/amir_provider_booking_approved) en
+            // vez de instanciar EmailDispatcher acá directo — BookingManager
+            // no conoce la capa de emails.
+            do_action( 'amir_provider_awaiting_payment', $booking_id );
+
+            return true;
+        }
+
         $this->finalize_confirmation( $booking_id, $charge_id );
 
         // Desacoplado igual que amir_process_gateway_refund — el ledger de
@@ -793,13 +1258,24 @@ class BookingManager {
      *   0–2 días antes → 0% reembolso (100% cargo)
      */
     private function calculate_refund( object $booking, string $reason_type ): array {
+        // Depósito parcial por tour ("Depósito parcial por tour",
+        // CONTRIBUTING.md) — la política de cancelación (100/50/0% según
+        // antelación) se aplica sobre el monto REALMENTE cobrado (el
+        // depósito), nunca sobre total_mxn completo: si solo se cobró un
+        // 20% de depósito, reembolsar total_mxn sería devolver plata que
+        // nunca se cobró. deposit_pct=0 (default, sin depósito) deja
+        // $charged_mxn === total_mxn, comportamiento idéntico al de antes.
+        $charged_mxn = ( $booking->deposit_pct ?? 0 ) > 0
+            ? round( (float) $booking->total_mxn * (int) $booking->deposit_pct / 100, 2 )
+            : (float) $booking->total_mxn;
+
         // Cancelación por el operador, o por el proveedor externo (rechazo o
         // vencimiento del plazo de aprobación) = siempre reembolso total, no
         // es responsabilidad del cliente.
         if ( in_array( $reason_type, [ 'weather', 'min_pax', 'provider_rejected', 'provider_expired' ], true ) ) {
             return [
                 'charge_pct' => 0,
-                'refund_mxn' => (float) $booking->total_mxn,
+                'refund_mxn' => $charged_mxn,
                 'message'    => 'Reembolso total procesado.',
             ];
         }
@@ -829,13 +1305,13 @@ class BookingManager {
         if ( $days_until >= 7 ) {
             return [
                 'charge_pct' => 0,
-                'refund_mxn' => (float) $booking->total_mxn,
+                'refund_mxn' => $charged_mxn,
                 'message'    => 'Reembolso total (cancelación con 7+ días de anticipación).',
             ];
         }
 
         if ( $days_until >= 3 ) {
-            $refund = round( (float) $booking->total_mxn * 0.50, 2 );
+            $refund = round( $charged_mxn * 0.50, 2 );
             return [
                 'charge_pct' => 50,
                 'refund_mxn' => $refund,
@@ -876,7 +1352,7 @@ class BookingManager {
         $pax = (int)$booking->adults + (int)$booking->children + (int)$booking->babies;
         if ( $pax > $avail->slots_remaining ) {
             return BookingResult::error(
-                sprintf( 'Solo quedan %d cupos disponibles para esa fecha', $avail->slots_remaining )
+                $this->slots_left_error( $avail->slots_remaining, $booking->lang ?? 'es' )
             );
         }
 
@@ -995,7 +1471,14 @@ class BookingManager {
         return bin2hex( random_bytes( 32 ) );
     }
 
-    private function generate_ref(): string {
+    /**
+     * Público (no solo private) a propósito: TourFlow\Rooms\RoomBookingManager
+     * reusa esta misma secuencia — una reserva de habitación vive en la
+     * misma tabla amir_bookings (§ 16 CONTRIBUTING.md, decisión de
+     * generalizar en vez de duplicar toda la infraestructura de pago), así
+     * que comparte el mismo correlativo de booking_ref que las de tours.
+     */
+    public function generate_ref(): string {
         global $wpdb;
         $year   = date( 'Y' );
         $prefix = get_option( 'amir_booking_ref_prefix', 'BK' ) ?: 'BK';
@@ -1013,6 +1496,77 @@ class BookingManager {
         );
 
         return sprintf( '%s-%s-%05d', $prefix, $year, $last + 1 );
+    }
+
+    /**
+     * Mensaje de "no alcanza el cupo" en el idioma de la reserva — bug real
+     * reportado por el cliente: salía siempre en español sin importar el
+     * idioma del widget, porque `sprintf()` no pasa por ningún mecanismo de
+     * traducción. Mismo patrón ya usado para el bug idéntico en emails
+     * (`EmailTexts`, CONTRIBUTING.md § 16.34): `amir-booking-en_US.mo`
+     * nunca existió, así que un `__()` acá caería igual al msgid en
+     * español para 'en' — por eso es un diccionario chico en código, no
+     * gettext. Mismo criterio que el resto de esta clase para idiomas no
+     * es/en (columnas `lang` solo validan es/en, cualquier otro cae a es).
+     */
+    private function slots_left_error( int $remaining, string $lang ): string {
+        return $lang === 'en'
+            ? sprintf( 'Only %d spot(s) left', $remaining )
+            : sprintf( 'Solo quedan %d cupos disponibles', $remaining );
+    }
+
+    /**
+     * Mínimo de personas POR RESERVA (amir_tours.min_passengers) — un tour
+     * puede exigir, por ejemplo, mínimo 2 personas por reserva individual.
+     * Devuelve el mensaje de error bilingüe, o null si no hay problema.
+     */
+    private function min_passengers_error( int $tour_id, int $pax, string $lang ): ?string {
+        global $wpdb;
+        $min_passengers = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT min_passengers FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+            $tour_id
+        ) );
+        if ( $min_passengers <= 1 || $pax >= $min_passengers ) {
+            return null;
+        }
+        return $lang === 'en'
+            ? sprintf( 'This tour requires a minimum of %d people per booking.', $min_passengers )
+            : sprintf( 'Este tour requiere un mínimo de %d personas por reserva.', $min_passengers );
+    }
+
+    /** Sanitiza y arma el JSON que se guarda en amir_bookings.participant_names — '' (no NULL, la columna no distingue) si no vino ninguno. */
+    private function encode_participant_names( array $names ): string {
+        $clean = array_values( array_filter( array_map(
+            fn( $n ) => trim( sanitize_text_field( (string) $n ) ),
+            $names
+        ) ) );
+        return $clean ? wp_json_encode( $clean ) : '';
+    }
+
+    /**
+     * $required_count es adultos+niños (bebés excluidos, ver comentario en
+     * create_pending()). Devuelve el mensaje de error, o null si el tour no
+     * requiere nombres o si vinieron los suficientes nombres no vacíos.
+     */
+    private function participant_names_error( int $tour_id, int $required_count, array $names, string $lang ): ?string {
+        global $wpdb;
+        $requires = (bool) $wpdb->get_var( $wpdb->prepare(
+            "SELECT require_participant_names FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+            $tour_id
+        ) );
+        if ( ! $requires ) {
+            return null;
+        }
+        $valid_names = array_values( array_filter( array_map(
+            fn( $n ) => trim( sanitize_text_field( (string) $n ) ),
+            $names
+        ) ) );
+        if ( count( $valid_names ) >= $required_count ) {
+            return null;
+        }
+        return $lang === 'en'
+            ? sprintf( 'This tour requires the full name of each participant (%d needed).', $required_count )
+            : sprintf( 'Este tour requiere el nombre completo de cada integrante (%d necesarios).', $required_count );
     }
 
     /**
@@ -1117,18 +1671,43 @@ class BookingResult {
     public $booking_ref;
     /** @var float */
     public $total_mxn;
+    /**
+     * @var float Monto a cobrar AHORA vía la pasarela — default = total_mxn
+     * (así ningún call site existente cambia de comportamiento sin
+     * declararlo explícito). Distinto de total_mxn solo cuando el tour
+     * tiene depósito parcial activo (deposit_enabled, § CONTRIBUTING.md
+     * "Depósito parcial por tour") — ahí es total_mxn × deposit_pct/100.
+     * total_mxn NUNCA cambia de significado: sigue siendo el precio total
+     * real del tour (reportes, voucher, liquidación a proveedores).
+     */
+    public $charge_mxn;
     /** @var PriceQuote|null */
     public $quote;
     /** @var string */
     public $error;
     /** @var string */
     public $message;
+    /**
+     * @var bool false solo para reservas de proveedor en modo 'on_approval'
+     * (§ 11.0 CONTRIBUTING.md) — la reserva se creó sin cobrar nada todavía,
+     * el controlador no debe intentar iniciar un cobro con la pasarela.
+     */
+    public $requires_payment = true;
+    /**
+     * @var string Estado real de la reserva ('pending' salvo casos
+     * especiales) — el controlador REST lo usa para informar al frontend
+     * sin necesidad de re-consultar la reserva. Tarea "cupón 100%" (Dudas
+     * de producto, CLAUDE.md): 'confirmed' cuando la reserva queda
+     * confirmada de una por no haber nada que cobrar (ver create_pending()).
+     */
+    public $status = 'pending';
 
     public function __construct( bool $success, int $booking_id = 0, string $booking_ref = '', float $total_mxn = 0.0, $quote = null, string $error = '', string $message = '' ) {
         $this->success     = $success;
         $this->booking_id  = $booking_id;
         $this->booking_ref = $booking_ref;
         $this->total_mxn   = $total_mxn;
+        $this->charge_mxn  = $total_mxn;
         $this->quote       = $quote;
         $this->error       = $error;
         $this->message     = $message;

@@ -16,8 +16,14 @@ defined( 'ABSPATH' ) || exit;
  */
 class VoucherGenerator {
 
-    private string $upload_dir;
-    private string $upload_url;
+    /**
+     * protected (no private) — TourFlow\Cart\CartVoucherGenerator extiende
+     * esta clase para el "voucher general" del carrito (§ 16.15
+     * CONTRIBUTING.md, generalización en vez de duplicar toda la lógica de
+     * QR/PDF que ya existe acá).
+     */
+    protected string $upload_dir;
+    protected string $upload_url;
 
     public function __construct() {
         $dirs             = wp_upload_dir();
@@ -30,12 +36,34 @@ class VoucherGenerator {
     /**
      * Crea un .htaccess que bloquea el acceso HTTP directo al directorio de vouchers.
      * Los archivos solo son accesibles a través del endpoint REST autenticado.
+     *
+     * El .htaccess es Apache/LiteSpeed-only — en nginx (frecuente en hosting
+     * administrado) se ignora por completo, por eso los nombres de archivo
+     * (ver file_key()) NUNCA se derivan de booking_ref/cart_group_id
+     * expuestos: son secuenciales/adivinables y esta era la única barrera
+     * real en ese escenario (auditoría de seguridad 2026-08-04). El
+     * index.php es defensa adicional contra listado de directorio.
      */
     private function protect_directory(): void {
         $htaccess = $this->upload_dir . '.htaccess';
         if ( ! file_exists( $htaccess ) ) {
             file_put_contents( $htaccess, "deny from all\n" );
         }
+        $index = $this->upload_dir . 'index.php';
+        if ( ! file_exists( $index ) ) {
+            file_put_contents( $index, "<?php\n// Silence is golden.\n" );
+        }
+    }
+
+    /**
+     * Deriva un componente de nombre de archivo no reversible y no
+     * adivinable a partir de un secreto ya existente por reserva (el
+     * access_token, 256 bits de entropía real vía random_bytes()) — nunca
+     * del booking_ref, que es correlativo y por lo tanto adivinable
+     * (auditoría de seguridad 2026-08-04, ver CONTRIBUTING.md § 16.28).
+     */
+    private function file_key( string $secret ): string {
+        return substr( hash( 'sha256', $secret ), 0, 40 );
     }
 
     // ── API pública ───────────────────────────────────────────────────────
@@ -50,7 +78,7 @@ class VoucherGenerator {
             return '';
         }
 
-        $filename = 'voucher-' . sanitize_file_name($booking->booking_ref) . '.pdf';
+        $filename = 'voucher-' . $this->file_key( $booking->access_token ) . '.pdf';
         $filepath = $this->upload_dir . $filename;
 
         // Si ya existe y la reserva sigue confirmada, devolver el existente
@@ -102,11 +130,22 @@ class VoucherGenerator {
      * Retorna la ruta del archivo PNG.
      */
     public function generate_qr( int $booking_id, string $booking_ref ): string {
+        $token      = $this->get_access_token( $booking_id );
         $verify_url = add_query_arg(
-            [ 'ref' => $booking_ref, 'token' => $this->get_access_token( $booking_id ) ],
+            [ 'ref' => $booking_ref, 'token' => $token ],
             $this->verify_page_url()
         );
-        $qr_path    = $this->upload_dir . 'qr-' . sanitize_file_name($booking_ref) . '.png';
+        return $this->generate_qr_for_url( $verify_url, $this->file_key( $token ) );
+    }
+
+    /**
+     * Núcleo de generación de QR, separado de generate_qr() para que
+     * TourFlow\Cart\CartVoucherGenerator pueda pedir un QR para una URL
+     * propia (el carrito no tiene un solo booking_id/ref) sin duplicar la
+     * lógica de endroid/qrserver.com.
+     */
+    protected function generate_qr_for_url( string $verify_url, string $cache_key ): string {
+        $qr_path = $this->upload_dir . 'qr-' . sanitize_file_name( $cache_key ) . '.png';
 
         if ( file_exists($qr_path) ) {
             return $qr_path;
@@ -244,9 +283,16 @@ class VoucherGenerator {
         $brand_color  = get_option( 'amir_brand_color', '#1D9E75' );
         $company_name = get_option( 'amir_company_name', 'TourFlow' );
 
+        // Sin fallback a Bacalar — antes cualquier instalación sin eslogan
+        // configurado mostraba "Experiencias en Bacalar..." en SU PROPIO
+        // voucher (bug real reportado 2026-08-05). Sin tagline, no se
+        // muestra esa línea (ver uso de $tagline más abajo).
         $is_en       = $lang === 'en';
-        $tagline_opt = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
-        $tagline     = $tagline_opt ?: __( 'Experiencias en Bacalar · Quintana Roo, México', 'amir-booking' );
+        // 'es' es el único caso especial (mismo criterio que BaseEmail::
+        // text()) — antes esto usaba $is_en, así que un idioma 3+ (it/fr/pt)
+        // recibía el eslogan en ESPAÑOL en vez de en inglés (auditoría
+        // pre-empaquetado v5.7.14, CONTRIBUTING.md § 5.5/16.91).
+        $tagline     = get_option( $lang === 'es' ? 'amir_company_tagline_es' : 'amir_company_tagline_en', '' );
         $months      = [
             __( 'Enero', 'amir-booking' ), __( 'Febrero', 'amir-booking' ), __( 'Marzo', 'amir-booking' ),
             __( 'Abril', 'amir-booking' ), __( 'Mayo', 'amir-booking' ), __( 'Junio', 'amir-booking' ),
@@ -272,7 +318,7 @@ class VoucherGenerator {
         $tour_name = Languages::tour_field( $b, 'name', $lang );
         $maps_url = $b->meeting_lat
             ? "https://maps.google.com/?q={$b->meeting_lat},{$b->meeting_lng}"
-            : 'https://maps.google.com/?q=Bacalar,Quintana+Roo,Mexico';
+            : 'https://maps.google.com/?q=' . rawurlencode( get_option( 'amir_company_name', 'TourFlow' ) );
 
         $wa    = get_option('amir_wa_phone','');
         $site  = get_site_url();
@@ -347,7 +393,7 @@ class VoucherGenerator {
       <?php else : ?>
         <h1><?php echo esc_html($company_name); ?></h1>
       <?php endif; ?>
-      <p><?php echo esc_html($tagline); ?></p>
+      <?php if ($tagline) : ?><p><?php echo esc_html($tagline); ?></p><?php endif; ?>
       <span class="status-ok">✓ <?php esc_html_e( 'RESERVA CONFIRMADA', 'amir-booking' ); ?></span>
     </div>
     <div class="qr-block">
@@ -403,15 +449,18 @@ class VoucherGenerator {
     <ul class="recs-list">
       <?php
       // Las recomendaciones las escribe el operador por idioma (opción,
-      // no string fijo) — solo existen es/en hoy, un idioma 3+ cae al
-      // listado en español (mismo criterio que el resto del contenido
-      // de operador sin traducir todavía).
-      $recs_raw_v = get_option( $is_en ? 'amir_voucher_recs_en' : 'amir_voucher_recs_es', '' );
+      // no string fijo) — solo existen es/en hoy. Bug real corregido
+      // (auditoría pre-empaquetado v5.7.14, CONTRIBUTING.md § 5.5/16.91):
+      // esto comparaba contra 'en', así que un idioma 3+ (it/fr/pt) caía
+      // al listado en ESPAÑOL — 'es' es el único caso especial en el
+      // resto del plugin (ver BaseEmail::text()), acá quedó al revés.
+      $prefer_es_v = $lang === 'es';
+      $recs_raw_v = get_option( $prefer_es_v ? 'amir_voucher_recs_es' : 'amir_voucher_recs_en', '' );
       $recs_items_v = $recs_raw_v
           ? array_filter( array_map( 'trim', explode( "\n", $recs_raw_v ) ) )
-          : ( $is_en
-              ? array( 'Comfortable clothes and swimsuit', 'Biodegradable sunscreen (required on the lagoon)', 'Water and light snacks', 'Photo ID', 'Camera or phone in a waterproof bag', 'Arrive 10 minutes before departure' )
-              : array( 'Ropa cómoda y traje de baño', 'Protector solar biodegradable (obligatorio en la laguna)', 'Agua y snacks ligeros', 'Documento de identidad', 'Cámara o celular en bolsa impermeable', 'Llega 10 minutos antes a tu hora de salida' )
+          : ( $prefer_es_v
+              ? array( 'Ropa cómoda y traje de baño', 'Protector solar biodegradable (obligatorio en la laguna)', 'Agua y snacks ligeros', 'Documento de identidad', 'Cámara o celular en bolsa impermeable', 'Llega 10 minutos antes a tu hora de salida' )
+              : array( 'Comfortable clothes and swimsuit', 'Biodegradable sunscreen (required on the lagoon)', 'Water and light snacks', 'Photo ID', 'Camera or phone in a waterproof bag', 'Arrive 10 minutes before departure' )
             );
       foreach ( $recs_items_v as $rec_item ) {
           echo '<li>' . esc_html( $rec_item ) . '</li>';
@@ -481,7 +530,7 @@ class VoucherGenerator {
      * existe, con fallback al slug fijo /verificar-reserva/ para instalaciones
      * antiguas donde la opción todavía no se haya guardado.
      */
-    private function verify_page_url(): string {
+    protected function verify_page_url(): string {
         $page_id = (int) get_option( 'amir_verify_page_id', 0 );
         if ( $page_id ) {
             $url = get_permalink( $page_id );
@@ -504,20 +553,80 @@ class VoucherGenerator {
         ) );
     }
 
-    private function path_to_data_uri( string $path ): string {
+    protected function path_to_data_uri( string $path ): string {
         if ( ! file_exists($path) ) return '';
         $mime = mime_content_type($path) ?: 'image/png';
         return 'data:' . $mime . ';base64,' . base64_encode( file_get_contents($path) );
     }
 
-    private function tcpdf_available(): bool {
+    /**
+     * Descarga el logo de marca configurado (Personalización → Logo) y lo
+     * devuelve como data: URI listo para un <img> de TCPDF — o '' si no se
+     * puede embeber, para que el caller caiga al logo de texto en vez de
+     * romper el PDF entero.
+     *
+     * Bug real en producción (2026-08-20, caliafarm.com): esto siempre
+     * etiquetaba el contenido descargado como `image/png` sin mirar qué era
+     * de verdad — con un logo SVG (cada vez más común, es lo que exportan la
+     * mayoría de los editores de marca), el resultado era un
+     * "data:image/png;base64,<svg xml...>" que TCPDF no puede interpretar
+     * como imagen — tiraba "TCPDF ERROR: Unable to get the size of the
+     * image" y el voucher del carrito no se generaba, dejando al cliente sin
+     * comprobante después de pagar. TCPDF no soporta SVG embebido de forma
+     * confiable, así que en vez de intentar convertirlo se prefiere no
+     * mostrar el logo antes que tirar abajo el documento completo — mismo
+     * criterio que ya se usa cuando no hay ningún logo configurado.
+     */
+    protected function remote_logo_data_uri( string $url ): string {
+        $response = wp_remote_get( $url, [ 'timeout' => 8 ] );
+        $body     = wp_remote_retrieve_body( $response );
+        if ( ! $body || strlen( $body ) < 100 ) {
+            return '';
+        }
+
+        $header_mime = strtolower( trim( explode( ';', (string) wp_remote_retrieve_header( $response, 'content-type' ) )[0] ) );
+        $trimmed     = ltrim( $body );
+        $looks_svg   = stripos( $trimmed, '<svg' ) !== false && stripos( $trimmed, '<svg' ) < 200;
+
+        if ( $header_mime === 'image/svg+xml' || $looks_svg ) {
+            return '';
+        }
+
+        // No confiar ciegamente en el header — confirmar contra el
+        // contenido real antes de asumir qué tipo de imagen es.
+        $mime = in_array( $header_mime, [ 'image/png', 'image/jpeg', 'image/gif' ], true ) ? $header_mime : '';
+        if ( ! $mime ) {
+            $info = @getimagesizefromstring( $body );
+            $mime = $info['mime'] ?? '';
+        }
+        if ( ! in_array( $mime, [ 'image/png', 'image/jpeg', 'image/gif' ], true ) ) {
+            return '';
+        }
+
+        return 'data:' . $mime . ';base64,' . base64_encode( $body );
+    }
+
+    protected function tcpdf_available(): bool {
         // Composer instala TCPDF en vendor/tecnickcom/tcpdf/ y registra el autoloader
         return class_exists( '\TCPDF' )
             || file_exists( AMIR_PLUGIN_DIR . 'vendor/tecnickcom/tcpdf/tcpdf.php' );
     }
 
-    private function dompdf_available(): bool {
+    protected function dompdf_available(): bool {
         return file_exists( AMIR_PLUGIN_DIR . 'vendor/dompdf/autoload.inc.php' );
+    }
+
+    /** Carga TCPDF si todavía no está en memoria — TourFlow\Cart\CartVoucherGenerator también lo necesita. */
+    protected function ensure_tcpdf_loaded(): bool {
+        if ( class_exists( '\TCPDF' ) ) {
+            return true;
+        }
+        $lib = AMIR_PLUGIN_DIR . 'vendor/tecnickcom/tcpdf/tcpdf.php';
+        if ( file_exists( $lib ) ) {
+            require_once $lib;
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -557,18 +666,14 @@ class VoucherGenerator {
         $tour_name = Languages::tour_field( $b, 'name', $lang );
         $maps_url = $b->meeting_lat
             ? 'https://maps.google.com/?q=' . $b->meeting_lat . ',' . $b->meeting_lng
-            : 'https://maps.google.com/?q=Bacalar,Quintana+Roo,Mexico';
+            : 'https://maps.google.com/?q=' . rawurlencode( get_option( 'amir_company_name', 'TourFlow' ) );
 
         $wa   = get_option( 'amir_wa_phone', '' );
         $site = get_site_url();
 
         $logo_url_opt = get_option( 'amir_brand_logo_url', '' );
         if ( $logo_url_opt ) {
-            // For TCPDF inline we need a data URI; fetch remote logo
-            $logo_body = wp_remote_retrieve_body( wp_remote_get( $logo_url_opt, array( 'timeout' => 8 ) ) );
-            $logo_uri  = ( $logo_body && strlen($logo_body) > 100 )
-                ? ( 'data:image/png;base64,' . base64_encode( $logo_body ) )
-                : '';
+            $logo_uri = $this->remote_logo_data_uri( $logo_url_opt );
         } else {
             $logo_path = AMIR_PLUGIN_DIR . 'assets/images/logo-email.png';
             $logo_uri  = file_exists( $logo_path ) ? $this->path_to_data_uri( $logo_path ) : '';
@@ -625,8 +730,12 @@ class VoucherGenerator {
 
         // ── Recomendaciones ────────────────────────────────────────────────
         // Las escribe el operador por idioma (opción, no string fijo) — solo
-        // existen es/en hoy, un idioma 3+ cae al listado en español.
-        $recs_raw_b = get_option( $is_en ? 'amir_voucher_recs_en' : 'amir_voucher_recs_es', '' );
+        // existen es/en hoy. 'es' es el único caso especial (mismo criterio
+        // que BaseEmail::text()) — antes comparaba contra 'en', así que un
+        // idioma 3+ (it/fr/pt) caía al listado en ESPAÑOL (auditoría
+        // pre-empaquetado v5.7.14, CONTRIBUTING.md § 5.5/16.91).
+        $prefer_es_b = $lang === 'es';
+        $recs_raw_b = get_option( $prefer_es_b ? 'amir_voucher_recs_es' : 'amir_voucher_recs_en', '' );
         if ( $recs_raw_b ) {
             $recs_plain = array_filter( array_map( 'trim', explode( "\n", $recs_raw_b ) ) );
             $recs = array();
@@ -634,22 +743,22 @@ class VoucherGenerator {
                 $recs[] = esc_html( $r );
             }
         } else {
-            $recs = $is_en
+            $recs = $prefer_es_b
                 ? array(
-                    'Comfortable clothes and swimsuit',
-                    'Biodegradable sunscreen (required)',
-                    'Water and light snacks',
-                    'Photo ID',
-                    'Camera in waterproof bag',
-                    'Arrive 10 min before departure',
-                  )
-                : array(
                     'Ropa cómoda y traje de baño',
                     'Protector solar biodegradable (obligatorio)',
                     'Agua y snacks ligeros',
                     'Documento de identidad',
                     'Cámara en bolsa impermeable',
                     'Llega 10 min antes a tu hora de salida',
+                  )
+                : array(
+                    'Comfortable clothes and swimsuit',
+                    'Biodegradable sunscreen (required)',
+                    'Water and light snacks',
+                    'Photo ID',
+                    'Camera in waterproof bag',
+                    'Arrive 10 min before departure',
                   );
         }
         $recs_html = '';
@@ -692,13 +801,23 @@ class VoucherGenerator {
         $bring_label     = esc_html__( 'Recuerda llevar', 'amir-booking' );
         $policy_label    = esc_html__( 'Política de cancelación', 'amir-booking' );
         $wa_label        = esc_html__( '¿Dudas? Escríbenos cuando quieras.', 'amir-booking' );
-        $tagline_opt_v    = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
-        $experience_label = $tagline_opt_v
-            ? esc_html( $tagline_opt_v )
-            : esc_html__( 'Experiencias en Bacalar · Quintana Roo, México', 'amir-booking' );
+        // Sin fallback a Bacalar — mismo bug real que la versión HTML de
+        // arriba (2026-08-05). Sin tagline configurado, esta línea no se
+        // muestra (ver armado de $experience_label_html más abajo).
+        // 'es' es el único caso especial (mismo criterio que BaseEmail::
+        // text()) — antes usaba $is_en, un idioma 3+ recibía el eslogan en
+        // español (auditoría pre-empaquetado v5.7.14, CONTRIBUTING.md § 5.5/16.91).
+        $tagline_opt_v        = get_option( $lang === 'es' ? 'amir_company_tagline_es' : 'amir_company_tagline_en', '' );
+        $experience_label_html = $tagline_opt_v
+            ? '<span style="font-size:8pt;color:' . $gray . ';">' . esc_html( $tagline_opt_v ) . '</span><br/>'
+            : '';
 
         $html  = '<html><head><meta charset="UTF-8"></head>';
-        $html .= '<body style="font-family:Helvetica,Arial,sans-serif;color:#1a2e24;font-size:10pt;margin:0;padding:0;">';
+        // dejavusans (bundleado con TCPDF), no Helvetica — la fuente core de
+        // TCPDF no tiene glyphs para los símbolos Unicode que usa este
+        // template (✓, 📍, etc.), se veían como "?" en el PDF real (bug
+        // real encontrado renderizando un PDF de prueba, 2026-08-22).
+        $html .= '<body style="font-family:dejavusans;color:#1a2e24;font-size:10pt;margin:0;padding:0;">';
 
         // Header
         $html .= '<table width="100%" cellpadding="0" cellspacing="0"'
@@ -706,22 +825,26 @@ class VoucherGenerator {
                . '<tr>'
                . '<td width="70%" valign="middle">'
                . $logo_html
-               . '<span style="font-size:8pt;color:' . $gray . ';">' . $experience_label . '</span><br/>'
+               . $experience_label_html
                . '<span style="background:#e1f5ee;color:#0F6E56;font-size:8pt;font-weight:bold;padding:1px 6px;">'
                . '&#10003; ' . $confirmed_label . '</span>'
                . '</td>'
                . '<td width="30%" align="right" valign="top">' . $qr_html . '</td>'
                . '</tr></table>';
 
-        // Referencia
-        $html .= '<table width="100%" cellpadding="0" cellspacing="0"'
-               . ' style="background:' . $green . ';margin-bottom:10px;">'
+        // Referencia — el fondo va en cada <td>, no en el <table>: TCPDF no
+        // aplica `background` de forma confiable sobre <table>, así que la
+        // caja entera quedaba sin color y el texto blanco de adentro
+        // desaparecía sobre el fondo blanco de la página (bug real
+        // encontrado renderizando un PDF de prueba, 2026-08-22 — el dato
+        // más importante del voucher, el número de reserva, era invisible).
+        $html .= '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">'
                . '<tr>'
-               . '<td style="padding:10px 14px;" valign="middle">'
+               . '<td style="background-color:' . $green . ';padding:10px 14px;" valign="middle">'
                . '<div style="font-size:7.5pt;font-weight:bold;color:#fff;text-transform:uppercase;">' . $booked_label . '</div>'
                . '<div style="font-size:20pt;font-weight:bold;color:#fff;letter-spacing:2px;">' . esc_html( $b->booking_ref ) . '</div>'
                . '</td>'
-               . '<td style="padding:10px 14px;text-align:right;" valign="middle">'
+               . '<td style="background-color:' . $green . ';padding:10px 14px;text-align:right;" valign="middle">'
                . '<div style="font-size:8pt;color:#fff;">' . $booked_on . '</div>'
                . '<div style="font-size:10pt;font-weight:bold;color:#fff;">' . date( 'd/m/Y', strtotime( $b->created_at ) ) . '</div>'
                . '</td>'
@@ -744,7 +867,7 @@ class VoucherGenerator {
                . '</table>'
                . $sec( $loc_label )
                . '<div style="font-size:9pt;color:#3d3d3a;margin-bottom:3px;">' . esc_html( $meeting ? $meeting : '' ) . '</div>'
-               . '<div style="font-size:8.5pt;color:' . $green . ';">&#128205; ' . esc_url( $maps_url ) . '</div>'
+               . '<div style="font-size:8.5pt;color:' . $green . ';">' . ( $is_en ? 'Map: ' : 'Mapa: ' ) . esc_url( $maps_url ) . '</div>'
                . '</td>'
                . '</tr></table>';
 

@@ -23,6 +23,14 @@ if ( ! defined( 'DAY_IN_SECONDS' ) ) {
     define( 'DAY_IN_SECONDS', 86400 );
 }
 
+// La suite ejercita el feature set completo (edición Pro) salvo que un test
+// puntual necesite simular Lite — en ese caso, redefinir antes de incluir la
+// clase bajo test no es posible (constante), así que ese caso se cubriría
+// con un test de integración aparte si hiciera falta.
+if ( ! defined( 'AMIR_EDITION' ) ) {
+    define( 'AMIR_EDITION', 'pro' );
+}
+
 // ── Opciones de WordPress (en memoria, configurables desde los tests) ──────
 
 $GLOBALS['__amir_test_options'] = [];
@@ -174,3 +182,7 @@ require_once __DIR__ . '/../includes/payments/class-payment-creation-result.php'
 require_once __DIR__ . '/../includes/payments/class-payment-event.php';
 require_once __DIR__ . '/../includes/payments/class-payment-status-result.php';
 require_once __DIR__ . '/../includes/payments/class-mercado-pago-gateway.php';
+require_once __DIR__ . '/../includes/rooms/class-room-availability.php';
+require_once __DIR__ . '/../includes/rooms/class-room-booking-result.php';
+require_once __DIR__ . '/../includes/rooms/class-room-booking-manager.php';
+require_once __DIR__ . '/../includes/core/class-tour-importer.php';

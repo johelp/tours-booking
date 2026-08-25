@@ -131,7 +131,7 @@ class BookingButtonWidget extends \Elementor\Widget_Base {
         }
 
         $lang = $settings['lang'] === 'auto'
-            ? ( function_exists('pll_current_language') ? pll_current_language('slug') : 'es' )
+            ? \AmirBooking\Core\Shortcodes::detect_lang()
             : $settings['lang'];
         $lang = \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
 
@@ -350,16 +350,13 @@ trait TourTagBase {
     }
 
     /**
-     * Mismo patrón que ya usa BookingButtonWidget::render() — Polylang si
-     * está activo, si no español, validado contra los idiomas realmente
-     * activos del plugin (para no devolver un idioma que el operador
-     * todavía no cargó contenido).
+     * Bug real corregido 2026-07-30: antes solo miraba Polylang y caía a
+     * español si no estaba activo, ignorando WPML y el locale del sitio de
+     * WordPress. Reusa Shortcodes::detect_lang() (Polylang → WPML → locale
+     * de WP, ya validado contra los idiomas activos del plugin).
      */
     protected function current_lang(): string {
-        $lang = function_exists( 'pll_current_language' ) ? pll_current_language( 'slug' ) : 'es';
-        return \AmirBooking\Core\Languages::is_active( (string) $lang )
-            ? $lang
-            : \AmirBooking\Core\Languages::default_lang();
+        return \AmirBooking\Core\Shortcodes::detect_lang();
     }
 
     /**

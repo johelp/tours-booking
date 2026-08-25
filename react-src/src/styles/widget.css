@@ -1,6 +1,47 @@
 /* ── Amir Booking Widget ─────────────────────────────────────────────────── */
 /* Mobile-first. Base: 375px. Breakpoint tablet: 640px.                       */
 
+/* ── Criterio de blindaje contra el CSS del theme del sitio (leer antes de
+   tocar cualquier <button>/<a> de acá o de los demás archivos con CSS-in-JS
+   del plugin: shared.jsx, ExploreFlow.jsx, WishlistList.jsx, RoomSearch.jsx,
+   TourDates.jsx, TourList.jsx, tour-cards.css) ──────────────────────────────
+
+   El plugin se adapta al color de marca configurado por el operador, pero el
+   CSS del theme del sitio donde se instala NUNCA debe poder alterar la
+   estructura/legibilidad de sus propios botones — decisión explícita del
+   cliente (2026-08-21). Bug real que motivó esto: un theme con
+   `button{color:#fff!important}` dejaba texto blanco sobre fondo blanco en
+   varios botones (visible solo en :hover, por coincidencia de color) porque
+   se le había puesto !important al fondo pero no al texto.
+
+   Regla: en CUALQUIER clase que estilice un <button> o <a> real (no texto
+   suelto — títulos, precios, descripciones NO necesitan esto, un theme no
+   puede tocarlos vía selectores de botón), dar !important solo a las
+   propiedades que un theme agresivo realmente puede pisar:
+   background-color / background-image / box-shadow / color, más
+   width/height/padding/min-width cuando el tamaño es fijo (ver nota sobre
+   flexbox más abajo). NUNCA blanquear con !important toda la regla, ni
+   aplicarlo a texto no-interactivo — eso sería usar !important como parche
+   general en vez de una defensa acotada.
+
+   Checklist al agregar un botón nuevo:
+   1. `appearance:none; -webkit-appearance:none; -moz-appearance:none;`
+   2. `background-color`, `background-image:none`, `box-shadow:none` — los
+      3 con !important.
+   3. `color` con !important — en TODOS los estados (base, :hover, :active,
+      :disabled, .active) donde el texto deba seguir siendo legible. Este es
+      el punto que se saltó y causó el bug real: no alcanza con blindar el
+      estado base si :hover/.active tienen su propio color.
+   4. Si el tamaño es fijo (círculos de calendario/contador): `width`/
+      `height` con !important + `padding:0 !important; min-width:0;` — un
+      theme con padding propio en <button> infla el tamaño mínimo del
+      flex-item aunque el width gane la cascada (bug real 2026-08-21).
+   5. Si el tamaño es por contenido (pills, chips): `width:auto !important;
+      height:auto !important;` en vez de un valor fijo.
+   Verificar con un theme simulado agresivo que fuerce AMBOS
+   background-color y color con !important en <button>/<a> — un theme de
+   prueba que solo pisa el fondo no detecta este bug. */
+
 :root {
   --ab-teal:       #1D9E75;
   --ab-teal-dark:  #0F6E56;
@@ -165,22 +206,40 @@
   color: var(--ab-text);
 }
 .ab-cal-nav {
-  /* 44x44px mínimo: touch target recomendado, antes 32x32px */
-  width: 44px;
-  height: 44px;
+  /* 44x44px mínimo: touch target recomendado, antes 32x32px — !important
+     porque un theme puede traer su propio width:X% para <button>, y sin
+     esto una regla así deforma el círculo en un óvalo (bug real 2026-08-21). */
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 0;
+  padding: 0 !important;
+  box-sizing: border-box;
+  margin: 0;
   border-radius: 50%;
   border: 1.5px solid var(--ab-border);
-  background: transparent;
-  color: var(--ab-teal);
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: var(--ab-teal) !important;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
+  line-height: 1;
+  font-family: inherit;
   transition: background .15s, border-color .15s;
+  /* Reset real de estilos nativos de <button> — sin esto, el tema del
+     sitio (o el navegador en modo alto contraste) puede pintar encima con
+     su propio botón "de sistema" en vez del nuestro. Bug real reportado
+     por el cliente (2026-08-21, caliafarm.com). */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
-.ab-cal-nav:hover  { background: var(--ab-teal-light); border-color: var(--ab-teal); }
+.ab-cal-nav:hover  { background-color: var(--ab-teal-light) !important; border-color: var(--ab-teal); }
 .ab-cal-nav:disabled { opacity: .3; cursor: default; }
+.ab-cal-nav:focus-visible { outline: 2px solid var(--ab-teal); outline-offset: 2px; }
 
 .ab-cal-grid {
   display: grid;
@@ -200,11 +259,23 @@
 }
 .ab-cal-day {
   aspect-ratio: 1;
+  /* width/height:auto !important — un theme que fuerce un width fijo/%
+     en <button> corta la grilla de 7 columnas (bug real 2026-08-21): así
+     el tamaño lo sigue decidiendo la celda del grid, no el theme. */
+  width: auto !important;
+  height: auto !important;
+  padding: 0 !important;
+  min-width: 0;
+  margin: 0;
   border-radius: var(--ab-radius-sm);
   border: none;
-  background: transparent;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: var(--ab-text) !important;
   font-size: 12px;
   font-weight: 500;
+  font-family: inherit;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -213,13 +284,21 @@
   position: relative;
   min-width: 0;
   box-sizing: border-box;
+  /* Mismo reset que .ab-cal-nav — un <button> nativo puede heredar el
+     "botón de sistema" del tema del sitio (padding/borde/fondo propios)
+     en vez de quedar transparente como corresponde acá; solo .selected
+     de abajo debe pintar fondo, todo el resto es texto sobre la grilla. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
-.ab-cal-day:hover:not(:disabled) { background: var(--ab-teal-light); }
-.ab-cal-day.available  { color: var(--ab-text); }
-.ab-cal-day.selected   { background: var(--ab-teal) !important; color: #fff !important; font-weight: 700; }
-.ab-cal-day.full       { color: #bbb; cursor: not-allowed; text-decoration: line-through; }
-.ab-cal-day.blocked    { color: #ccc; cursor: not-allowed; }
-.ab-cal-day.past       { color: #d0d0d0; cursor: not-allowed; }
+.ab-cal-day:focus-visible { outline: 2px solid var(--ab-teal); outline-offset: 1px; }
+.ab-cal-day:hover:not(:disabled) { background-color: var(--ab-teal-light) !important; }
+.ab-cal-day.available  { color: var(--ab-text) !important; }
+.ab-cal-day.selected   { background-color: var(--ab-teal) !important; color: #fff !important; font-weight: 700; }
+.ab-cal-day.full       { color: #bbb !important; cursor: not-allowed; text-decoration: line-through; }
+.ab-cal-day.blocked    { color: #ccc !important; cursor: not-allowed; }
+.ab-cal-day.past       { color: #d0d0d0 !important; cursor: not-allowed; }
 .ab-cal-day.empty      { cursor: default; }
 .ab-cal-day.low-slots::after {
   content: '';
@@ -297,10 +376,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--ab-border);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  background: var(--ab-bg2);
+  border: 1px solid var(--ab-border);
+  border-radius: var(--ab-radius-sm);
+  transition: border-color .15s ease, background-color .15s ease;
 }
-.ab-people-row:last-child { border-bottom: none; }
+.ab-people-row:last-child { margin-bottom: 0; }
+/* Extras/add-ons elegidos (qty>0 o checkbox tildado) — antes cada fila era
+   solo texto negro sobre blanco sin ningún indicio visual de "esto ya lo
+   agregaste" vs. "esto todavía no" (pedido explícito del cliente,
+   auditoría de UX 2026-08-24, mismo criterio para StepPeople porque
+   comparten esta clase). */
+.ab-people-row.selected {
+  background: var(--ab-teal-light);
+  border-color: var(--ab-teal-mid);
+}
 
 .ab-people-info { flex: 1; }
 .ab-people-label  { font-size: calc(15px * var(--ab-font-scale)); font-weight: 600; color: var(--ab-text); }
@@ -324,23 +416,34 @@
   overflow: hidden;
 }
 .ab-counter-btn {
-  /* 44x44px mínimo: touch target recomendado, antes 34x34px */
-  width: 44px;
-  height: 44px;
-  border: none;
-  background: transparent;
+  /* 44x44px mínimo: touch target recomendado, antes 34x34px — !important
+     por el mismo motivo que .ab-cal-nav (bug real 2026-08-21). */
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 0;
+  padding: 0 !important;
+  box-sizing: border-box;
+  margin: 0;
+  border: none !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+  background-image: none !important;
   font-size: 20px;
   font-weight: 400;
-  color: var(--ab-teal);
+  font-family: inherit;
+  color: var(--ab-teal) !important;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background .12s;
   line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
-.ab-counter-btn:hover:not(:disabled) { background: var(--ab-teal-light); }
-.ab-counter-btn:disabled { color: #ccc; cursor: default; }
+.ab-counter-btn:hover:not(:disabled) { background-color: var(--ab-teal-light) !important; }
+.ab-counter-btn:disabled { color: #ccc !important; cursor: default; }
 .ab-counter-val {
   min-width: 28px;
   text-align: center;
@@ -415,19 +518,28 @@
 .ab-lang-btn {
   flex: 1;
   min-height: 44px; /* touch target mínimo, antes ~37px */
-  padding: 10px;
-  border: none;
-  background: transparent;
+  padding: 10px !important;
+  min-width: 0;
+  margin: 0;
+  border: none !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+  background-image: none !important;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
   font-weight: 500;
-  color: var(--ab-muted);
+  font-family: inherit;
+  color: var(--ab-muted) !important;
   cursor: pointer;
   transition: background .12s, color .12s;
+  /* Mismo blindaje que .ab-cal-nav/.ab-counter-btn — bug real 2026-08-21. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
-.ab-lang-btn.active { background: var(--ab-teal); color: #fff; font-weight: 700; }
+.ab-lang-btn.active { background-color: var(--ab-teal) !important; color: #fff !important; font-weight: 700; }
 
 /* ── Resumen ─────────────────────────────────────────────────────────────── */
 .ab-summary-card {
@@ -557,34 +669,59 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 100%;
-  padding: 15px 20px;
+  width: 65% !important;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 15px 20px !important;
   border-radius: var(--ab-radius-sm);
-  border: none;
+  border: none !important;
+  box-shadow: none !important;
   font-size: calc(16px * var(--ab-font-scale));
   font-weight: 700;
   font-family: var(--ab-font);
   cursor: pointer;
   transition: opacity .15s, transform .1s;
   text-decoration: none;
+  /* Blindaje contra el CSS del theme del sitio (bug real 2026-08-21,
+     mismo criterio que .ab-cal-day/.df-pill) — un <button> sin esto puede
+     heredar padding/borde/sombra "de sistema" del theme en vez del
+     nuestro, aunque el color de fondo sí gane por especificidad. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
 .ab-btn:active { transform: scale(.98); }
 .ab-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ab-btn:focus-visible { outline: 2px solid var(--ab-teal); outline-offset: 2px; }
 
-.ab-btn-primary   { background: var(--ab-teal); color: #fff; }
-.ab-btn-primary:hover:not(:disabled) { background: var(--ab-teal-dark); }
-.ab-btn-outline   { background: transparent; color: var(--ab-teal); border: 1.5px solid var(--ab-teal); }
-.ab-btn-outline:hover:not(:disabled) { background: var(--ab-teal-light); }
-.ab-btn-ghost     { background: transparent; color: var(--ab-muted); font-weight: 500; font-size: 14px; }
-.ab-btn-ghost:hover { color: var(--ab-text); }
-.ab-btn-sm        { padding: 10px 16px; font-size: 14px; }
+.ab-btn-primary   { background-color: var(--ab-teal) !important; color: #fff !important; }
+.ab-btn-primary:hover:not(:disabled) { background-color: var(--ab-teal-dark) !important; }
+.ab-btn-outline   { background-color: transparent !important; color: var(--ab-teal) !important; border: 1.5px solid var(--ab-teal); }
+.ab-btn-outline:hover:not(:disabled) { background-color: var(--ab-teal-light) !important; }
+.ab-btn-ghost     { background-color: transparent !important; color: var(--ab-muted) !important; font-weight: 500; font-size: 14px; }
+.ab-btn-ghost:hover { color: var(--ab-text) !important; }
+.ab-btn-sm        { padding: 10px 16px !important; font-size: 14px; }
 
 .ab-btn-row {
   display: flex;
   gap: 10px;
   margin-top: 20px;
 }
-.ab-btn-row .ab-btn-ghost { flex-shrink: 0; width: auto; padding: 15px 12px; }
+/* Los width:auto de acá abajo necesitan !important para ganarle al
+   width:100% !important de .ab-btn base (blindaje contra el theme,
+   2026-08-21) — sin esto el fix de "botón se desborda en .ab-btn-row"
+   (2026-08-20) se hubiera roto en silencio al blindar .ab-btn. */
+.ab-btn-row .ab-btn-ghost { flex-shrink: 0; width: auto !important; padding: 15px 12px !important; }
+/* Bug real reportado en producción (caliafarm.com, 2026-08-20): el botón
+   principal (Continuar/Reservar/Pagar) dentro de .ab-btn-row heredaba
+   width:100% de .ab-btn base sin ningún ajuste — al lado del botón "←
+   Volver" (que sí tiene width:auto arriba) esto lo hacía competir por el
+   100% del ancho del row entero, aplastando/desbordando al de "Volver".
+   Mismo criterio que ya se usaba ad hoc con flex inline en otras pantallas
+   del widget (ver RequestDateBanner) — acá se generaliza para los 5 usos
+   reales de .ab-btn-row con dos botones. */
+.ab-btn-row .ab-btn:not(.ab-btn-ghost) { flex: 1; width: auto !important; }
 
 /* ── Loading / Error ─────────────────────────────────────────────────────── */
 .ab-loading {
@@ -620,6 +757,46 @@
   gap: 8px;
 }
 
+/* ── Solicitar otra fecha (tours de fecha fija) ────────────────────────────── */
+.ab-request-date { margin: 16px 0 4px; }
+.ab-request-date-toggle {
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0;
+  color: var(--ab-teal-dark) !important;
+  font-size: calc(13px * var(--ab-font-scale));
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: var(--ab-font);
+  /* Mismo blindaje que .ab-cal-nav/.ab-counter-btn — bug real 2026-08-21. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+.ab-request-date-form {
+  background: var(--ab-bg2);
+  border: 1px solid var(--ab-border);
+  border-radius: var(--ab-radius-sm);
+  padding: 14px;
+}
+.ab-request-date-desc {
+  font-size: calc(12px * var(--ab-font-scale));
+  color: var(--ab-muted);
+  margin: 0 0 12px;
+}
+.ab-request-date-sent {
+  background: var(--ab-teal-light);
+  border-radius: var(--ab-radius-sm);
+  padding: 14px;
+  font-size: calc(13px * var(--ab-font-scale));
+  color: var(--ab-teal-dark);
+}
+.ab-request-date-sent p { margin: 4px 0 0; font-weight: 400; }
+
 /* ── Responsive: pantallas un poco más anchas que un teléfono chico ───────── */
 @media ( min-width: 480px ) {
   .ab-panel   { padding: 20px 20px 24px; }
@@ -636,4 +813,47 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* ── Estilo "Fullwidth" (Personalización → Widget de reserva) ──────────────
+   Re-skin puro — mismos 7 pasos, mismo estado, misma validación que la
+   versión Clásica de arriba. Solo cambia ancho/tipografía/espaciado y el
+   tratamiento visual de la barra de progreso, pensado para una página
+   propia sin sidebar (a diferencia de la Clásica, boxeada para convivir
+   embebida en cualquier layout). Pedido explícito del cliente 2026-08-16.
+   Todo bajo .ab-style-fullwidth para no tocar un solo píxel de la Clásica. */
+.ab-style-fullwidth {
+  --ab-fw-gutter: 20px;
+}
+.ab-style-fullwidth.ab-widget {
+  box-shadow: none;
+  border: 1px solid var(--ab-border);
+}
+.ab-style-fullwidth .ab-progress {
+  padding: 20px var(--ab-fw-gutter) 0;
+}
+.ab-style-fullwidth .ab-progress-track { left: var(--ab-fw-gutter); right: var(--ab-fw-gutter); top: 40px; height: 3px; }
+.ab-style-fullwidth .ab-step-dot-circle { width: 40px; height: 40px; font-size: 17px; border-width: 2.5px; }
+.ab-style-fullwidth .ab-step-dot-label { font-size: calc(11px * var(--ab-font-scale)); }
+.ab-style-fullwidth .ab-panel { padding: var(--ab-fw-gutter); }
+.ab-style-fullwidth .ab-panel-title { font-size: calc(21px * var(--ab-font-scale)); }
+
+@media ( min-width: 640px ) {
+  .ab-style-fullwidth.ab-widget { max-width: 880px; border-radius: calc(var(--ab-radius) * 1.4); }
+  .ab-style-fullwidth {
+    --ab-fw-gutter: 44px;
+  }
+  .ab-style-fullwidth .ab-progress {
+    justify-content: center;
+    gap: 28px;
+    padding-top: 28px;
+  }
+  .ab-style-fullwidth .ab-progress.ab-progress-compact .ab-step-dot { flex: none; }
+  .ab-style-fullwidth .ab-progress-track { top: 48px; }
+  .ab-style-fullwidth .ab-step-dot-circle { width: 48px; height: 48px; font-size: 19px; }
+  .ab-style-fullwidth .ab-step-dot-label { font-size: calc(12px * var(--ab-font-scale)); letter-spacing: .5px; }
+  .ab-style-fullwidth .ab-panel { padding: 40px var(--ab-fw-gutter) 44px; }
+  .ab-style-fullwidth .ab-panel-title { font-size: calc(26px * var(--ab-font-scale)); margin-bottom: 22px; }
+  .ab-style-fullwidth .ab-cal-day { font-size: 15px; }
+  .ab-style-fullwidth .ab-cal-grid { gap: 4px; }
 }

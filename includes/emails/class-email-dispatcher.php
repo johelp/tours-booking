@@ -22,7 +22,61 @@ class EmailDispatcher {
         // sin nombrar al proveedor — su pago ya se procesó).
         add_action( 'amir_booking_pending_provider_approval', [ $this, 'send_provider_notice' ], 10, 1 );
         add_action( 'amir_booking_pending_provider_approval', [ $this, 'send_provider_pending_notice' ], 10, 1 );
+        add_action( 'amir_booking_pending_provider_approval', [ $this, 'notify_admin_provider_pending' ], 10, 1 );
         add_action( 'amir_send_provider_reminder_email', [ $this, 'send_provider_reminder' ], 10, 1 );
+
+        // Tours "solo a pedido" (amir_tours.request_only) — solo aviso al
+        // admin, sin email al cliente todavía (mismo criterio que
+        // "solicitar fecha" en tours de fecha fija: no hay nada urgente que
+        // decirle hasta que el operador apruebe y mande el link de pago).
+        add_action( 'amir_booking_date_requested', [ $this, 'notify_admin_date_requested' ], 10, 1 );
+        // Bug real reportado por el cliente (2026-08-14): el widget le
+        // promete al cliente "te avisamos por email en cuanto la
+        // revisemos", pero nada disparaba ese email — solo se notificaba
+        // al admin. Mismo patrón que send_provider_pending_notice() para
+        // el flujo de proveedores externos.
+        add_action( 'amir_booking_date_requested', [ $this, 'notify_client_date_requested' ], 10, 1 );
+
+        // Cobro diferido (§ 11.0 CONTRIBUTING.md): el proveedor aprobó una
+        // reserva que todavía no se cobró — recién acá se manda el link de
+        // pago real al cliente.
+        add_action( 'amir_provider_awaiting_payment', [ $this, 'send_provider_awaiting_payment_link' ], 10, 1 );
+
+        // Depósito parcial ("Depósito parcial por tour") — el cliente pagó
+        // el saldo restante (link enviado aparte por el operador). Recibo
+        // corto, no la confirmación completa (la reserva ya estaba confirmada).
+        add_action( 'amir_booking_balance_paid', [ $this, 'notify_client_balance_paid' ], 10, 1 );
+    }
+
+    public function notify_client_balance_paid( int $booking_id ): void {
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking ) {
+            return;
+        }
+        ( new BalancePaidEmail( $booking ) )->send();
+    }
+
+    /**
+     * Reserva de una reserva CONFIRMADA con depósito activo — el operador
+     * quiere que el cliente pague el saldo restante online en vez de en
+     * persona. Reusa el mismo mecanismo de link de pago (init_payment()
+     * acepta este caso, ver class-booking-controller.php) y el mismo email
+     * base que "link de pago" para reservas manuales, solo con otro texto.
+     *
+     * @return array{success:bool,error:string}
+     */
+    public function send_balance_payment_link_notice( object $booking ): array {
+        $mailer  = new BalancePaymentLinkEmail( $booking );
+        $success = $mailer->send();
+        return [ 'success' => $success, 'error' => $success ? '' : $mailer->get_last_error() ];
+    }
+
+    public function send_provider_awaiting_payment_link( int $booking_id ): void {
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking ) {
+            return;
+        }
+        $this->send_payment_link_notice( $booking );
     }
 
     // ── Marketplace de proveedores ─────────────────────────────────────────
@@ -52,6 +106,38 @@ class EmailDispatcher {
             return;
         }
         ( new ProviderPendingNoticeEmail( $booking ) )->send();
+    }
+
+    // ── Solicitud de fecha (tour "solo a pedido" o "solicitar otra fecha"
+    // en tour de fecha fija) — aviso al CLIENTE de que se recibió, sin
+    // cobrar todavía. notify_admin_date_requested() (arriba) ya avisaba al
+    // operador; esto era lo que faltaba del otro lado. ───────────────────
+
+    public function notify_client_date_requested( int $booking_id ): void {
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking ) {
+            return;
+        }
+        ( new DateRequestedEmail( $booking ) )->send();
+    }
+
+    /**
+     * Aviso al cliente cuando el operador rechaza su solicitud de fecha —
+     * bug real reportado por el cliente (2026-08-14): rechazar no avisaba
+     * nunca, el cliente se quedaba esperando sin saber que no iba a pasar
+     * nada. Llamado directo desde BookingsPage::handle_detail_action()
+     * (mismo criterio que send_payment_link_notice() para la aprobación),
+     * no por hook — es una acción puntual del operador, no un evento del
+     * ciclo de vida de la reserva. $booking->custom_email_note ya trae el
+     * mensaje opcional que el operador escribió en el formulario de
+     * rechazo (BookingsPage lo guarda ahí antes de llamar acá).
+     *
+     * @return array{success:bool,error:string}
+     */
+    public function send_date_request_rejected_notice( object $booking ): array {
+        $mailer  = new DateRequestRejectedEmail( $booking );
+        $success = $mailer->send();
+        return [ 'success' => $success, 'error' => $success ? '' : $mailer->get_last_error() ];
     }
 
     // ── Lista de interés: link de pago real ───────────────────────────────
@@ -107,8 +193,21 @@ class EmailDispatcher {
             return;
         }
 
-        $mailer = new ConfirmationEmail( $booking );
-        $mailer->send();
+        // Reserva de un carrito multi-ítem (cart_group_id, § 16 CONTRIBUTING.md):
+        // el cliente ya recibe el "voucher general" único con TODOS los ítems
+        // del carrito (CartConfirmationEmail, disparado por flow_cart_confirmed)
+        // — mandarle además esta confirmación individual por cada tour
+        // duplicaba avisos para una sola compra (pedido del cliente 2026-08-04:
+        // "si reservan varios tours o productos llegan varios email separados,
+        // hacer que llegue la reserva toda junta"). Standalone (widget
+        // individual de un tour, sin carrito) sigue mandando esta confirmación
+        // como siempre — y una reserva pendiente de aprobación de proveedor
+        // (§ 11) nunca pasa por acá: dispara amir_booking_pending_provider_approval
+        // en su lugar, con sus propios emails, sin tocar.
+        if ( empty( $booking->cart_group_id ) ) {
+            $mailer = new ConfirmationEmail( $booking );
+            $mailer->send();
+        }
 
         // Notificar también al admin
         $this->notify_admin_new_booking( $booking );
@@ -181,6 +280,105 @@ class EmailDispatcher {
         );
 
         wp_mail( $admin_email, $subject, $body );
+    }
+
+    /**
+     * Aviso al admin de que salió un pedido de aprobación a un proveedor
+     * externo (marketplace, § 11 CONTRIBUTING.md) — pedido del cliente
+     * 2026-07-30: hasta ahora solo se enteraba de estas ventas cuando el
+     * proveedor terminaba de aprobar (recién ahí dispara send_confirmation()
+     * → notify_admin_new_booking() de arriba). Con esto se entera apenas se
+     * generó la venta, no 24-48h después.
+     */
+    public function notify_admin_provider_pending( int $booking_id ): void {
+        $admin_email = get_option( 'amir_admin_email', get_option( 'admin_email' ) );
+        if ( ! $admin_email ) {
+            return;
+        }
+
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking ) {
+            return;
+        }
+
+        $subject = sprintf(
+            '[Proveedor: esperando aprobación] %s — %s el %s',
+            $booking->booking_ref,
+            $booking->customer_name,
+            $booking->tour_date
+        );
+
+        $body = sprintf(
+            "Nueva venta de un tour de proveedor externo — ya se cobró, esperando que %s apruebe o rechace:\n\n" .
+            "Referencia: %s\n" .
+            "Tour: %s\n" .
+            "Proveedor: %s (%s)\n" .
+            "Fecha: %s\n" .
+            "Cliente: %s (%s)\n" .
+            "Adultos: %d | Niños: %d | Bebés: %d\n" .
+            "Total cobrado al cliente: %s\n\n" .
+            "El proveedor tiene %d horas para responder antes de la cancelación automática con reembolso — ver el detalle y el estado en el panel: %s",
+            $booking->provider_business_name ?: 'proveedor sin nombre cargado',
+            $booking->booking_ref,
+            $booking->tour_name,
+            $booking->provider_business_name ?: '—',
+            $booking->provider_email ?: 'sin email cargado',
+            $booking->tour_date,
+            $booking->customer_name,
+            $booking->customer_email,
+            $booking->adults,
+            $booking->children,
+            $booking->babies,
+            \AmirBooking\Core\Currency::format( (float) $booking->total_mxn ),
+            (int) get_option( 'amir_provider_response_hours', 48 ),
+            admin_url( 'admin.php?page=amir-bookings-list&action=view&id=' . $booking_id )
+        );
+
+        wp_mail( $admin_email, $subject, $body );
+    }
+
+    /**
+     * Tours "solo a pedido" (amir_tours.request_only) — aviso al admin de
+     * que hay una solicitud nueva para revisar en Reservas. Notificación
+     * en campana + email, mismo criterio que
+     * WishlistController::maybe_notify_threshold_reached().
+     */
+    public function notify_admin_date_requested( int $booking_id ): void {
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking ) {
+            return;
+        }
+
+        global $wpdb;
+        $wpdb->insert( "{$wpdb->prefix}amir_notifications", [
+            'type'    => 'date_request',
+            'title'   => 'Solicitud de fecha',
+            'message' => sprintf(
+                '%s solicitó "%s" para el %s. Revisa Reservas para aprobar o rechazar.',
+                $booking->customer_name, $booking->tour_name, $booking->tour_date
+            ),
+            'data'    => json_encode( [ 'booking_id' => $booking_id ] ),
+            'is_read' => 0,
+        ], [ '%s', '%s', '%s', '%s', '%d' ] );
+
+        $admin_email = get_option( 'amir_admin_email', get_option( 'admin_email' ) );
+        if ( ! $admin_email ) {
+            return;
+        }
+
+        wp_mail(
+            $admin_email,
+            '[TourFlow] Solicitud de fecha — ' . $booking->booking_ref,
+            sprintf(
+                "%s (%s) solicitó \"%s\" para el %s — sin cobrar todavía.\n\n" .
+                "Adultos: %d | Niños: %d | Bebés: %d\nTotal a cobrar si aprobás: %s\n\n" .
+                "Revisar y aprobar/rechazar: %s",
+                $booking->customer_name, $booking->customer_email, $booking->tour_name, $booking->tour_date,
+                $booking->adults, $booking->children, $booking->babies,
+                \AmirBooking\Core\Currency::format( (float) $booking->total_mxn ),
+                admin_url( 'admin.php?page=amir-bookings-list&action=view&id=' . $booking_id )
+            )
+        );
     }
 
     // ── Helper ────────────────────────────────────────────────────────────
@@ -283,6 +481,63 @@ abstract class BaseEmail {
         return 'text/html';
     }
 
+    // ── Textos editables (TourFlow → ✉️ Emails → Editar textos) ────────────
+    // Reemplaza la dependencia de __()/.mo para el contenido de cada email:
+    // 'en' nunca tuvo amir-booking-en_US.mo compilado, así que todo lo que
+    // pasaba por __() con msgid en español se mostraba en español incluso
+    // en mails con lang='en' — bug real reportado por el cliente. Ahora cada
+    // texto tiene un default es/en hardcodeado en la propia clase (sin
+    // depender de gettext) y puede overridearse desde el admin, guardado por
+    // EmailTexts en wp_options.
+
+    /** Clave de tipo para EmailTexts — cada subclase la redefine. */
+    protected static function type_key(): string {
+        return '';
+    }
+
+    /**
+     * Traduce el 'label' de un campo de text_fields() según el idioma de
+     * ADMIN del usuario logueado (no el de la reserva/email en sí — eso lo
+     * gobierna $this->lang, algo completamente aparte). Solo afecta el
+     * nombre del campo que ve el operador en TourFlow → ✉️ Emails → Editar
+     * textos, nunca el contenido real que recibe el cliente.
+     */
+    protected static function field_label( string $es, string $en ): string {
+        return strpos( get_user_locale(), 'en' ) === 0 ? $en : $es;
+    }
+
+    /**
+     * Catálogo de textos editables de esta clase: clave => ['label'=>..,
+     * 'es'=>default, 'en'=>default]. Lo usan tanto text() (fallback) como la
+     * pantalla de edición de TourFlow → ✉️ Emails.
+     */
+    public static function text_fields(): array {
+        return [];
+    }
+
+    /**
+     * Texto editable — busca un override guardado para $this->lang; si no
+     * hay, usa el default de text_fields() en español o inglés (nunca cae al
+     * español para un idioma que no sea 'es'). $vars reemplaza {placeholder}
+     * en el resultado, sin volver a escapar — el caller ya debe pasar
+     * valores dinámicos escapados si van dentro de HTML.
+     */
+    protected function text( string $key, array $vars = [] ): string {
+        $fields = static::text_fields();
+        $def_es = $fields[ $key ]['es'] ?? '';
+        $def_en = $fields[ $key ]['en'] ?? $def_es;
+
+        $override = static::type_key() !== ''
+            ? EmailTexts::get_override( static::type_key(), $key, $this->lang )
+            : null;
+        $tpl = $override ?? ( $this->lang === 'es' ? $def_es : $def_en );
+
+        foreach ( $vars as $k => $v ) {
+            $tpl = str_replace( '{' . $k . '}', (string) $v, $tpl );
+        }
+        return $tpl;
+    }
+
     // ── HTML wrapper ──────────────────────────────────────────────────────
 
     protected function wrap_template( string $content ): string {
@@ -292,19 +547,30 @@ abstract class BaseEmail {
         $color_dark   = $this->darken_color( $color );
         $color_light  = $this->lighten_color( $color );
         $company_name = get_option( 'amir_company_name', 'TourFlow' );
-        $site         = get_site_url();
         $wa           = get_option( 'amir_wa_phone', '' );
         $year         = date( 'Y' );
+        // Eslogan configurable (Personalización → Eslogan) en vez de la
+        // ubicación hardcodeada de Amir Adventours que había acá antes —
+        // aparecía en el footer de TODOS los emails de CUALQUIER
+        // instalación, sin importar dónde opere el cliente (bug real
+        // reportado 2026-08-05). Sin tagline configurado, el footer no
+        // inventa una ubicación — solo muestra el nombre de la empresa.
+        $tagline_opt  = get_option( $this->lang === 'en' ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
+        $footer_tag   = $tagline_opt ? ' &nbsp;·&nbsp; ' . esc_html( $tagline_opt ) : '';
 
-        // Prefijo de URL por idioma: Polylang/WPML sirven cada idioma bajo
-        // /{lang}/ salvo el base (es), que no lleva prefijo.
-        $tours_path   = $this->lang === \AmirBooking\Core\Languages::default_lang() ? '/tours/' : "/{$this->lang}/";
+        // Bug real reportado por el cliente (2026-08-14): el link "Tours" del
+        // footer, en cualquier idioma que no fuera el base, apuntaba solo a
+        // "/{lang}/" (ej. "/en") en vez de "/{lang}/tours/" — asumía que
+        // Polylang/WPML sirven cada idioma bajo ese prefijo, lo cual no es
+        // necesariamente cierto para todas las instalaciones (no todas usan
+        // Polylang/WPML), y ni siquiera agregaba "tours/" al final. En vez de
+        // adivinar la URL correcta por instalación, se quita el link — el
+        // footer se queda solo con WhatsApp (si está configurado).
         // Sin número configurado (instalación nueva sin amir_wa_phone cargado
         // en Configuración), no mostrar un link roto — antes esto caía en un
         // número de WhatsApp real hardcodeado (el de Amir Adventours), lo que
         // filtraba mensajes de clientes de OTRAS instalaciones a ese número.
-        $footer_links = '<a href="' . $site . $tours_path . '">Tours</a>'
-            . ( $wa ? ' &nbsp;·&nbsp; <a href="https://wa.me/' . esc_attr( $wa ) . '">WhatsApp</a>' : '' );
+        $footer_links = $wa ? '<a href="https://wa.me/' . esc_attr( $wa ) . '">WhatsApp</a>' : '';
 
         return '<!DOCTYPE html><html lang="' . $this->lang . '">
 <head>
@@ -347,7 +613,7 @@ abstract class BaseEmail {
   <div class="body">' . $content . '</div>
   <div class="footer">
     ' . $footer_links . '<br><br>
-    &copy; ' . $year . ' ' . esc_html($company_name) . ' &nbsp;·&nbsp; Bacalar, Quintana Roo, M&eacute;xico
+    &copy; ' . $year . ' ' . esc_html($company_name) . $footer_tag . '
   </div>
 </div>
 </body></html>';
@@ -370,9 +636,23 @@ abstract class BaseEmail {
     }
 
     /**
+     * Color de marca configurable — mismo default/opción que usa
+     * wrap_template() para el header y los botones. Varias subclases tenían
+     * el teal `#1D9E75` hardcodeado en vez de llamar a esto (link "Ver en
+     * mapa", ayuda de WhatsApp, nota del operador) — con un color de marca
+     * distinto configurado (ej. Caliafarm, azul), esos elementos puntuales
+     * se quedaban en teal mientras el resto del email sí cambiaba (auditoría
+     * de UI 2026-08-05, mismo patrón ya encontrado y corregido en el voucher
+     * combinado del carrito).
+     */
+    protected function brand_color(): string {
+        return get_option( 'amir_brand_color', '#1D9E75' );
+    }
+
+    /**
      * Oscurece un color hex ~20% para textos sobre fondos claros.
      */
-    private function darken_color( string $hex, float $factor = 0.7 ): string {
+    protected function darken_color( string $hex, float $factor = 0.7 ): string {
         $hex = ltrim( $hex, '#' );
         if ( strlen($hex) !== 6 ) return $hex;
         $r = (int) ( hexdec( substr($hex,0,2) ) * $factor );
@@ -384,7 +664,7 @@ abstract class BaseEmail {
     /**
      * Aclara un color hex para fondos (~90% blanco).
      */
-    private function lighten_color( string $hex, float $factor = 0.15 ): string {
+    protected function lighten_color( string $hex, float $factor = 0.15 ): string {
         $hex = ltrim( $hex, '#' );
         if ( strlen($hex) !== 6 ) return '#e1f5ee';
         $r = hexdec( substr($hex,0,2) );
@@ -405,16 +685,20 @@ abstract class BaseEmail {
     protected function recs_html( string $option_es, string $option_en, array $defaults_es, array $defaults_en ): string {
         // Las recomendaciones las escribe el operador a mano por idioma
         // (opción separada, no un string fijo del código) — solo existen
-        // para es/en hoy. Un idioma 3+ cae al listado en español, igual
-        // que el contenido de tours sin traducir todavía en content_i18n.
-        $is_en = $this->lang === 'en';
-        $raw   = get_option( $is_en ? $option_en : $option_es, '' );
+        // para es/en hoy. Bug real corregido (auditoría pre-empaquetado
+        // v5.7.14, CONTRIBUTING.md § 5.5/16.91): esto comparaba contra
+        // 'en' en vez de 'es' como único caso especial — un idioma 3+
+        // (it/fr/pt) caía al listado en ESPAÑOL en vez de en inglés,
+        // inconsistente con BaseEmail::text() (línea ~533 de este archivo),
+        // que sí trata 'es' como el único idioma que no cae a EN.
+        $is_es = $this->lang === 'es';
+        $raw   = get_option( $is_es ? $option_es : $option_en, '' );
         $items = $raw
             ? array_filter( array_map( 'trim', explode( "\n", $raw ) ) )
-            : ( $is_en ? $defaults_en : $defaults_es );
+            : ( $is_es ? $defaults_es : $defaults_en );
 
         $style = 'font-size:14px;color:#3d3d3a;line-height:1.8;padding-left:20px;';
-        $title = '📋 ' . __( 'Recomendaciones', 'amir-booking' );
+        $title = '📋 ' . ( $is_es ? 'Recomendaciones' : 'Recommendations' );
         $lis   = '';
         foreach ( $items as $item ) {
             $lis .= '<li>' . esc_html( $item ) . '</li>';
@@ -426,29 +710,45 @@ abstract class BaseEmail {
     // ── Helpers compartidos ───────────────────────────────────────────────
 
     /**
-     * Diccionario corto de UI para emails/voucher — msgid en español,
-     * traducido por __() al idioma activo dentro de Languages::run_in().
-     * Llamadas a __() literales (no una variable) a propósito, para que
-     * `wp i18n make-pot` las extraiga solo sin tener que listarlas a mano.
+     * Diccionario corto de UI para emails/voucher — bilingüe hardcodeado
+     * (no __()/.mo, ver nota arriba de text()). No es editable desde el
+     * admin a propósito: son etiquetas cortas de estructura (nombres de
+     * columna, botones), no el "mensaje" del email — la superficie editable
+     * vive en text_fields() de cada clase.
      */
     protected function t( string $key ): string {
-        switch ( $key ) {
-            case 'booking_ref':  return __( 'Número de reserva', 'amir-booking' );
-            case 'tour':         return __( 'Tour', 'amir-booking' );
-            case 'date':         return __( 'Fecha', 'amir-booking' );
-            case 'time':         return __( 'Hora de salida', 'amir-booking' );
-            case 'meeting':      return __( 'Punto de encuentro', 'amir-booking' );
-            case 'people':       return __( 'Personas', 'amir-booking' );
-            case 'total':        return __( 'Total pagado', 'amir-booking' );
-            case 'adults':       return __( 'adultos', 'amir-booking' );
-            case 'children':     return __( 'niños', 'amir-booking' );
-            case 'babies':       return __( 'bebés', 'amir-booking' );
-            case 'maps_link':    return __( 'Ver en mapa', 'amir-booking' );
-            case 'download_pdf': return __( 'Descargar mi voucher PDF', 'amir-booking' );
-            case 'add_cal':      return __( 'Agregar al calendario', 'amir-booking' );
-            case 'wa_help':      return __( '¿Necesitas ayuda? Escríbenos por WhatsApp', 'amir-booking' );
-            default:             return $key;
+        static $dict = [
+            'booking_ref'     => [ 'es' => 'Número de reserva',                        'en' => 'Booking reference' ],
+            'tour'            => [ 'es' => 'Tour',                                     'en' => 'Tour' ],
+            'date'            => [ 'es' => 'Fecha',                                    'en' => 'Date' ],
+            'time'            => [ 'es' => 'Hora de salida',                           'en' => 'Departure time' ],
+            'meeting'         => [ 'es' => 'Punto de encuentro',                       'en' => 'Meeting point' ],
+            'people'          => [ 'es' => 'Personas',                                 'en' => 'People' ],
+            'total'           => [ 'es' => 'Total pagado',                             'en' => 'Total paid' ],
+            'adults'          => [ 'es' => 'adultos',                                  'en' => 'adults' ],
+            'children'        => [ 'es' => 'niños',                                    'en' => 'children' ],
+            'babies'          => [ 'es' => 'bebés',                                    'en' => 'infants' ],
+            'maps_link'       => [ 'es' => 'Ver en mapa',                              'en' => 'View on map' ],
+            'download_pdf'    => [ 'es' => 'Descargar mi voucher PDF',                 'en' => 'Download my PDF voucher' ],
+            'add_cal'         => [ 'es' => 'Agregar al calendario',                    'en' => 'Add to calendar' ],
+            'wa_help'         => [ 'es' => '¿Necesitas ayuda? Escríbenos por WhatsApp', 'en' => 'Need help? Message us on WhatsApp' ],
+            'view_status'     => [ 'es' => 'Ver estado de mi reserva',                 'en' => 'View my booking status' ],
+            'operator_note'   => [ 'es' => 'Nota del operador:',                       'en' => 'Note from the operator:' ],
+            'extra_services'  => [ 'es' => 'Servicios extra',                          'en' => 'Extra services' ],
+            'download_file'   => [ 'es' => 'Descargar archivo',                        'en' => 'Download file' ],
+            'pay_now'         => [ 'es' => 'Pagar ahora',                              'en' => 'Pay now' ],
+            'special_requests'=> [ 'es' => 'Pedidos especiales',                       'en' => 'Special requests' ],
+            'reference'       => [ 'es' => 'Referencia',                               'en' => 'Reference' ],
+            'client'          => [ 'es' => 'Cliente',                                  'en' => 'Client' ],
+            'contact'         => [ 'es' => 'Contacto',                                 'en' => 'Contact' ],
+            'approve'         => [ 'es' => 'Aprobar',                                  'en' => 'Approve' ],
+            'reject'          => [ 'es' => 'Rechazar',                                 'en' => 'Reject' ],
+        ];
+        $entry = $dict[ $key ] ?? null;
+        if ( ! $entry ) {
+            return $key;
         }
+        return $this->lang === 'es' ? $entry['es'] : $entry['en'];
     }
 
     protected function pax_summary(): string {
@@ -471,38 +771,53 @@ abstract class BaseEmail {
             return '';
         }
         global $wpdb;
+        // JOIN a amir_addons (no solo amir_booking_addons) para saber cuáles
+        // son productos digitales — el link de descarga tokenizado (§ 16.23
+        // CONTRIBUTING.md) va directo en esta misma línea, no en una pantalla
+        // aparte: es lo único que distingue "entrega física" de "acá está tu
+        // archivo" para el cliente.
         $addons = $wpdb->get_results( $wpdb->prepare(
-            "SELECT name_snapshot, qty, total_mxn FROM {$wpdb->prefix}amir_booking_addons WHERE booking_id = %d ORDER BY id",
+            "SELECT ba.id, ba.name_snapshot, ba.qty, ba.total_mxn, a.pricing_type, a.digital_file_url
+             FROM {$wpdb->prefix}amir_booking_addons ba
+             LEFT JOIN {$wpdb->prefix}amir_addons a ON a.id = ba.addon_id
+             WHERE ba.booking_id = %d ORDER BY ba.id",
             $booking_id
         ) ) ?? [];
         if ( empty( $addons ) ) {
             return '';
         }
 
-        $lines = array_map( function ( $a ) {
+        $access_token = $this->booking->access_token ?? '';
+        $lines = array_map( function ( $a ) use ( $access_token ) {
             $label = esc_html( $a->name_snapshot ) . ( $a->qty > 1 ? ' × ' . (int) $a->qty : '' );
-            return $label . ' — ' . \AmirBooking\Core\Currency::format( (float) $a->total_mxn );
+            $line  = $label . ' — ' . \AmirBooking\Core\Currency::format( (float) $a->total_mxn );
+            if ( $a->pricing_type === 'digital' && ! empty( $a->digital_file_url ) && $access_token ) {
+                $download_url = add_query_arg( [ 'token' => $access_token ], rest_url( 'flow/v1/addons/download/' . (int) $a->id ) );
+                $line .= ' — <a href="' . esc_url( $download_url ) . '">' . esc_html( $this->t( 'download_file' ) ) . '</a>';
+            }
+            return $line;
         }, $addons );
 
         return '
           <tr>
-            <td>' . esc_html__( 'Servicios extra', 'amir-booking' ) . '</td>
+            <td>' . $this->t( 'extra_services' ) . '</td>
             <td>' . implode( '<br>', $lines ) . '</td>
           </tr>';
     }
 
     protected function fmt_date( string $date ): string {
-        $months = [
-            __( 'Enero', 'amir-booking' ), __( 'Febrero', 'amir-booking' ), __( 'Marzo', 'amir-booking' ),
-            __( 'Abril', 'amir-booking' ), __( 'Mayo', 'amir-booking' ), __( 'Junio', 'amir-booking' ),
-            __( 'Julio', 'amir-booking' ), __( 'Agosto', 'amir-booking' ), __( 'Septiembre', 'amir-booking' ),
-            __( 'Octubre', 'amir-booking' ), __( 'Noviembre', 'amir-booking' ), __( 'Diciembre', 'amir-booking' ),
-        ];
+        static $months_es = [ 'Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre' ];
+        static $months_en = [ 'January','February','March','April','May','June','July','August','September','October','November','December' ];
+        $months = $this->lang === 'es' ? $months_es : $months_en;
         [ $y, $m, $d ] = explode( '-', $date );
         return (int)$d . ' ' . $months[ (int)$m - 1 ] . ' ' . $y;
     }
 
-    protected function fmt_time( string $time ): string {
+    /** Nullable a propósito — mismo fix defensivo que DashboardPage/BookingsPage::fmt_time() (bug real en producción, caliafarm.com 2026-08-04): una reserva sin horario (schedule_id sin fila correspondiente) no debe fatalear el email. */
+    protected function fmt_time( ?string $time ): string {
+        if ( ! $time ) {
+            return '—';
+        }
         [ $h, $m ] = explode( ':', $time );
         $hnum = (int) $h;
         $ampm = $hnum >= 12 ? 'PM' : 'AM';
@@ -510,19 +825,26 @@ abstract class BaseEmail {
         return "{$h12}:{$m} {$ampm}";
     }
 
+    /**
+     * Sin lat/lng cargados en el tour, buscar el nombre de la empresa en vez
+     * de un punto fijo de Bacalar — antes cualquier instalación sin
+     * coordenadas mandaba el link "Ver en mapa" a Quintana Roo sin importar
+     * dónde opere el negocio (bug real reportado 2026-08-05).
+     */
     protected function maps_url(): string {
         $b = $this->booking;
         if ( $b->meeting_lat && $b->meeting_lng ) {
             return "https://maps.google.com/?q={$b->meeting_lat},{$b->meeting_lng}";
         }
-        return 'https://maps.google.com/?q=Bacalar,Quintana+Roo,Mexico';
+        return 'https://maps.google.com/?q=' . rawurlencode( get_option( 'amir_company_name', 'TourFlow' ) );
     }
 
     protected function calendar_url(): string {
         $b     = $this->booking;
         $start = str_replace('-','',$b->tour_date) . 'T' . str_replace(':','',$b->time_start??'') . '00';
-        $title = rawurlencode( $b->tour_name . ' — ' . get_option( 'amir_company_name', 'TourFlow' ) );
-        $loc   = rawurlencode( $b->meeting_point_es ?? 'Bacalar, México' );
+        $company = get_option( 'amir_company_name', 'TourFlow' );
+        $title = rawurlencode( $b->tour_name . ' — ' . $company );
+        $loc   = rawurlencode( $b->meeting_point_es ?? $company );
         return "https://calendar.google.com/calendar/render?action=TEMPLATE&text={$title}&dates={$start}/{$start}&location={$loc}";
     }
 
@@ -559,7 +881,7 @@ abstract class BaseEmail {
           <tr>
             <td>' . $this->t('meeting') . '</td>
             <td>' . esc_html( $mp ?? '' ) . '<br>
-              <a href="' . $this->maps_url() . '" style="color:#1D9E75;font-size:13px;">' . $this->t('maps_link') . ' ↗</a>
+              <a href="' . $this->maps_url() . '" style="color:' . esc_attr( $this->brand_color() ) . ';font-size:13px;">' . $this->t('maps_link') . ' ↗</a>
             </td>
           </tr>
         </table>';
@@ -570,17 +892,32 @@ abstract class BaseEmail {
 
 class ConfirmationEmail extends BaseEmail {
 
+    protected static function type_key(): string {
+        return 'confirmation';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'       => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => '✅ Tu reserva está confirmada — {ref}', 'en' => '✅ Your booking is confirmed — {ref}' ],
+            'intro_title'   => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¡Tu reserva está confirmada! 🎉', 'en' => 'Your booking is confirmed! 🎉' ],
+            'intro_body'    => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Todo está listo para tu aventura. Aquí están los detalles de tu reserva:', 'en' => 'Hello <strong>{name}</strong>,<br>Everything is ready for your adventure. Here are your booking details:' ],
+            'policy_title'  => [ 'label' => self::field_label( 'Título de la política de cancelación', 'Cancellation policy title' ), 'es' => 'Política de cancelación:', 'en' => 'Cancellation policy:' ],
+            'policy_full'   => [ 'label' => self::field_label( 'Política — reembolso completo', 'Policy — full refund' ), 'es' => '7+ días antes: reembolso completo', 'en' => '7+ days before: full refund' ],
+            'policy_partial'=> [ 'label' => self::field_label( 'Política — reembolso parcial', 'Policy — partial refund' ), 'es' => '3–6 días antes: reembolso del 50%', 'en' => '3–6 days before: 50% refund' ],
+            'policy_none'   => [ 'label' => self::field_label( 'Política — sin reembolso', 'Policy — no refund' ), 'es' => 'Menos de 3 días: sin reembolso', 'en' => 'Less than 3 days before: no refund' ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( '✅ Tu reserva está confirmada — %s', 'amir-booking' ), $this->booking->booking_ref );
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
     }
 
     protected function get_body_content(): string {
-        $b       = $this->booking;
-        $siteUrl = get_site_url();
-        $wa      = get_option( 'amir_wa_phone', '' );
+        $b  = $this->booking;
+        $wa = get_option( 'amir_wa_phone', '' );
 
-        $intro = '<h1>' . __( '¡Tu reserva está confirmada! 🎉', 'amir-booking' ) . '</h1>'
-               . '<p>' . sprintf( __( 'Hola <strong>%s</strong>,<br>Todo está listo para tu aventura en Bacalar. Aquí están los detalles de tu reserva:', 'amir-booking' ), esc_html( $b->customer_name ) ) . '</p>';
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [ 'name' => esc_html( $b->customer_name ) ] ) . '</p>';
 
         $ref_box = '<div class="ref-box">
           <div class="ref-label">' . $this->t('booking_ref') . '</div>
@@ -593,10 +930,10 @@ class ConfirmationEmail extends BaseEmail {
             [ 'Arrive 10 minutes before departure.', 'Wear comfortable clothes and biodegradable sunscreen.', 'Bring water and light snacks.', 'Carry a photo ID.' ]
         );
 
-        $policy = '<div class="policy-box"><p><strong>' . __( 'Política de cancelación:', 'amir-booking' ) . '</strong></p>'
-                . '<p>✓ ' . __( '7+ días antes: reembolso completo', 'amir-booking' ) . '</p>'
-                . '<p>▸ ' . __( '3–6 días antes: reembolso del 50%', 'amir-booking' ) . '</p>'
-                . '<p>✕ ' . __( 'Menos de 3 días: sin reembolso', 'amir-booking' ) . '</p></div>';
+        $policy = '<div class="policy-box"><p><strong>' . $this->text( 'policy_title' ) . '</strong></p>'
+                . '<p>✓ ' . $this->text( 'policy_full' ) . '</p>'
+                . '<p>▸ ' . $this->text( 'policy_partial' ) . '</p>'
+                . '<p>✕ ' . $this->text( 'policy_none' ) . '</p></div>';
 
         $pdf_url = rest_url( 'amir/v1/bookings/' . rawurlencode($b->booking_ref) . '/pdf' )
                    . '?token=' . rawurlencode( $b->access_token ?? '' );
@@ -608,26 +945,49 @@ class ConfirmationEmail extends BaseEmail {
           <a href="' . $this->calendar_url() . '" class="btn btn-outline">' . $this->t('add_cal') . '</a>
         </p>
         <p style="text-align:center;font-size:13px;margin-top:12px;">
-          <a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . esc_html__( 'Ver estado de mi reserva', 'amir-booking' ) . '</a>
+          <a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . esc_html( $this->t('view_status') ) . '</a>
         </p>' . ( $wa ? '
         <p style="text-align:center;font-size:13px;color:#5a7068;margin-top:8px;">
-          ' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:#1D9E75;">wa.me/' . esc_html( $wa ) . '</a>
+          ' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:' . esc_attr( $this->brand_color() ) . ';">wa.me/' . esc_html( $wa ) . '</a>
         </p>' : '' );
 
         $custom_note = '';
         if ( ! empty( $b->custom_email_note ) ) {
-            $custom_note = '<div style="background:#e8f5e9;border-left:4px solid #1D9E75;padding:12px 16px;'
+            $custom_note = '<div style="background:#e8f5e9;border-left:4px solid ' . esc_attr( $this->brand_color() ) . ';padding:12px 16px;'
                          . 'margin:16px 0;border-radius:0 8px 8px 0;">'
                          . '<p style="font-size:14px;color:#1a2e24;margin:0;">'
-                         . '<strong>' . esc_html__( 'Nota del operador:', 'amir-booking' ) . '</strong><br>'
+                         . '<strong>' . esc_html( $this->t('operator_note') ) . '</strong><br>'
                          . nl2br( esc_html( $b->custom_email_note ) )
                          . '</p></div>';
+        }
+
+        // Contenido extra por TOUR (Tarea 24 del roadmap, CONTRIBUTING.md
+        // § 5.5/16.91) — ej. "este tour requiere pasaporte". Distinto de
+        // $custom_note de arriba (nota puntual de ESTA reserva, cargada por
+        // el operador al aprobar/confirmar) — esto lo carga el operador UNA
+        // vez en el editor del tour y aplica a TODAS sus confirmaciones.
+        // Solo aplica a reservas de tour (una de habitación no tiene tour_id).
+        $tour_note = '';
+        if ( ( $b->item_type ?? 'tour' ) === 'tour' && ! empty( $b->tour_id ) ) {
+            global $wpdb;
+            $col  = $this->lang === 'es' ? 'email_extra_note_es' : 'email_extra_note_en';
+            $note = $wpdb->get_var( $wpdb->prepare(
+                "SELECT {$col} FROM {$wpdb->prefix}amir_tours WHERE id = %d", (int) $b->tour_id
+            ) );
+            if ( ! empty( $note ) ) {
+                $tour_note = '<div style="background:#fff7ed;border-left:4px solid #f97316;padding:12px 16px;'
+                           . 'margin:16px 0;border-radius:0 8px 8px 0;">'
+                           . '<p style="font-size:14px;color:#1a2e24;margin:0;">'
+                           . nl2br( esc_html( $note ) )
+                           . '</p></div>';
+            }
         }
 
         return $intro
             . $ref_box
             . $this->booking_info_table()
             . $custom_note
+            . $tour_note
             . $recs_block
             . $policy
             . $actions;
@@ -638,16 +998,28 @@ class ConfirmationEmail extends BaseEmail {
 
 class ReminderEmail extends BaseEmail {
 
+    protected static function type_key(): string {
+        return 'reminder';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => '⏰ ¡Tu tour es mañana! — {tour}', 'en' => '⏰ Your tour is tomorrow! — {tour}' ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¡Tu aventura es mañana! ⛵', 'en' => 'Your adventure is tomorrow! ⛵' ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Un recordatorio de tu reserva para mañana:', 'en' => 'Hello <strong>{name}</strong>,<br>A reminder about your booking for tomorrow:' ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( '⏰ ¡Tu tour es mañana! — %s', 'amir-booking' ), $this->booking->tour_name );
+        return $this->text( 'subject', [ 'tour' => $this->booking->tour_name ] );
     }
 
     protected function get_body_content(): string {
         $b  = $this->booking;
         $wa = get_option( 'amir_wa_phone', '' );
 
-        $intro = '<h1>' . __( '¡Tu aventura es mañana! ⛵', 'amir-booking' ) . '</h1>'
-               . '<p>' . sprintf( __( 'Hola <strong>%s</strong>,<br>Un recordatorio de tu reserva para mañana:', 'amir-booking' ), esc_html( $b->customer_name ) ) . '</p>';
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [ 'name' => esc_html( $b->customer_name ) ] ) . '</p>';
 
         $recs_block = $this->recs_html(
             'amir_email_recs_es', 'amir_email_recs_en',
@@ -655,7 +1027,7 @@ class ReminderEmail extends BaseEmail {
             [ 'Comfortable clothes and swimsuit', 'Biodegradable sunscreen (required on the lagoon)', 'Water and light snacks', 'Photo ID', 'Camera or phone in a waterproof bag' ]
         );
 
-        $footer_wa = $wa ? '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:#1D9E75;">wa.me/' . esc_html( $wa ) . '</a></p>' : '';
+        $footer_wa = $wa ? '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:' . esc_attr( $this->brand_color() ) . ';">wa.me/' . esc_html( $wa ) . '</a></p>' : '';
 
         return $intro
             . $this->booking_info_table()
@@ -668,25 +1040,46 @@ class ReminderEmail extends BaseEmail {
 
 class ReviewEmail extends BaseEmail {
 
+    protected static function type_key(): string {
+        return 'review';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'          => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => '⭐ ¿Cómo fue tu experiencia? — {company}', 'en' => '⭐ How was your experience? — {company}' ],
+            'intro_title'      => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¿Disfrutaste tu aventura? 🌊', 'en' => 'Did you enjoy your adventure? 🌊' ],
+            'intro_body'       => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Esperamos que hayas tenido una experiencia increíble con nosotros en <em>{tour}</em>.', 'en' => 'Hello <strong>{name}</strong>,<br>We hope you had an amazing experience with us at <em>{tour}</em>.' ],
+            'ask_body'         => [ 'label' => self::field_label( 'Pedido de reseña', 'Review request' ), 'es' => 'Tu opinión nos ayuda a seguir mejorando y a que más viajeros nos descubran. Si tienes un minuto, nos encantaría que compartieras tu experiencia:', 'en' => "Your feedback helps us keep improving and helps more travelers find us. If you have a minute, we'd love for you to share your experience:" ],
+            'cta_tripadvisor'  => [ 'label' => self::field_label( 'Botón — TripAdvisor', 'Button — TripAdvisor' ), 'es' => 'Reseña en TripAdvisor', 'en' => 'Review on TripAdvisor' ],
+            'cta_google'       => [ 'label' => self::field_label( 'Botón — Google', 'Button — Google' ), 'es' => 'Reseña en Google', 'en' => 'Review on Google' ],
+            'closing'          => [ 'label' => self::field_label( 'Cierre', 'Closing' ), 'es' => '¡Gracias por elegirnos! Esperamos verte de nuevo pronto. 🐊', 'en' => 'Thanks for choosing us! We hope to see you again soon. 🐊' ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( '⭐ ¿Cómo fue tu experiencia? — %s', 'amir-booking' ), get_option( 'amir_company_name', 'TourFlow' ) );
+        return $this->text( 'subject', [ 'company' => get_option( 'amir_company_name', 'TourFlow' ) ] );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
-        $tripadvisor_url = get_option('amir_tripadvisor_review_url',
-            'https://www.tripadvisor.com/Attraction_Review-g2369583-d23441870-Reviews-Amir_AdvenTours-Bacalar_Yucatan_Peninsula.html');
-        $google_url = get_option('amir_google_review_url', '#');
+        // Default vacío, NUNCA la página real de Amir Adventours — antes
+        // cualquier instalación sin su propia URL configurada mandaba a los
+        // clientes a dejar reseña en el negocio de OTRO operador (bug real
+        // reportado 2026-08-05, mismo patrón que el footer hardcodeado de
+        // arriba). Cada botón se oculta si no hay URL configurada, en vez
+        // de mostrar un link roto/ajeno.
+        $tripadvisor_url = get_option( 'amir_tripadvisor_review_url', '' );
+        $google_url      = get_option( 'amir_google_review_url', '' );
 
-        return '<h1>' . __( '¿Disfrutaste tu aventura en Bacalar? 🌊', 'amir-booking' ) . '</h1>
-        <p>' . sprintf( __( 'Hola <strong>%s</strong>,<br>Esperamos que hayas tenido una experiencia increíble con nosotros en <em>%s</em>.', 'amir-booking' ), esc_html( $b->customer_name ), esc_html( $b->tour_name ) ) . '</p>
-        <p>' . __( 'Tu opinión nos ayuda a seguir mejorando y a que más viajeros descubran la magia de Bacalar. Si tienes un minuto, nos encantaría que compartieras tu experiencia:', 'amir-booking' ) . '</p>
-        <p style="text-align:center;margin:24px 0;">
-          <a href="' . $tripadvisor_url . '" class="btn">⭐ ' . __( 'Reseña en TripAdvisor', 'amir-booking' ) . '</a>
-          &nbsp;&nbsp;
-          <a href="' . $google_url . '" class="btn btn-outline">⭐ ' . __( 'Reseña en Google', 'amir-booking' ) . '</a>
-        </p>
-        <p style="font-size:13px;color:#5a7068;text-align:center;">' . __( '¡Gracias por elegirnos! Esperamos verte de nuevo pronto. 🐊', 'amir-booking' ) . '</p>';
+        $ta_btn     = $tripadvisor_url ? '<a href="' . esc_url( $tripadvisor_url ) . '" class="btn">⭐ ' . $this->text( 'cta_tripadvisor' ) . '</a>' : '';
+        $google_btn = $google_url      ? '<a href="' . esc_url( $google_url )      . '" class="btn btn-outline">⭐ ' . $this->text( 'cta_google' ) . '</a>' : '';
+        $buttons    = trim( $ta_btn . ( $ta_btn && $google_btn ? '&nbsp;&nbsp;' : '' ) . $google_btn );
+
+        return '<h1>' . $this->text( 'intro_title' ) . '</h1>
+        <p>' . $this->text( 'intro_body', [ 'name' => esc_html( $b->customer_name ), 'tour' => esc_html( $b->tour_name ) ] ) . '</p>
+        <p>' . $this->text( 'ask_body' ) . '</p>'
+        . ( $buttons ? '<p style="text-align:center;margin:24px 0;">' . $buttons . '</p>' : '' )
+        . '<p style="font-size:13px;color:#5a7068;text-align:center;">' . $this->text( 'closing' ) . '</p>';
     }
 }
 
@@ -701,8 +1094,30 @@ class CancellationEmail extends BaseEmail {
         $this->reason_type = $reason_type;
     }
 
+    protected static function type_key(): string {
+        return 'cancellation';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'               => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Cancelación de reserva — {ref}', 'en' => 'Booking cancellation — {ref}' ],
+            'weather_title'         => [ 'label' => self::field_label( 'Título — cancelado por clima', 'Title — cancelled due to weather' ), 'es' => 'Tour cancelado por condiciones climáticas ⛈', 'en' => 'Tour cancelled due to weather ⛈' ],
+            'min_pax_title'         => [ 'label' => self::field_label( 'Título — mínimo de pasajeros no alcanzado', 'Title — minimum passengers not reached' ), 'es' => 'Tour cancelado — mínimo de pasajeros no alcanzado', 'en' => 'Tour cancelled — minimum passengers not reached' ],
+            'operator_msg'          => [ 'label' => self::field_label( 'Mensaje — cancelado por el operador', 'Message — cancelled by the operator' ), 'es' => 'Hola <strong>{name}</strong>,<br>Lamentamos informarte que tu reserva <strong>{ref}</strong> ha sido cancelada. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'en' => "Hello <strong>{name}</strong>,<br>We're sorry to let you know that your booking <strong>{ref}</strong> has been cancelled. A <strong>full refund</strong> has been processed and will appear in your account within 3–5 business days." ],
+            'provider_title'        => [ 'label' => self::field_label( 'Título — no se pudo confirmar (proveedor)', 'Title — could not be confirmed (provider)' ), 'es' => 'No pudimos confirmar tu reserva', 'en' => "We couldn't confirm your booking" ],
+            'provider_expired_msg'  => [ 'label' => self::field_label( 'Mensaje — el proveedor no respondió', 'Message — the provider did not respond' ), 'es' => 'Hola <strong>{name}</strong>,<br>El operador local no respondió a tiempo para confirmar tu reserva <strong>{ref}</strong>. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'en' => "Hello <strong>{name}</strong>,<br>The local operator didn't respond in time to confirm your booking <strong>{ref}</strong>. A <strong>full refund</strong> has been processed and will appear in your account within 3–5 business days." ],
+            'provider_rejected_msg' => [ 'label' => self::field_label( 'Mensaje — el proveedor rechazó', 'Message — the provider rejected it' ), 'es' => 'Hola <strong>{name}</strong>,<br>El operador local no pudo confirmar tu reserva <strong>{ref}</strong>.{reason_note} Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'en' => "Hello <strong>{name}</strong>,<br>The local operator couldn't confirm your booking <strong>{ref}</strong>.{reason_note} A <strong>full refund</strong> has been processed and will appear in your account within 3–5 business days." ],
+            'reason_note'           => [ 'label' => self::field_label( 'Nota con el motivo del proveedor', 'Note with the provider\'s reason' ), 'es' => ' El operador indicó: "{reason}".', 'en' => ' The operator said: "{reason}".' ],
+            'client_title'          => [ 'label' => self::field_label( 'Título — cancelada por el cliente', 'Title — cancelled by the customer' ), 'es' => 'Reserva cancelada', 'en' => 'Booking cancelled' ],
+            'client_msg'            => [ 'label' => self::field_label( 'Mensaje — cancelada por el cliente', 'Message — cancelled by the customer' ), 'es' => 'Hola <strong>{name}</strong>,<br>Tu reserva <strong>{ref}</strong> ha sido cancelada. {refund_msg}', 'en' => 'Hello <strong>{name}</strong>,<br>Your booking <strong>{ref}</strong> has been cancelled. {refund_msg}' ],
+            'refund_full'           => [ 'label' => self::field_label( 'Reembolso — completo', 'Refund — full' ), 'es' => 'Se ha procesado un reembolso completo que aparecerá en tu cuenta en 3–5 días hábiles.', 'en' => 'A full refund has been processed and will appear in your account within 3–5 business days.' ],
+            'refund_partial'        => [ 'label' => self::field_label( 'Reembolso — parcial (50%)', 'Refund — partial (50%)' ), 'es' => 'Se ha procesado un reembolso del 50% por {amount}.', 'en' => 'A 50% refund of {amount} has been processed.' ],
+            'refund_none'           => [ 'label' => self::field_label( 'Reembolso — no aplica', 'Refund — not applicable' ), 'es' => 'De acuerdo con nuestra política, no aplica reembolso para cancelaciones dentro de los 2 días previos al tour.', 'en' => 'Per our policy, no refund applies for cancellations within 2 days of the tour.' ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( 'Cancelación de reserva — %s', 'amir-booking' ), $this->booking->booking_ref );
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
     }
 
     protected function get_body_content(): string {
@@ -711,49 +1126,43 @@ class CancellationEmail extends BaseEmail {
         $is_provider = in_array( $this->reason_type, [ 'provider_rejected', 'provider_expired' ], true );
 
         if ( $is_operator ) {
-            $title = '<h1>' . ( $this->reason_type === 'weather'
-                ? __( 'Tour cancelado por condiciones climáticas ⛈', 'amir-booking' )
-                : __( 'Tour cancelado — mínimo de pasajeros no alcanzado', 'amir-booking' ) ) . '</h1>';
-            $msg = '<p>' . sprintf(
-                __( 'Hola <strong>%s</strong>,<br>Lamentamos informarte que tu reserva <strong>%s</strong> ha sido cancelada. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' ),
-                esc_html( $b->customer_name ), esc_html( $b->booking_ref )
-            ) . '</p>';
+            $title = '<h1>' . ( $this->reason_type === 'weather' ? $this->text('weather_title') : $this->text('min_pax_title') ) . '</h1>';
+            $msg = '<p>' . $this->text( 'operator_msg', [
+                'name' => esc_html( $b->customer_name ), 'ref' => esc_html( $b->booking_ref ),
+            ] ) . '</p>';
         } elseif ( $is_provider ) {
             // Reserva de un tour operado por un proveedor externo (marketplace,
             // § 11 CONTRIBUTING.md) — el proveedor rechazó, o venció el plazo de
             // respuesta sin contestar. En ambos casos, reembolso 100% (no es
             // responsabilidad del cliente). No se nombra al proveedor.
-            $title = '<h1>' . __( 'No pudimos confirmar tu reserva', 'amir-booking' ) . '</h1>';
+            $title = '<h1>' . $this->text('provider_title') . '</h1>';
             if ( $this->reason_type === 'provider_expired' ) {
-                $msg = '<p>' . sprintf(
-                    __( 'Hola <strong>%1$s</strong>,<br>El operador local no respondió a tiempo para confirmar tu reserva <strong>%2$s</strong>. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' ),
-                    esc_html( $b->customer_name ), esc_html( $b->booking_ref )
-                ) . '</p>';
+                $msg = '<p>' . $this->text( 'provider_expired_msg', [
+                    'name' => esc_html( $b->customer_name ), 'ref' => esc_html( $b->booking_ref ),
+                ] ) . '</p>';
             } else {
                 $reason_note = ! empty( $b->provider_reject_reason )
-                    ? ' ' . sprintf( __( 'El operador indicó: "%s".', 'amir-booking' ), esc_html( $b->provider_reject_reason ) )
+                    ? $this->text( 'reason_note', [ 'reason' => esc_html( $b->provider_reject_reason ) ] )
                     : '';
-                $msg = '<p>' . sprintf(
-                    __( 'Hola <strong>%1$s</strong>,<br>El operador local no pudo confirmar tu reserva <strong>%2$s</strong>.', 'amir-booking' ),
-                    esc_html( $b->customer_name ), esc_html( $b->booking_ref )
-                ) . $reason_note . ' ' . __( 'Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' ) . '</p>';
+                $msg = '<p>' . $this->text( 'provider_rejected_msg', [
+                    'name' => esc_html( $b->customer_name ), 'ref' => esc_html( $b->booking_ref ), 'reason_note' => $reason_note,
+                ] ) . '</p>';
             }
         } else {
-            $title = '<h1>' . __( 'Reserva cancelada', 'amir-booking' ) . '</h1>';
+            $title = '<h1>' . $this->text('client_title') . '</h1>';
             $policy = (int) $b->cancellation_policy_pct;
             $refund_msg = $policy === 0
-                ? __( 'Se ha procesado un reembolso completo que aparecerá en tu cuenta en 3–5 días hábiles.', 'amir-booking' )
+                ? $this->text('refund_full')
                 : ( $policy === 50
-                    ? sprintf( __( 'Se ha procesado un reembolso del 50%% por %s.', 'amir-booking' ), \AmirBooking\Core\Currency::format( (float) $b->refund_amount_mxn ) )
-                    : __( 'De acuerdo con nuestra política, no aplica reembolso para cancelaciones dentro de los 2 días previos al tour.', 'amir-booking' ) );
-            $msg = '<p>' . sprintf(
-                __( 'Hola <strong>%s</strong>,<br>Tu reserva <strong>%s</strong> ha sido cancelada. %s', 'amir-booking' ),
-                esc_html( $b->customer_name ), esc_html( $b->booking_ref ), $refund_msg
-            ) . '</p>';
+                    ? $this->text( 'refund_partial', [ 'amount' => \AmirBooking\Core\Currency::format( (float) $b->refund_amount_mxn ) ] )
+                    : $this->text('refund_none') );
+            $msg = '<p>' . $this->text( 'client_msg', [
+                'name' => esc_html( $b->customer_name ), 'ref' => esc_html( $b->booking_ref ), 'refund_msg' => $refund_msg,
+            ] ) . '</p>';
         }
 
         $wa     = get_option( 'amir_wa_phone', '' );
-        $footer = $wa ? '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:#1D9E75;">wa.me/' . esc_html( $wa ) . '</a></p>' : '';
+        $footer = $wa ? '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:' . esc_attr( $this->brand_color() ) . ';">wa.me/' . esc_html( $wa ) . '</a></p>' : '';
 
         return $title . $msg . $footer;
     }
@@ -772,19 +1181,29 @@ class TourOpenedEmail extends BaseEmail {
      * de contenido). El CTA de pago queda solo en el cuerpo, como en el
      * resto de los emails transaccionales del sistema.
      */
+    protected static function type_key(): string {
+        return 'tour_opened';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => '{tour} ya tiene fecha confirmada', 'en' => '{tour} now has a confirmed date' ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¡Buenas noticias!', 'en' => 'Good news!' ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Nos pediste que te avisáramos cuando <strong>{tour}</strong> abriera — y ya está disponible. Tu lugar para el {date} está reservado — completá el pago para confirmarlo.', 'en' => "Hello <strong>{name}</strong>,<br>You asked us to let you know when <strong>{tour}</strong> opened — and it's now available. Your spot for {date} is reserved — complete the payment to confirm it." ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( '%s ya tiene fecha confirmada', 'amir-booking' ), $this->booking->tour_name );
+        return $this->text( 'subject', [ 'tour' => $this->booking->tour_name ] );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
 
-        $intro = '<h1>' . __( '¡Buenas noticias!', 'amir-booking' ) . '</h1>'
-               . '<p>' . sprintf(
-                   __( 'Hola <strong>%1$s</strong>,<br>Nos pediste que te avisáramos cuando <strong>%2$s</strong> abriera — y ya está disponible. Tu lugar para el %3$s está reservado — completá el pago para confirmarlo.', 'amir-booking' ),
-                   esc_html( $b->customer_name ), esc_html( $b->tour_name ), esc_html( $this->fmt_date( $b->tour_date ) )
-               ) . '</p>';
-        $cta = __( 'Pagar ahora', 'amir-booking' );
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [
+                   'name' => esc_html( $b->customer_name ), 'tour' => esc_html( $b->tour_name ), 'date' => esc_html( $this->fmt_date( $b->tour_date ) ),
+               ] ) . '</p>';
 
         $ref_box = '<div class="ref-box">
           <div class="ref-label">' . $this->t('booking_ref') . '</div>
@@ -792,7 +1211,7 @@ class TourOpenedEmail extends BaseEmail {
         </div>';
 
         return $intro . $ref_box . '<p style="text-align:center;margin-top:24px;">'
-             . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html( $cta ) . '</a>'
+             . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html( $this->t('pay_now') ) . '</a>'
              . '</p>';
     }
 }
@@ -801,18 +1220,29 @@ class TourOpenedEmail extends BaseEmail {
 
 class PaymentLinkEmail extends BaseEmail {
 
+    protected static function type_key(): string {
+        return 'payment_link';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Completá el pago de tu reserva — {ref}', 'en' => 'Complete payment for your booking — {ref}' ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Tu reserva está lista 🎉', 'en' => 'Your booking is ready 🎉' ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Ya armamos tu reserva para <strong>{tour}</strong> el {date} — solo falta completar el pago para confirmarla.', 'en' => "Hello <strong>{name}</strong>,<br>We've set up your booking for <strong>{tour}</strong> on {date} — just complete the payment to confirm it." ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( 'Completá el pago de tu reserva — %s', 'amir-booking' ), $this->booking->booking_ref );
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
 
-        $intro = '<h1>' . __( 'Tu reserva está lista 🎉', 'amir-booking' ) . '</h1>'
-               . '<p>' . sprintf(
-                   __( 'Hola <strong>%1$s</strong>,<br>Ya armamos tu reserva para <strong>%2$s</strong> el %3$s — solo falta completar el pago para confirmarla.', 'amir-booking' ),
-                   esc_html( $b->customer_name ), esc_html( $b->tour_name ), esc_html( $this->fmt_date( $b->tour_date ) )
-               ) . '</p>';
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [
+                   'name' => esc_html( $b->customer_name ), 'tour' => esc_html( $b->tour_name ), 'date' => esc_html( $this->fmt_date( $b->tour_date ) ),
+               ] ) . '</p>';
 
         $ref_box = '<div class="ref-box">
           <div class="ref-label">' . $this->t('booking_ref') . '</div>
@@ -821,16 +1251,16 @@ class PaymentLinkEmail extends BaseEmail {
 
         $custom_note = '';
         if ( ! empty( $b->custom_email_note ) ) {
-            $custom_note = '<div style="background:#e8f5e9;border-left:4px solid #1D9E75;padding:12px 16px;'
+            $custom_note = '<div style="background:#e8f5e9;border-left:4px solid ' . esc_attr( $this->brand_color() ) . ';padding:12px 16px;'
                          . 'margin:16px 0;border-radius:0 8px 8px 0;">'
                          . '<p style="font-size:14px;color:#1a2e24;margin:0;">'
-                         . '<strong>' . esc_html__( 'Nota del operador:', 'amir-booking' ) . '</strong><br>'
+                         . '<strong>' . esc_html( $this->t('operator_note') ) . '</strong><br>'
                          . nl2br( esc_html( $b->custom_email_note ) )
                          . '</p></div>';
         }
 
         return $intro . $ref_box . $custom_note . '<p style="text-align:center;margin-top:24px;">'
-             . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html__( 'Pagar ahora', 'amir-booking' ) . '</a>'
+             . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html( $this->t('pay_now') ) . '</a>'
              . '</p>';
     }
 }
@@ -841,23 +1271,33 @@ class PaymentLinkEmail extends BaseEmail {
 
 class RescheduleEmail extends BaseEmail {
 
+    protected static function type_key(): string {
+        return 'reschedule';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'       => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => '🔄 Tu reserva fue reprogramada — {ref}', 'en' => '🔄 Your booking was rescheduled — {ref}' ],
+            'intro_title'   => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Tu reserva cambió de fecha', 'en' => 'Your booking date has changed' ],
+            'intro_body'    => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Tu reserva <strong>{ref}</strong> fue reprogramada. Estos son los nuevos detalles:', 'en' => 'Hello <strong>{name}</strong>,<br>Your booking <strong>{ref}</strong> was rescheduled. Here are the new details:' ],
+            'footer_prompt' => [ 'label' => self::field_label( 'Pie', 'Footer' ), 'es' => '¿La nueva fecha no te sirve? Escribinos y lo resolvemos.', 'en' => "Does the new date not work for you? Message us and we'll sort it out." ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( '🔄 Tu reserva fue reprogramada — %s', 'amir-booking' ), $this->booking->booking_ref );
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
 
-        $intro = '<h1>' . __( 'Tu reserva cambió de fecha', 'amir-booking' ) . '</h1>'
-               . '<p>' . sprintf(
-                   __( 'Hola <strong>%1$s</strong>,<br>Tu reserva <strong>%2$s</strong> fue reprogramada. Estos son los nuevos detalles:', 'amir-booking' ),
-                   esc_html( $b->customer_name ), esc_html( $b->booking_ref )
-               ) . '</p>';
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [ 'name' => esc_html( $b->customer_name ), 'ref' => esc_html( $b->booking_ref ) ] ) . '</p>';
 
         $wa     = get_option( 'amir_wa_phone', '' );
-        $footer = '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">'
-                . __( '¿La nueva fecha no te sirve? Escribinos y lo resolvemos.', 'amir-booking' )
-                . ' ' . $this->t('wa_help') . ': <a href="https://wa.me/' . $wa . '" style="color:#1D9E75;">wa.me/' . $wa . '</a></p>';
+        $footer = $wa ? '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">'
+                . $this->text( 'footer_prompt' )
+                . ' ' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:' . esc_attr( $this->brand_color() ) . ';">wa.me/' . esc_html( $wa ) . '</a></p>' : '';
 
         return $intro . $this->booking_info_table() . $footer;
     }
@@ -871,46 +1311,53 @@ class RescheduleEmail extends BaseEmail {
 
 class ProviderNoticeEmail extends BaseEmail {
 
+    protected static function type_key(): string {
+        return 'provider_notice';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'       => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Nueva reserva por confirmar — {ref}', 'en' => 'New booking to confirm — {ref}' ],
+            'intro_title'   => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Nueva reserva para confirmar disponibilidad', 'en' => 'New booking to confirm availability' ],
+            'intro_body'    => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola {name},<br>Recibiste una nueva reserva desde TourFlow para <strong>{tour}</strong>. Por favor confirmá si tenés disponibilidad.', 'en' => 'Hello {name},<br>You received a new booking from TourFlow for <strong>{tour}</strong>. Please confirm whether you have availability.' ],
+            'deadline_note' => [ 'label' => self::field_label( 'Aviso de vencimiento', 'Expiration notice' ), 'es' => 'Si no respondés dentro de {hours} horas, la reserva se cancelará automáticamente y se reembolsará al cliente.', 'en' => "If you don't respond within {hours} hours, the booking will be automatically cancelled and refunded to the client." ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( 'Nueva reserva por confirmar — %s', 'amir-booking' ), $this->booking->booking_ref );
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
         $greeting_name = $b->provider_contact_name ?: $b->provider_business_name;
 
-        $intro = '<h1>' . __( 'Nueva reserva para confirmar disponibilidad', 'amir-booking' ) . '</h1>'
-               . '<p>' . sprintf(
-                   __( 'Hola %1$s,<br>Recibiste una nueva reserva desde TourFlow para <strong>%2$s</strong>. Por favor confirmá si tenés disponibilidad.', 'amir-booking' ),
-                   esc_html( $greeting_name ), esc_html( $b->tour_name )
-               ) . '</p>';
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [ 'name' => esc_html( $greeting_name ), 'tour' => esc_html( $b->tour_name ) ] ) . '</p>';
 
         $special = '';
         if ( ! empty( $b->special_requests ) ) {
-            $special = '<tr><td>' . esc_html__( 'Pedidos especiales', 'amir-booking' ) . '</td><td>' . nl2br( esc_html( $b->special_requests ) ) . '</td></tr>';
+            $special = '<tr><td>' . $this->t('special_requests') . '</td><td>' . nl2br( esc_html( $b->special_requests ) ) . '</td></tr>';
         }
 
         $details = '
         <table class="info-table">
-          <tr><td>' . esc_html__( 'Referencia', 'amir-booking' ) . '</td><td>' . esc_html( $b->booking_ref ) . '</td></tr>
+          <tr><td>' . $this->t('reference') . '</td><td>' . esc_html( $b->booking_ref ) . '</td></tr>
           <tr><td>' . $this->t('date') . '</td><td>' . $this->fmt_date( $b->tour_date ) . '</td></tr>
           <tr><td>' . $this->t('time') . '</td><td>' . ( $b->time_start ? $this->fmt_time( $b->time_start ) : '—' ) . '</td></tr>
           <tr><td>' . $this->t('people') . '</td><td>' . $this->pax_summary() . '</td></tr>
-          <tr><td>' . esc_html__( 'Cliente', 'amir-booking' ) . '</td><td>' . esc_html( $b->customer_name ) . '</td></tr>
-          <tr><td>' . esc_html__( 'Contacto', 'amir-booking' ) . '</td><td>' . esc_html( $b->customer_email ) . ( $b->customer_phone ? ' / ' . esc_html( $b->customer_phone ) : '' ) . '</td></tr>'
+          <tr><td>' . $this->t('client') . '</td><td>' . esc_html( $b->customer_name ) . '</td></tr>
+          <tr><td>' . $this->t('contact') . '</td><td>' . esc_html( $b->customer_email ) . ( $b->customer_phone ? ' / ' . esc_html( $b->customer_phone ) : '' ) . '</td></tr>'
           . $special . '
         </table>';
 
         $response_hours = (int) get_option( 'amir_provider_response_hours', 48 );
-        $deadline_note = '<p style="font-size:13px;color:#5a7068;">' . sprintf(
-            __( 'Si no respondés dentro de %d horas, la reserva se cancelará automáticamente y se reembolsará al cliente.', 'amir-booking' ),
-            $response_hours
-        ) . '</p>';
+        $deadline_note = '<p style="font-size:13px;color:#5a7068;">' . $this->text( 'deadline_note', [ 'hours' => $response_hours ] ) . '</p>';
 
         $actions = '<p style="text-align:center;margin-top:24px;">'
-            . '<a href="' . esc_url( $this->provider_action_url( 'approve' ) ) . '" class="btn">✅ ' . esc_html__( 'Aprobar', 'amir-booking' ) . '</a>'
+            . '<a href="' . esc_url( $this->provider_action_url( 'approve' ) ) . '" class="btn">✅ ' . $this->t('approve') . '</a>'
             . '&nbsp;&nbsp;'
-            . '<a href="' . esc_url( $this->provider_action_url( 'reject' ) ) . '" class="btn btn-outline">❌ ' . esc_html__( 'Rechazar', 'amir-booking' ) . '</a>'
+            . '<a href="' . esc_url( $this->provider_action_url( 'reject' ) ) . '" class="btn btn-outline">❌ ' . $this->t('reject') . '</a>'
             . '</p>';
 
         return $intro . $details . $deadline_note . $actions;
@@ -944,18 +1391,29 @@ class ProviderNoticeEmail extends BaseEmail {
 
 class ProviderPendingNoticeEmail extends BaseEmail {
 
+    protected static function type_key(): string {
+        return 'provider_pending';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Estamos confirmando tu reserva — {ref}', 'en' => "We're confirming your booking — {ref}" ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Tu reserva fue recibida', 'en' => 'Your booking was received' ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Tu pago se procesó correctamente. Estamos confirmando disponibilidad con el operador local para tu tour del {date} — te avisamos en cuanto quede confirmada.', 'en' => "Hello <strong>{name}</strong>,<br>Your payment was processed successfully. We're confirming availability with the local operator for your tour on {date} — we'll let you know as soon as it's confirmed." ],
+        ];
+    }
+
     protected function get_subject(): string {
-        return sprintf( __( 'Estamos confirmando tu reserva — %s', 'amir-booking' ), $this->booking->booking_ref );
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
     }
 
     protected function get_body_content(): string {
         $b = $this->booking;
 
-        $intro = '<h1>' . __( 'Tu reserva fue recibida', 'amir-booking' ) . '</h1>'
-               . '<p>' . sprintf(
-                   __( 'Hola <strong>%1$s</strong>,<br>Tu pago se procesó correctamente. Estamos confirmando disponibilidad con el operador local para tu tour del %2$s — te avisamos en cuanto quede confirmada.', 'amir-booking' ),
-                   esc_html( $b->customer_name ), esc_html( $this->fmt_date( $b->tour_date ) )
-               ) . '</p>';
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [
+                   'name' => esc_html( $b->customer_name ), 'date' => esc_html( $this->fmt_date( $b->tour_date ) ),
+               ] ) . '</p>';
 
         $ref_box = '<div class="ref-box">
           <div class="ref-label">' . $this->t('booking_ref') . '</div>
@@ -963,9 +1421,229 @@ class ProviderPendingNoticeEmail extends BaseEmail {
         </div>';
 
         $footer = '<p style="text-align:center;font-size:13px;margin-top:12px;">'
-            . '<a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . esc_html__( 'Ver estado de mi reserva', 'amir-booking' ) . '</a>'
+            . '<a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . esc_html( $this->t('view_status') ) . '</a>'
             . '</p>';
 
         return $intro . $ref_box . $footer;
+    }
+}
+
+/**
+ * Aviso al cliente de que su solicitud de fecha se recibió — sin cobrar
+ * todavía. Cubre los dos orígenes que disparan amir_booking_date_requested:
+ * tours "solo a pedido" (BookingManager::create_pending()) y "solicitar
+ * otra fecha" en un tour de fecha fija (BookingManager::create_date_request()).
+ * Mismo texto que ya usa el widget (own_request_sent_title/own_request_sent_sub
+ * en i18n.js) para no prometer algo distinto por email de lo que ya vio en
+ * pantalla.
+ */
+class DateRequestedEmail extends BaseEmail {
+
+    protected static function type_key(): string {
+        return 'date_requested';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Recibimos tu solicitud — {ref}', 'en' => 'We received your request — {ref}' ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¡Solicitud recibida!', 'en' => 'Request received!' ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Recibimos tu solicitud para <strong>{tour}</strong> el {date}. Todavía no te cobramos nada — te confirmamos disponibilidad y te mandamos el link de pago por email en cuanto la revisemos.', 'en' => "Hello <strong>{name}</strong>,<br>We received your request for <strong>{tour}</strong> on {date}. We haven't charged you anything yet — we'll confirm availability and email you the payment link once we review it." ],
+        ];
+    }
+
+    protected function get_subject(): string {
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [
+                   'name' => esc_html( $b->customer_name ),
+                   'tour' => esc_html( $b->tour_name ?? '' ),
+                   'date' => esc_html( $this->fmt_date( $b->tour_date ) ),
+               ] ) . '</p>';
+
+        $ref_box = '<div class="ref-box">
+          <div class="ref-label">' . $this->t('booking_ref') . '</div>
+          <div class="ref-value">' . esc_html( $b->booking_ref ) . '</div>
+        </div>';
+
+        $footer = '<p style="text-align:center;font-size:13px;margin-top:12px;">'
+            . '<a href="' . esc_url( $this->verify_url() ) . '" style="color:#5a7068;">' . esc_html( $this->t('view_status') ) . '</a>'
+            . '</p>';
+
+        return $intro . $ref_box . $footer;
+    }
+}
+
+/**
+ * Aviso al cliente cuando el operador rechaza una solicitud de fecha (tour
+ * de fecha fija que pidió otra fecha, o tour "solo a pedido") — bug real
+ * reportado por el cliente (2026-08-14): rechazar una solicitud no le
+ * avisaba nada al cliente. Incluye el mensaje opcional del operador
+ * (`custom_email_note`, mismo campo/caja que ya usan ConfirmationEmail y
+ * CancellationEmail para "Nota del operador") con el motivo o una
+ * sugerencia alternativa.
+ */
+class DateRequestRejectedEmail extends BaseEmail {
+
+    protected static function type_key(): string {
+        return 'date_request_rejected';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'No podemos confirmar tu solicitud — {ref}', 'en' => "We can't confirm your request — {ref}" ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Tu solicitud no fue posible', 'en' => "Your request wasn't possible" ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>No pudimos confirmar tu solicitud para <strong>{tour}</strong> el {date}. No te cobramos nada.', 'en' => "Hello <strong>{name}</strong>,<br>We weren't able to confirm your request for <strong>{tour}</strong> on {date}. You haven't been charged anything." ],
+        ];
+    }
+
+    protected function get_subject(): string {
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [
+                   'name' => esc_html( $b->customer_name ),
+                   'tour' => esc_html( $b->tour_name ?? '' ),
+                   'date' => esc_html( $this->fmt_date( $b->tour_date ) ),
+               ] ) . '</p>';
+
+        $ref_box = '<div class="ref-box">
+          <div class="ref-label">' . $this->t('booking_ref') . '</div>
+          <div class="ref-value">' . esc_html( $b->booking_ref ) . '</div>
+        </div>';
+
+        // Mismo patrón exacto que ConfirmationEmail/CancellationEmail para
+        // el mensaje libre del operador — no inventar una caja nueva.
+        $custom_note = '';
+        if ( ! empty( $b->custom_email_note ) ) {
+            $custom_note = '<div style="background:#e8f5e9;border-left:4px solid ' . esc_attr( $this->brand_color() ) . ';padding:12px 16px;'
+                         . 'margin:16px 0;border-radius:0 8px 8px 0;">'
+                         . '<p style="font-size:14px;color:#1a2e24;margin:0;">'
+                         . '<strong>' . esc_html( $this->t('operator_note') ) . '</strong><br>'
+                         . nl2br( esc_html( $b->custom_email_note ) )
+                         . '</p></div>';
+        }
+
+        $footer = '<p style="text-align:center;font-size:13px;margin-top:12px;">'
+            . '<a href="' . esc_url( get_site_url() . ( $this->lang === \AmirBooking\Core\Languages::default_lang() ? '/tours/' : "/{$this->lang}/" ) ) . '" style="color:#5a7068;">' . esc_html( $this->lang === 'es' ? 'Ver otros tours' : 'Browse other tours' ) . '</a>'
+            . '</p>';
+
+        return $intro . $ref_box . $custom_note . $footer;
+    }
+}
+
+/**
+ * Link de pago para el SALDO restante de un depósito parcial ("Depósito
+ * parcial por tour") — la reserva ya está confirmada (el depósito ya se
+ * cobró), esto es para cobrar el resto online en vez de en persona.
+ * Wording distinto de PaymentLinkEmail a propósito: ahí la reserva todavía
+ * no está confirmada, acá sí — "completá el pago" sería engañoso.
+ */
+class BalancePaymentLinkEmail extends BaseEmail {
+
+    protected static function type_key(): string {
+        return 'balance_payment_link';
+    }
+
+    private function balance_mxn(): float {
+        $deposit_charged = round( (float) $this->booking->total_mxn * (int) ( $this->booking->deposit_pct ?? 0 ) / 100, 2 );
+        return round( (float) $this->booking->total_mxn - $deposit_charged, 2 );
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Saldo pendiente de tu reserva — {ref}', 'en' => 'Remaining balance for your booking — {ref}' ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Falta el saldo de tu reserva', 'en' => 'Your booking has a remaining balance' ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Tu reserva para <strong>{tour}</strong> el {date} ya está confirmada — solo falta el saldo restante de <strong>{balance}</strong>.', 'en' => 'Hello <strong>{name}</strong>,<br>Your booking for <strong>{tour}</strong> on {date} is already confirmed — you just have a remaining balance of <strong>{balance}</strong>.' ],
+        ];
+    }
+
+    protected function get_subject(): string {
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [
+                   'name'    => esc_html( $b->customer_name ),
+                   'tour'    => esc_html( $b->tour_name ?? '' ),
+                   'date'    => esc_html( $this->fmt_date( $b->tour_date ) ),
+                   'balance' => esc_html( \AmirBooking\Core\Currency::format( $this->balance_mxn() ) ),
+               ] ) . '</p>';
+
+        $ref_box = '<div class="ref-box">
+          <div class="ref-label">' . $this->t('booking_ref') . '</div>
+          <div class="ref-value">' . esc_html( $b->booking_ref ) . '</div>
+        </div>';
+
+        $custom_note = '';
+        if ( ! empty( $b->custom_email_note ) ) {
+            $custom_note = '<div style="background:#e8f5e9;border-left:4px solid ' . esc_attr( $this->brand_color() ) . ';padding:12px 16px;'
+                         . 'margin:16px 0;border-radius:0 8px 8px 0;">'
+                         . '<p style="font-size:14px;color:#1a2e24;margin:0;">'
+                         . '<strong>' . esc_html( $this->t('operator_note') ) . '</strong><br>'
+                         . nl2br( esc_html( $b->custom_email_note ) )
+                         . '</p></div>';
+        }
+
+        return $intro . $ref_box . $custom_note . '<p style="text-align:center;margin-top:24px;">'
+             . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html( $this->t('pay_now') ) . '</a>'
+             . '</p>';
+    }
+}
+
+/**
+ * Recibo corto cuando el cliente paga el saldo restante (vía el link de
+ * arriba, o registrado a mano por el operador desde "💰 Marcar saldo
+ * cobrado" — en ese caso este email NO se manda, ver
+ * BookingManager::confirm(), el registro manual no dispara
+ * amir_booking_balance_paid con intención de avisar, es solo un asiento
+ * interno). A propósito NO reusa ConfirmationEmail — la reserva ya estaba
+ * confirmada, reenviar "¡reserva confirmada!" completo sería confuso.
+ */
+class BalancePaidEmail extends BaseEmail {
+
+    protected static function type_key(): string {
+        return 'balance_paid';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Recibimos tu pago — {ref}', 'en' => 'We received your payment — {ref}' ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¡Saldo recibido! ✅', 'en' => 'Balance received! ✅' ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Recibimos el saldo restante de tu reserva para <strong>{tour}</strong> el {date}. Ya está todo pago — nos vemos pronto.', 'en' => "Hello <strong>{name}</strong>,<br>We received the remaining balance for your booking for <strong>{tour}</strong> on {date}. Everything is paid — see you soon." ],
+        ];
+    }
+
+    protected function get_subject(): string {
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [
+                   'name' => esc_html( $b->customer_name ),
+                   'tour' => esc_html( $b->tour_name ?? '' ),
+                   'date' => esc_html( $this->fmt_date( $b->tour_date ) ),
+               ] ) . '</p>';
+
+        $ref_box = '<div class="ref-box">
+          <div class="ref-label">' . $this->t('booking_ref') . '</div>
+          <div class="ref-value">' . esc_html( $b->booking_ref ) . '</div>
+        </div>';
+
+        return $intro . $ref_box;
     }
 }

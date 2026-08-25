@@ -12,6 +12,8 @@ const translations = {
     step_summary:   'Resumen',
     step_payment:   'Pago',
     step_confirm:   '¡Reservado!',
+    redsys_redirect_hint: 'Al hacer clic serás redirigido a la pasarela segura de tu banco para completar el pago.',
+    pay_redsys:           'Pagar con tarjeta',
 
     // Servicios extra
     extras_title:    '¿Querés sumar algún servicio extra?',
@@ -21,6 +23,7 @@ const translations = {
     cal_prev:         'Anterior',
     cal_next:         'Siguiente',
     cal_available:    'Disponible',
+    cal_low_slots:    'Últimos lugares',
     cal_full:         'Sin cupos',
     no_schedules:     'Sin salidas disponibles para esta fecha.',
     cal_blocked:      'No disponible',
@@ -39,6 +42,7 @@ const translations = {
     babies_free:      'Gratis',
     people_label:     'Total personas',
     max_people:       'Máximo {n} personas',
+    min_pax_notice:   'Este tour requiere un mínimo de {n} personas por reserva.',
     slots_left:       '{n} lugares disponibles',
     group_people:     'Personas del grupo',
 
@@ -53,8 +57,16 @@ const translations = {
     lang_es:          'Español',
     lang_en:          'English',
     lang_pref_hint:   'Idioma para tu email de confirmación',
+    participant_names_label: 'Nombre de cada integrante',
+    participant_names_hint:  'Este tour requiere el nombre completo de cada persona, no solo la cantidad.',
+    participant_names_ph:    'Persona {n}',
+    err_participant_names:   'Completá el nombre de cada integrante para continuar.',
     special_req:      'Solicitudes especiales (opcional)',
     special_req_ph:   'Alergias, movilidad reducida, celebración especial…',
+    special_req_custom:    'Contanos qué querés armar',
+    special_req_custom_ph: 'Días, paradas, actividades, cualquier detalle que quieras que tengamos en cuenta para armar tu cotización…',
+    to_be_quoted:           'A cotizar',
+    custom_quote_notice:    'Este tour no tiene un precio fijo — contanos qué querés y te mandamos una cotización por email.',
 
     // Cupón
     coupon_label:     '¿Tienes un cupón de descuento?',
@@ -70,17 +82,32 @@ const translations = {
     subtotal:         'Subtotal',
     total:            'Total',
     usd_ref:          '≈ USD {amount} (referencia)',
+    deposit_label:        'Depósito a pagar ahora',
+    deposit_balance_note: 'El resto ({amount}) se cobra después — no ahora.',
+    balance_pending:      'Saldo pendiente',
     policy_title:     'Política de cancelación',
     policy_line1:     '✓ 7+ días antes: reembolso completo',
     policy_line2:     '▸ 3–6 días antes: reembolso del 50 %',
     policy_line3:     '✕ Menos de 3 días: sin reembolso',
     policy_accept:    'He leído y acepto la política de cancelación',
+    terms_title:      'Términos y condiciones',
+    terms_default:    'Al reservar, aceptás las condiciones de uso y venta de este sitio — datos personales tratados según la política de privacidad del operador.',
+    terms_accept:     'He leído y acepto los términos y condiciones',
     book_now:         'Confirmar y pagar',
+    provider_request_sent_title: '¡Solicitud enviada!',
+    provider_request_sent_sub:   'Estamos confirmando disponibilidad con el operador local. Te avisamos por email en cuanto confirme, con el link para pagar.',
+    own_request_sent_title:      '¡Solicitud enviada!',
+    own_request_sent_sub:        'Todavía no te cobramos nada — te confirmamos disponibilidad y te mandamos el link de pago por email en cuanto lo revisemos.',
+    request_only_notice:         'Este tour funciona a pedido: la fecha que elijas queda sujeta a confirmación — no se te cobra hasta que la aprobemos.',
+    send_request:                 'Enviar solicitud',
 
     // Payment
     pay_secure:       'Pago seguro con Stripe',
     pay_methods:      'Tarjeta, Apple Pay, Google Pay',
     processing:       'Procesando…',
+    payment_confirming_title: 'Tu pago fue recibido',
+    payment_confirming_sub:   'Estamos terminando de confirmar tu reserva — puede tardar unos segundos. Si no se resuelve solo, tocá el botón para reintentar. De todas formas te llega la confirmación por email en cuanto quede lista.',
+    payment_confirming_retry: 'Reintentar verificación',
 
     // Confirmation
     confirmed_title:  '¡Tu reserva está confirmada!',
@@ -128,11 +155,23 @@ const translations = {
     signed_up_msg:    'Listo, quedaste anotado — si se abre, te mandamos el link de pago por email.',
     something_wrong:  'Algo salió mal.',
 
+    // Solicitar otra fecha (tours de fecha fija)
+    fixed_date_notice:    'Este tour tiene una fecha fija de salida.',
+    request_date_link:    '¿No te sirve esta fecha? Solicitá otra',
+    request_date_title:   'Solicitar otra fecha',
+    request_date_desc:    'Contanos qué fecha te gustaría — te avisamos por email si el operador puede confirmarla, sin pagar nada todavía.',
+    request_date_field:   'Fecha que te gustaría',
+    request_date_submit:  'Enviar solicitud',
+    request_date_cancel:  'Cancelar',
+    request_date_sent_title: '¡Solicitud enviada!',
+    request_date_sent_sub:   'Te avisamos por email si podemos confirmar esa fecha, con el link para pagar.',
+
     // TourList
     max_short:        'Máx',
     age_short:        'Edad',
     private_group:    'Grupo privado',
     from_label:       'Desde',
+    free_cancellation:'Cancelación gratis',
   },
 
   en: {
@@ -144,6 +183,8 @@ const translations = {
     step_summary:   'Summary',
     step_payment:   'Payment',
     step_confirm:   'Booked!',
+    redsys_redirect_hint: 'Clicking will redirect you to your bank\'s secure payment gateway to complete the payment.',
+    pay_redsys:           'Pay by card',
 
     // Add-ons
     extras_title:    'Want to add any extra services?',
@@ -152,6 +193,7 @@ const translations = {
     cal_prev:         'Previous',
     cal_next:         'Next',
     cal_available:    'Available',
+    cal_low_slots:    'Few spots left',
     cal_full:         'Full',
     no_schedules:     'No departures available for this date.',
     cal_blocked:      'Not available',
@@ -169,6 +211,7 @@ const translations = {
     babies_free:      'Free',
     people_label:     'Total people',
     max_people:       'Maximum {n} people',
+    min_pax_notice:   'This tour requires a minimum of {n} people per booking.',
     slots_left:       '{n} spots left',
     group_people:     'Group size',
 
@@ -182,8 +225,16 @@ const translations = {
     lang_es:          'Español',
     lang_en:          'English',
     lang_pref_hint:   'Language for your confirmation email',
+    participant_names_label: 'Name of each participant',
+    participant_names_hint:  'This tour requires the full name of every participant, not just the headcount.',
+    participant_names_ph:    'Person {n}',
+    err_participant_names:   'Fill in every participant\'s name to continue.',
     special_req:      'Special requests (optional)',
     special_req_ph:   'Allergies, reduced mobility, special celebration…',
+    special_req_custom:    'Tell us what you want to put together',
+    special_req_custom_ph: 'Days, stops, activities, any detail you want us to consider for your quote…',
+    to_be_quoted:           'Custom quote',
+    custom_quote_notice:    "This tour doesn't have a fixed price — tell us what you're after and we'll email you a quote.",
 
     // Coupon
     coupon_label:     'Have a discount coupon?',
@@ -198,16 +249,31 @@ const translations = {
     subtotal:         'Subtotal',
     total:            'Total',
     usd_ref:          '≈ USD {amount} (reference)',
+    deposit_label:        'Deposit due now',
+    deposit_balance_note: 'The rest ({amount}) is charged later — not now.',
+    balance_pending:      'Balance due',
     policy_title:     'Cancellation policy',
     policy_line1:     '✓ 7+ days before: full refund',
     policy_line2:     '▸ 3–6 days before: 50 % refund',
     policy_line3:     '✕ Less than 3 days: no refund',
     policy_accept:    'I have read and accept the cancellation policy',
+    terms_title:      'Terms and conditions',
+    terms_default:    'By booking, you accept this site\'s terms of use and sale — personal data is handled according to the operator\'s privacy policy.',
+    terms_accept:     'I have read and accept the terms and conditions',
     book_now:         'Confirm & pay',
+    provider_request_sent_title: 'Request sent!',
+    provider_request_sent_sub:   "We're confirming availability with the local operator. We'll email you as soon as they confirm, with the link to pay.",
+    own_request_sent_title:      'Request sent!',
+    own_request_sent_sub:        "We haven't charged you anything yet — we'll confirm availability and email you the payment link once we review it.",
+    request_only_notice:         "This tour works on request: the date you pick is subject to confirmation — you won't be charged until we approve it.",
+    send_request:                 'Send request',
 
     pay_secure:       'Secure payment with Stripe',
     pay_methods:      'Card, Apple Pay, Google Pay',
     processing:       'Processing…',
+    payment_confirming_title: 'Your payment was received',
+    payment_confirming_sub:   "We're finishing up your booking — this can take a few seconds. If it doesn't resolve on its own, tap the button to retry. Either way, you'll get the confirmation by email as soon as it's ready.",
+    payment_confirming_retry: 'Retry verification',
 
     confirmed_title:  'Your booking is confirmed!',
     confirmed_sub:    'We have sent all the details to your email.',
@@ -251,10 +317,22 @@ const translations = {
     signed_up_msg:    "You're on the list — we'll email you a payment link if this tour opens.",
     something_wrong:  'Something went wrong.',
 
+    // Request a different date (fixed-date tours)
+    fixed_date_notice:    'This tour has a fixed departure date.',
+    request_date_link:    "This date doesn't work? Request another one",
+    request_date_title:   'Request another date',
+    request_date_desc:    "Tell us what date you'd like — we'll email you if the operator can confirm it, no payment required yet.",
+    request_date_field:   "Date you'd like",
+    request_date_submit:  'Send request',
+    request_date_cancel:  'Cancel',
+    request_date_sent_title: 'Request sent!',
+    request_date_sent_sub:   "We'll email you if we can confirm that date, with the payment link.",
+
     max_short:        'Max',
     age_short:        'Age',
     private_group:    'Private group',
     from_label:       'From',
+    free_cancellation:'Free cancellation',
   },
 };
 

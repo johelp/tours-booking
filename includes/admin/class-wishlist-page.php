@@ -15,9 +15,19 @@ defined( 'ABSPATH' ) || exit;
  */
 class WishlistPage {
 
+    /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private function lang(): string {
+        return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
+    }
+
+    /** Traducción es/en para esta pantalla — ver lang(). */
+    private function tt( string $es, string $en ): string {
+        return $this->lang() === 'en' ? $en : $es;
+    }
+
     public function render(): void {
         if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
-            wp_die( 'No tienes permisos suficientes para acceder a esta página.' );
+            wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
         }
 
         $this->handle_actions();
@@ -53,11 +63,12 @@ class WishlistPage {
         ?>
         <div class="wrap ab-admin-wrap" style="max-width:1100px;">
         <?php $this->styles(); ?>
-        <h1>📋 Lista de interés</h1>
+        <h1>📋 <?php echo esc_html( $this->tt( 'Lista de interés', 'Waitlist' ) ); ?></h1>
         <p style="color:#5a7068;font-size:13px;margin-top:-4px;">
-          Tours en borrador con fecha ya definida donde la gente se anota — con horario, personas y datos, como una
-          reserva real, pero sin pagar. Se activa por tour desde <strong>TourFlow → Tours → editar tour →
-          "Lista de interés"</strong>.
+          <?php echo wp_kses_post( $this->tt(
+            'Tours en borrador con fecha ya definida donde la gente se anota — con horario, personas y datos, como una reserva real, pero sin pagar. Se activa por tour desde <strong>TourFlow → Tours → editar tour → "Lista de interés"</strong>.',
+            'Draft tours with a date already set where people sign up — with schedule, people, and details, like a real booking, but without paying. It\'s enabled per tour from <strong>TourFlow → Tours → edit tour → "Waitlist"</strong>.'
+          ) ); ?>
         </p>
 
         <?php if ( $message ) : ?>
@@ -66,19 +77,21 @@ class WishlistPage {
 
         <?php if ( ! empty( $pending_notice ) ) : ?>
           <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
-            <h3 style="margin:0 0 10px;color:#92400e;font-size:14px;">⚠️ Tours publicados con reservas de interés sin avisar</h3>
+            <h3 style="margin:0 0 10px;color:#92400e;font-size:14px;">⚠️ <?php echo esc_html( $this->tt( 'Tours publicados con reservas de interés sin avisar', 'Published tours with waitlist bookings not yet notified' ) ); ?></h3>
             <p style="font-size:12px;color:#78350f;margin:0 0 12px;">
-              Estos tours ya están activos (se publicaron desde el editor normal) pero todavía hay reservas en estado
-              "wishlist" que no recibieron el link de pago.
+              <?php echo esc_html( $this->tt(
+                'Estos tours ya están activos (se publicaron desde el editor normal) pero todavía hay reservas en estado "wishlist" que no recibieron el link de pago.',
+                'These tours are already active (published from the normal editor) but there are still bookings in "wishlist" status that haven\'t received the payment link.'
+              ) ); ?>
             </p>
             <?php foreach ( $pending_notice as $t ) : ?>
               <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid #fde68a;">
-                <span style="font-size:13px;"><strong><?php echo esc_html( $t->name_es ); ?></strong> — <?php echo (int) $t->pending_count; ?> sin avisar</span>
+                <span style="font-size:13px;"><strong><?php echo esc_html( $t->name_es ); ?></strong> — <?php echo esc_html( sprintf( $this->tt( '%d sin avisar', '%d not notified' ), (int) $t->pending_count ) ); ?></span>
                 <form method="post">
                   <?php wp_nonce_field( 'amir_wishlist_action' ); ?>
                   <input type="hidden" name="amir_action" value="notify_only" />
                   <input type="hidden" name="tour_id" value="<?php echo (int) $t->id; ?>" />
-                  <button type="submit" class="button button-primary button-small">Notificar ahora</button>
+                  <button type="submit" class="button button-primary button-small"><?php echo esc_html( $this->tt( 'Notificar ahora', 'Notify now' ) ); ?></button>
                 </form>
               </div>
             <?php endforeach; ?>
@@ -87,7 +100,7 @@ class WishlistPage {
 
         <?php if ( empty( $drafts ) ) : ?>
           <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:32px;text-align:center;color:#5a7068;">
-            No hay tours en borrador con lista de interés activa todavía.
+            <?php echo esc_html( $this->tt( 'No hay tours en borrador con lista de interés activa todavía.', 'No draft tours with the waitlist enabled yet.' ) ); ?>
           </div>
         <?php else : foreach ( $drafts as $t ) :
             $count     = (int) $t->interest_count;
@@ -109,23 +122,23 @@ class WishlistPage {
               <div>
                 <h3 style="margin:0 0 4px;color:#1a2e24;"><?php echo esc_html( $t->name_es ); ?></h3>
                 <span style="font-size:13px;color:#5a7068;">
-                  📅 <?php echo esc_html( $t->wishlist_date ? mysql2date( 'd/m/Y', $t->wishlist_date ) : '— sin fecha —' ); ?>
-                  · <?php echo $count; ?> anotado<?php echo $count === 1 ? '' : 's'; ?>
+                  📅 <?php echo esc_html( $t->wishlist_date ? mysql2date( 'd/m/Y', $t->wishlist_date ) : $this->tt( '— sin fecha —', '— no date —' ) ); ?>
+                  · <?php echo esc_html( $count === 1 ? $this->tt( '1 anotado', '1 signed up' ) : sprintf( $this->tt( '%d anotados', '%d signed up' ), $count ) ); ?>
                   <?php if ( $threshold > 0 ) : ?>
-                    · umbral: <?php echo $threshold; ?>
+                    · <?php echo esc_html( sprintf( $this->tt( 'umbral: %d', 'threshold: %d' ), $threshold ) ); ?>
                   <?php endif; ?>
                 </span>
               </div>
               <div style="display:flex;gap:8px;">
                 <button type="button" class="button button-small" onclick="document.getElementById('amir-wl-contacts-<?php echo (int) $t->id; ?>').classList.toggle('amir-hidden');">
-                  Ver anotados
+                  <?php echo esc_html( $this->tt( 'Ver anotados', 'View sign-ups' ) ); ?>
                 </button>
-                <form method="post" onsubmit="return confirm('¿Publicar este tour y mandar el link de pago a las <?php echo $count; ?> reservas anotadas?');">
+                <form method="post" onsubmit="return confirm('<?php echo esc_js( sprintf( $this->tt( '¿Publicar este tour y mandar el link de pago a las %d reservas anotadas?', 'Publish this tour and send the payment link to the %d bookings signed up?' ), $count ) ); ?>');">
                   <?php wp_nonce_field( 'amir_wishlist_action' ); ?>
                   <input type="hidden" name="amir_action" value="open_and_notify" />
                   <input type="hidden" name="tour_id" value="<?php echo (int) $t->id; ?>" />
                   <button type="submit" class="button button-primary button-small" <?php disabled( $count === 0 ); ?>>
-                    Publicar y notificar
+                    <?php echo esc_html( $this->tt( 'Publicar y notificar', 'Publish and notify' ) ); ?>
                   </button>
                 </form>
               </div>
@@ -139,17 +152,17 @@ class WishlistPage {
 
             <div id="amir-wl-contacts-<?php echo (int) $t->id; ?>" class="amir-hidden" style="margin-top:16px;">
               <?php if ( empty( $contacts ) ) : ?>
-                <p style="font-size:13px;color:#5a7068;">Todavía nadie se anotó.</p>
+                <p style="font-size:13px;color:#5a7068;"><?php echo esc_html( $this->tt( 'Todavía nadie se anotó.', 'No one has signed up yet.' ) ); ?></p>
               <?php else : ?>
                 <table style="width:100%;border-collapse:collapse;">
                   <thead><tr style="background:#f8fdfb;">
-                    <th class="ab-th">Referencia</th>
-                    <th class="ab-th">Nombre</th>
+                    <th class="ab-th"><?php echo esc_html( $this->tt( 'Referencia', 'Reference' ) ); ?></th>
+                    <th class="ab-th"><?php echo esc_html( $this->tt( 'Nombre', 'Name' ) ); ?></th>
                     <th class="ab-th">Email</th>
-                    <th class="ab-th">Horario</th>
-                    <th class="ab-th">Personas</th>
-                    <th class="ab-th">Total</th>
-                    <th class="ab-th">Anotado</th>
+                    <th class="ab-th"><?php echo esc_html( $this->tt( 'Horario', 'Schedule' ) ); ?></th>
+                    <th class="ab-th"><?php echo esc_html( $this->tt( 'Personas', 'People' ) ); ?></th>
+                    <th class="ab-th"><?php echo esc_html( $this->tt( 'Total', 'Total' ) ); ?></th>
+                    <th class="ab-th"><?php echo esc_html( $this->tt( 'Anotado', 'Signed up' ) ); ?></th>
                   </tr></thead>
                   <tbody>
                   <?php foreach ( $contacts as $c ) :
@@ -203,7 +216,7 @@ class WishlistPage {
             ] );
 
             if ( empty( $post ) ) {
-                set_transient( 'amir_wishlist_message', 'No se encontró el tour en WordPress — publícalo manualmente desde Tours.', 30 );
+                set_transient( 'amir_wishlist_message', $this->tt( 'No se encontró el tour en WordPress — publícalo manualmente desde Tours.', 'The tour was not found in WordPress — publish it manually from Tours.' ), 30 );
                 return;
             }
 
@@ -217,8 +230,8 @@ class WishlistPage {
         set_transient(
             'amir_wishlist_message',
             $action === 'open_and_notify'
-                ? "Tour publicado y {$notified} reserva(s) notificada(s) con su link de pago."
-                : "{$notified} reserva(s) notificada(s) con su link de pago.",
+                ? sprintf( $this->tt( 'Tour publicado y %d reserva(s) notificada(s) con su link de pago.', 'Tour published and %d booking(s) notified with their payment link.' ), $notified )
+                : sprintf( $this->tt( '%d reserva(s) notificada(s) con su link de pago.', '%d booking(s) notified with their payment link.' ), $notified ),
             30
         );
     }

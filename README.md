@@ -28,7 +28,7 @@ includes/
 │   ├── class-license-manager.php     # Stub de licencias/planes (SaaS-ready, no bloquea nada hoy)
 │   ├── class-assets.php              # Registro de CSS/JS frontend
 │   ├── class-i18n.php                # Internacionalización
-│   └── class-shortcodes.php          # [amir_booking], [amir_tour_list], [amir_verify_booking]
+│   └── class-shortcodes.php          # [flow_booking], [flow_tour_list], [flow_verify_booking], [flow_spots_left], [flow_tour_dates], [flow_search_bar] (alias legacy: amir_*)
 │
 ├── cpt/
 │   └── class-tour-post-type.php      # CPT amir_tour + meta boxes + sync a DB
@@ -78,7 +78,7 @@ react-src/                            # Fuente del widget de reservas (React + V
 └── src/
     ├── booking-widget.jsx             # Entry point: monta BookingWidget y TourList
     ├── BookingWidget.jsx               # Flujo completo de reserva (7 pasos)
-    ├── TourList.jsx                    # Grilla de tours ([amir_tour_list])
+    ├── TourList.jsx                    # Grilla de tours ([flow_tour_list])
     ├── api.js                          # Cliente de la REST API
     ├── i18n.js                         # Traducciones ES/EN
     └── styles/widget.css               # Fuente de assets/css/booking-widget.css

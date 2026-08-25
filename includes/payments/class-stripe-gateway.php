@@ -30,7 +30,10 @@ class StripeGateway implements PaymentGatewayInterface {
         }
 
         $currency     = strtolower( get_option( 'amir_currency', 'MXN' ) );
-        $amount_cents = (int) round( $booking->total_mxn * 100 );
+        // charge_mxn (default = total_mxn cuando no hay depósito activo, ver
+        // BookingResult) es el monto que realmente se cobra AHORA — total_mxn
+        // sigue siendo el precio total del tour, sin tocar.
+        $amount_cents = (int) round( $booking->charge_mxn * 100 );
         $company      = get_option( 'amir_company_name', 'TourFlow' );
 
         // Stripe rechaza cobros por debajo de un piso mínimo (~$0.50 USD
@@ -39,11 +42,11 @@ class StripeGateway implements PaymentGatewayInterface {
         // mensaje que apunta a la causa real: los precios del tour están en
         // una escala que no corresponde a la moneda configurada (típico al
         // cambiar de moneda — ej. a ARS — sin reajustar los precios).
-        $usd_equivalent = ( new \AmirBooking\Core\PricingEngine() )->convert_to_usd( $booking->total_mxn );
+        $usd_equivalent = ( new \AmirBooking\Core\PricingEngine() )->convert_to_usd( $booking->charge_mxn );
         if ( $usd_equivalent > 0 && $usd_equivalent < 0.50 ) {
             return PaymentCreationResult::error( sprintf(
                 'El monto (%s %s) es demasiado bajo para procesarse — revisá que los precios de este tour estén en la escala correcta para %s.',
-                number_format( $booking->total_mxn, 2 ),
+                number_format( $booking->charge_mxn, 2 ),
                 strtoupper( $currency ),
                 strtoupper( $currency )
             ) );

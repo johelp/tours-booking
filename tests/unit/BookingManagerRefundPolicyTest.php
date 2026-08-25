@@ -17,11 +17,12 @@ final class BookingManagerRefundPolicyTest extends TestCase {
         return $method->invoke( $manager, $booking, $reason_type );
     }
 
-    private function booking( string $tour_date, string $source = 'direct', float $total = 1000.0 ): object {
+    private function booking( string $tour_date, string $source = 'direct', float $total = 1000.0, int $deposit_pct = 0 ): object {
         return (object) [
             'total_mxn'      => $total,
             'tour_date'      => $tour_date,
             'booking_source' => $source,
+            'deposit_pct'    => $deposit_pct,
         ];
     }
 
@@ -77,5 +78,36 @@ final class BookingManagerRefundPolicyTest extends TestCase {
 
         $this->assertSame( 100, $refund['charge_pct'] );
         $this->assertSame( 0.0, $refund['refund_mxn'] );
+    }
+
+    /**
+     * Depósito parcial ("Depósito parcial por tour") — la política
+     * (100/50/0% según antelación) se aplica sobre el monto REALMENTE
+     * cobrado (el depósito), nunca sobre total_mxn completo. Con un
+     * depósito del 20% sobre $1000 (= $200 cobrados), un reembolso "total"
+     * (7+ días) debe devolver $200, no $1000 — devolver $1000 sería
+     * reembolsar plata que el cliente nunca pagó.
+     */
+    public function test_deposit_refund_is_calculated_on_charged_amount_not_full_total(): void {
+        $booking = $this->booking( date( 'Y-m-d', strtotime( '+8 days' ) ), 'direct', 1000.0, 20 );
+        $refund  = $this->calculate_refund( $booking, 'client' );
+
+        $this->assertSame( 0, $refund['charge_pct'] );
+        $this->assertSame( 200.0, $refund['refund_mxn'] );
+    }
+
+    public function test_deposit_refund_half_policy_applies_to_deposit_amount(): void {
+        $booking = $this->booking( date( 'Y-m-d', strtotime( '+5 days' ) ), 'direct', 1000.0, 20 );
+        $refund  = $this->calculate_refund( $booking, 'client' );
+
+        $this->assertSame( 50, $refund['charge_pct'] );
+        $this->assertSame( 100.0, $refund['refund_mxn'] );
+    }
+
+    public function test_deposit_zero_percent_behaves_like_full_payment(): void {
+        $booking = $this->booking( date( 'Y-m-d', strtotime( '+8 days' ) ), 'direct', 1000.0, 0 );
+        $refund  = $this->calculate_refund( $booking, 'client' );
+
+        $this->assertSame( 1000.0, $refund['refund_mxn'] );
     }
 }

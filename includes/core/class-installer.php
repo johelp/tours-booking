@@ -75,6 +75,21 @@ class Installer {
         self::insert_default_data();
         self::schedule_cron_jobs();
 
+        // Bug real confirmado en producción: reactivar el plugin (ej.
+        // desactivar/activar de nuevo, o un update que lo reinicia) NO
+        // corría ninguna migración — create_tables() usa dbDelta(), que en
+        // una tabla YA existente no altera columnas/ENUMs que cambiaron de
+        // definición (ej. amir_bookings.status sin 'date_requested'), y acá
+        // abajo se pisaba amir_db_version al valor actual de todos modos,
+        // como si la migración sí hubiera corrido. Resultado: un sitio que
+        // reactiva el plugin puede quedar con el schema viejo para
+        // siempre, porque maybe_update() nunca vuelve a intentarlo (ve
+        // amir_db_version == AMIR_DB_VERSION y no hace nada). Corrección:
+        // correr maybe_update() ACÁ, antes de pisar la versión — lee la
+        // versión vieja todavía guardada y aplica toda la cadena de
+        // ALTER TABLE pendiente de verdad, no solo el CREATE TABLE inicial.
+        self::maybe_update();
+
         update_option( 'amir_db_version',   AMIR_DB_VERSION );
         update_option( 'amir_installed_at', current_time( 'mysql' ) );
 
@@ -173,6 +188,10 @@ class Installer {
             description_en  LONGTEXT,
             what_to_expect_es  TEXT,
             what_to_expect_en  TEXT,
+            email_extra_note_es TEXT,
+            email_extra_note_en TEXT,
+            highlights_es      TEXT,
+            highlights_en      TEXT,
             duration_minutes   SMALLINT UNSIGNED NOT NULL DEFAULT 0,
             min_age            TINYINT UNSIGNED NOT NULL DEFAULT 0,
             allow_children     TINYINT(1) NOT NULL DEFAULT 1,
@@ -192,22 +211,41 @@ class Installer {
             gallery_images     TEXT DEFAULT '[]',
             itinerary_es       LONGTEXT,
             itinerary_en       LONGTEXT,
+            itinerary_stops    LONGTEXT,
+            detail_facts       LONGTEXT,
+            faq_items          LONGTEXT,
             content_i18n       LONGTEXT,
             tripadvisor_id     VARCHAR(100) DEFAULT '',
             gyg_id             VARCHAR(100) DEFAULT '',
             sort_order         SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            featured           TINYINT(1) NOT NULL DEFAULT 0,
+            hide_from_lists       TINYINT(1) NOT NULL DEFAULT 0,
+            hide_from_suggestions TINYINT(1) NOT NULL DEFAULT 0,
             wishlist_enabled     TINYINT(1) NOT NULL DEFAULT 0,
             wishlist_threshold   SMALLINT UNSIGNED NOT NULL DEFAULT 0,
             wishlist_date        DATE DEFAULT NULL,
             wishlist_notified_at DATETIME DEFAULT NULL,
+            fixed_date         DATE DEFAULT NULL,
+            request_only       TINYINT(1) NOT NULL DEFAULT 0,
+            custom_quote       TINYINT(1) NOT NULL DEFAULT 0,
+            deposit_enabled    TINYINT(1) NOT NULL DEFAULT 0,
+            deposit_pct        TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            skip_upsell        TINYINT(1) NOT NULL DEFAULT 0,
+            require_participant_names TINYINT(1) NOT NULL DEFAULT 0,
             provider_id        INT UNSIGNED DEFAULT NULL,
+            provider_charge_mode ENUM('immediate','on_approval') NOT NULL DEFAULT 'immediate',
+            category_slugs     LONGTEXT,
+            video_url           VARCHAR(500) DEFAULT NULL,
             created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY slug (slug),
             KEY status (status),
             KEY sort_order (sort_order),
-            KEY provider_id (provider_id)
+            KEY provider_id (provider_id),
+            KEY featured (featured),
+            KEY hide_from_lists (hide_from_lists),
+            KEY hide_from_suggestions (hide_from_suggestions)
         ) $charset;" );
 
         // ── amir_tour_schedules ───────────────────────────────────────────
@@ -252,16 +290,20 @@ class Installer {
         // el mismo patrón multi-idioma que amir_tours (Languages::tour_field()).
         dbDelta( "CREATE TABLE {$wpdb->prefix}amir_addons (
             id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            tour_id       INT UNSIGNED NOT NULL,
-            pricing_type  ENUM('per_unit','flat') NOT NULL DEFAULT 'per_unit',
+            tour_id       INT UNSIGNED DEFAULT NULL,
+            room_id       INT UNSIGNED DEFAULT NULL,
+            applies_to    ENUM('tour','room','both','global') NOT NULL DEFAULT 'tour',
+            pricing_type  ENUM('per_unit','flat','digital') NOT NULL DEFAULT 'per_unit',
             name_es       VARCHAR(255) NOT NULL DEFAULT '',
             name_en       VARCHAR(255) NOT NULL DEFAULT '',
             content_i18n  LONGTEXT,
             price_mxn     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            digital_file_url VARCHAR(500) DEFAULT NULL,
             active        TINYINT(1) NOT NULL DEFAULT 1,
             sort_order    TINYINT UNSIGNED NOT NULL DEFAULT 0,
             PRIMARY KEY (id),
             KEY tour_id (tour_id),
+            KEY room_id (room_id),
             KEY active (active)
         ) $charset;" );
 
@@ -326,12 +368,19 @@ class Installer {
             id                       INT UNSIGNED NOT NULL AUTO_INCREMENT,
             booking_ref              VARCHAR(20) NOT NULL,
             access_token             VARCHAR(64) DEFAULT NULL,
-            tour_id                  INT UNSIGNED NOT NULL,
-            schedule_id              INT UNSIGNED NOT NULL,
+            item_type                ENUM('tour','room','product') NOT NULL DEFAULT 'tour',
+            tour_id                  INT UNSIGNED DEFAULT NULL,
+            schedule_id              INT UNSIGNED DEFAULT NULL,
+            room_id                  INT UNSIGNED DEFAULT NULL,
+            cart_group_id            VARCHAR(36) DEFAULT NULL,
+            google_calendar_event_id VARCHAR(255) DEFAULT NULL,
             partner_id               INT UNSIGNED,
             tour_date                DATE NOT NULL,
+            check_out_date           DATE DEFAULT NULL,
             status                   ENUM(
                                         'wishlist',
+                                        'date_requested',
+                                        'date_request_rejected',
                                         'awaiting_payment',
                                         'pending',
                                         'pending_provider_approval',
@@ -344,7 +393,7 @@ class Installer {
                                         'rescheduled',
                                         'completed'
                                      ) NOT NULL DEFAULT 'pending',
-            booking_source           ENUM('direct','tripadvisor','getyourguide','partner','manual','wishlist') NOT NULL DEFAULT 'direct',
+            booking_source           ENUM('direct','tripadvisor','getyourguide','partner','manual','wishlist','date_request') NOT NULL DEFAULT 'direct',
             lang                     VARCHAR(5) NOT NULL DEFAULT 'es',
             customer_name            VARCHAR(255) NOT NULL DEFAULT '',
             customer_email           VARCHAR(255) NOT NULL DEFAULT '',
@@ -364,9 +413,12 @@ class Installer {
             discount_mxn             DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             cancellation_policy_pct  TINYINT UNSIGNED NOT NULL DEFAULT 0,
             refund_amount_mxn        DECIMAL(10,2) DEFAULT 0.00,
+            deposit_pct              TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            balance_paid_at          DATETIME DEFAULT NULL,
             qr_code_path             VARCHAR(500) DEFAULT '',
             pdf_voucher_path         VARCHAR(500) DEFAULT '',
             special_requests         TEXT,
+            participant_names        TEXT,
             internal_notes           TEXT,
             custom_email_note        TEXT,
             review_email_sent_at     DATETIME,
@@ -380,6 +432,9 @@ class Installer {
             provider_reject_reason    VARCHAR(500) DEFAULT NULL,
             confirmed_at             DATETIME,
             checked_in_at            DATETIME DEFAULT NULL,
+            consent_recorded_at      DATETIME DEFAULT NULL,
+            consent_text_hash        VARCHAR(64) DEFAULT NULL,
+            anonymized_at            DATETIME DEFAULT NULL,
             created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -388,13 +443,17 @@ class Installer {
             UNIQUE KEY provider_response_token (provider_response_token),
             KEY tour_id (tour_id),
             KEY schedule_id (schedule_id),
+            KEY room_id (room_id),
+            KEY item_type (item_type),
+            KEY cart_group_id (cart_group_id),
             KEY partner_id (partner_id),
             KEY tour_date (tour_date),
             KEY status (status),
             KEY customer_email (customer_email),
             KEY stripe_payment_intent (stripe_payment_intent),
             KEY gateway_reference (gateway_reference),
-            KEY created_at (created_at)
+            KEY created_at (created_at),
+            KEY idx_avail_lookup (tour_id, schedule_id, tour_date, status)
         ) $charset;" );
 
         // ── amir_booking_addons ───────────────────────────────────────────
@@ -445,12 +504,14 @@ class Installer {
             usage_limit     INT UNSIGNED DEFAULT NULL,
             times_used      INT UNSIGNED NOT NULL DEFAULT 0,
             tour_id         INT UNSIGNED DEFAULT NULL,
+            room_id         INT UNSIGNED DEFAULT NULL,
             active          TINYINT(1) NOT NULL DEFAULT 1,
             created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY code (code),
             KEY active (active),
             KEY tour_id (tour_id),
+            KEY room_id (room_id),
             KEY validity (valid_from, valid_until)
         ) $charset;" );
 
@@ -492,6 +553,96 @@ class Installer {
             KEY created_at (created_at)
         ) $charset;" );
 
+        // ── flow_rooms — Pro Max, § 16 CONTRIBUTING.md ───────────────────────
+        // Primer módulo que usa el prefijo de tabla nuevo (flow_ en vez de
+        // amir_, decisión del cliente 2026-07-31 de no seguir usando "amir"
+        // en desarrollo nuevo — ver § 15.13). Sin deposit_enabled/percentage
+        // acá: la referencia real (Caliafarm, § 16.2) cobra la habitación
+        // siempre 100% online, el depósito opcional es solo para
+        // tours/experiencias (vive en amir_tours, se suma en la fase de
+        // checkout/carrito, § 16.4). ical_import_url: columna preparada
+        // desde el día uno (2026-07-31) para sincronizar disponibilidad con
+        // Booking.com/Airbnb vía iCal, sentido "importar" (pull) — mismo
+        // criterio que provider_id, nullable y sin costo real hoy. El
+        // importador en sí NO está construido todavía (prioridad: motor de
+        // reservas + proceso de checkout óptimo primero, ver § 16).
+        dbDelta( "CREATE TABLE {$wpdb->prefix}flow_rooms (
+            id                     INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            slug                   VARCHAR(100) NOT NULL,
+            status                 ENUM('active','draft','archived') NOT NULL DEFAULT 'draft',
+            name_es                VARCHAR(255) NOT NULL DEFAULT '',
+            name_en                VARCHAR(255) NOT NULL DEFAULT '',
+            description_es         LONGTEXT,
+            description_en         LONGTEXT,
+            content_i18n           LONGTEXT,
+            capacity_max           SMALLINT UNSIGNED NOT NULL DEFAULT 2,
+            min_nights             SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+            price_per_night        DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            default_checkin_time   TIME NOT NULL DEFAULT '15:00:00',
+            default_checkout_time  TIME NOT NULL DEFAULT '11:00:00',
+            gallery_images         TEXT DEFAULT '[]',
+            amenities              LONGTEXT,
+            video_url              VARCHAR(500) DEFAULT NULL,
+            sort_order             SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            provider_id            INT UNSIGNED DEFAULT NULL,
+            ical_import_url        VARCHAR(500) DEFAULT NULL,
+            created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY slug (slug),
+            KEY status (status),
+            KEY sort_order (sort_order),
+            KEY provider_id (provider_id)
+        ) $charset;" );
+
+        // ── flow_room_bookings — motor de disponibilidad propio (§ 16.5) ─────
+        // Intervalo semi-abierto [check_in_date, check_out_date): el choque
+        // de disponibilidad se calcula como
+        // nueva.check_in < existente.check_out AND nueva.check_out > existente.check_in
+        // (ver RoomAvailability::has_conflict()) — el día de checkout ya
+        // libera la habitación para un check-in ese mismo día, confirmado
+        // con el cliente 2026-07-31.
+        dbDelta( "CREATE TABLE {$wpdb->prefix}flow_room_bookings (
+            id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            room_id         INT UNSIGNED NOT NULL,
+            booking_id      INT UNSIGNED DEFAULT NULL,
+            check_in_date   DATE NOT NULL,
+            check_out_date  DATE NOT NULL,
+            guests          SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+            status          ENUM('pending','confirmed','cancelled') NOT NULL DEFAULT 'pending',
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY room_id (room_id),
+            KEY booking_id (booking_id),
+            KEY dates (check_in_date, check_out_date),
+            KEY status (status)
+        ) $charset;" );
+
+        // ── flow_room_availability_rules — disponibilidad por temporada ──────
+        // (§ 16.11 CONTRIBUTING.md, 2026-08-01) — mismo esquema exacto que
+        // amir_availability_rules (tours), room_id en vez de tour_id. Permite
+        // "esta habitación solo se ofrece junio-agosto": una regla 'allow'
+        // con date_from/date_until, o 'block' para las temporadas cerradas.
+        // Primera regla que aplica gana (mayor prioridad primero); sin
+        // ninguna regla que aplique, disponible por default — ver
+        // RoomAvailability::evaluate_rules(). Sin columna weekdays a
+        // propósito (a diferencia de amir_availability_rules): una reserva
+        // de habitación son noches consecutivas, bloquear por día de semana
+        // suelto no tiene el mismo sentido que en un tour de un solo día.
+        dbDelta( "CREATE TABLE {$wpdb->prefix}flow_room_availability_rules (
+            id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            room_id     INT UNSIGNED NOT NULL,
+            rule_type   ENUM('block','allow') NOT NULL DEFAULT 'block',
+            date_from   DATE,
+            date_until  DATE,
+            priority    SMALLINT NOT NULL DEFAULT 10,
+            reason      VARCHAR(255) DEFAULT '',
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY room_id (room_id),
+            KEY priority (priority),
+            KEY date_range (date_from, date_until)
+        ) $charset;" );
     }
 
     // ── Datos por defecto ─────────────────────────────────────────────────
@@ -502,6 +653,7 @@ class Installer {
         if ( $count > 0 ) {
             self::create_verify_page();
             self::create_provider_action_page();
+            self::create_discovery_page();
             return;
         }
 
@@ -520,11 +672,14 @@ class Installer {
 
         self::create_verify_page();
         self::create_provider_action_page();
+        self::create_discovery_page();
     }
 
     /**
-     * Crea la página /verificar-reserva/ con el shortcode [amir_verify_booking].
-     * Seguro de llamar en cada activación — no duplica si ya existe.
+     * Crea la página /verificar-reserva/ con el shortcode [flow_verify_booking].
+     * Seguro de llamar en cada activación — no duplica si ya existe (así que
+     * instalaciones viejas con [amir_verify_booking] ya publicado no se
+     * tocan, siguen andando vía el alias — ver Plugin::init()).
      */
     private static function create_verify_page(): void {
         $existing_id = (int) get_option( 'amir_verify_page_id', 0 );
@@ -547,7 +702,7 @@ class Installer {
         $page_id = wp_insert_post( array(
             'post_title'   => 'Verificar Reserva',
             'post_name'    => 'verificar-reserva',
-            'post_content' => '[amir_verify_booking]',
+            'post_content' => '[flow_verify_booking]',
             'post_status'  => 'publish',
             'post_type'    => 'page',
             'post_author'  => 1,
@@ -559,10 +714,12 @@ class Installer {
     }
 
     /**
-     * Crea la página /proveedor-reserva/ con el shortcode [amir_provider_action]
+     * Crea la página /proveedor-reserva/ con el shortcode [flow_provider_action]
      * — donde el proveedor externo aprueba/rechaza una reserva sin login
      * (ver Shortcodes::provider_action(), § 11 CONTRIBUTING.md). Mismo
-     * patrón que create_verify_page(), seguro de llamar en cada activación.
+     * patrón que create_verify_page(), seguro de llamar en cada activación
+     * (instalaciones viejas con [amir_provider_action] ya publicado no se
+     * tocan, siguen andando vía el alias).
      */
     private static function create_provider_action_page(): void {
         $existing_id = (int) get_option( 'amir_provider_page_id', 0 );
@@ -585,7 +742,7 @@ class Installer {
         $page_id = wp_insert_post( array(
             'post_title'   => 'Reserva de Proveedor',
             'post_name'    => 'proveedor-reserva',
-            'post_content' => '[amir_provider_action]',
+            'post_content' => '[flow_provider_action]',
             'post_status'  => 'publish',
             'post_type'    => 'page',
             'post_author'  => 1,
@@ -593,6 +750,51 @@ class Installer {
 
         if ( $page_id && ! is_wp_error( $page_id ) ) {
             update_option( 'amir_provider_page_id', $page_id );
+        }
+    }
+
+    /**
+     * Crea la página /book/ con [flow_discovery] — punto de entrada del
+     * flujo continuo de descubrimiento (Pro Max, § 16.15/16.18 CONTRIBUTING.md).
+     * Pedido del cliente 2026-08-04, mismo patrón que create_verify_page()/
+     * create_provider_action_page() — seguro de llamar en cada activación,
+     * no duplica si ya existe. Solo Pro Max: [flow_discovery] no se registra
+     * en otras ediciones (ver Plugin::init()), así que la página quedaría
+     * con un shortcode inerte en Lite/Pro.
+     */
+    private static function create_discovery_page(): void {
+        if ( AMIR_EDITION !== 'pro_max' ) {
+            return;
+        }
+
+        $existing_id = (int) get_option( 'amir_discovery_page_id', 0 );
+        if ( $existing_id && get_post( $existing_id ) ) {
+            return;
+        }
+
+        $existing = get_posts( array(
+            'name'           => 'book',
+            'post_type'      => 'page',
+            'post_status'    => array( 'publish', 'draft' ),
+            'posts_per_page' => 1,
+        ) );
+
+        if ( $existing ) {
+            update_option( 'amir_discovery_page_id', $existing[0]->ID );
+            return;
+        }
+
+        $page_id = wp_insert_post( array(
+            'post_title'   => 'Book Your Stay',
+            'post_name'    => 'book',
+            'post_content' => '[flow_discovery mode="experience"]',
+            'post_status'  => 'publish',
+            'post_type'    => 'page',
+            'post_author'  => 1,
+        ) );
+
+        if ( $page_id && ! is_wp_error( $page_id ) ) {
+            update_option( 'amir_discovery_page_id', $page_id );
         }
     }
 
@@ -622,6 +824,11 @@ class Installer {
         global $wpdb;
         foreach ( array_reverse( self::TABLES ) as $table ) {
             $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}amir_{$table}" );
+        }
+        // Tablas con el prefijo nuevo (flow_, § 15.13) — no encajan en el
+        // patrón amir_{$table} de arriba.
+        foreach ( [ 'flow_room_bookings', 'flow_rooms' ] as $table ) {
+            $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}{$table}" );
         }
     }
 
@@ -666,7 +873,7 @@ class Installer {
         }
         global $wpdb;
         $cols     = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
-        $missing  = array_diff( [ 'itinerary_es', 'itinerary_en', 'content_i18n' ], $cols );
+        $missing  = array_diff( [ 'itinerary_es', 'itinerary_en', 'itinerary_stops', 'detail_facts', 'faq_items', 'highlights_es', 'highlights_en', 'content_i18n', 'category_slugs' ], $cols );
         $all_ok   = true;
 
         foreach ( $missing as $col ) {
@@ -679,6 +886,65 @@ class Installer {
 
         if ( $all_ok ) {
             set_transient( 'amir_tour_columns_ok', 1, HOUR_IN_SECONDS );
+        }
+    }
+
+    /**
+     * Misma red de seguridad que ensure_tour_columns(), para el ENUM de
+     * status/booking_source de amir_bookings — bug real confirmado en
+     * producción (visitsicilyexperiences.com, 2026-08-14): un sitio que
+     * reactiva el plugin (activate_for_blog() → create_tables() vía
+     * dbDelta(), que NO altera ENUMs de columnas ya existentes) quedaba con
+     * 'date_requested' faltante en el ENUM para siempre, aunque
+     * amir_db_version ya diga estar al día — así que maybe_update() ya no
+     * vuelve a intentarlo. Sin 'date_requested' en el ENUM, MySQL guarda la
+     * fila con el status inválido convertido a '' (modo no estricto) o
+     * rechaza el INSERT (modo estricto) — en cualquier caso, la reserva
+     * nunca queda realmente en 'date_requested': no aparece el badge de
+     * estado, y la tarjeta "Acciones" del admin no encuentra ningún
+     * `if ($b->status === 'date_requested')` que coincida, así que no
+     * muestra ni Aprobar ni Rechazar. Chequeo barato (una vez por hora)
+     * fuera del gate de versión — corre incluso si activate_for_blog()
+     * nunca llegó a correr maybe_update() en este sitio.
+     */
+    public static function ensure_booking_status_enum(): void {
+        if ( get_transient( 'amir_booking_status_enum_ok' ) ) {
+            return;
+        }
+        global $wpdb;
+        $all_ok = true;
+
+        $status_col = $wpdb->get_row( "SHOW COLUMNS FROM {$wpdb->prefix}amir_bookings LIKE 'status'" );
+        // Chequea solo el valor agregado más reciente (date_request_rejected)
+        // — si ese falta, date_requested (agregado antes) seguro también
+        // puede faltar, así que un solo strpos() cubre ambos casos sin
+        // tener que ir sumando un check por cada valor nuevo del ENUM.
+        if ( $status_col && strpos( $status_col->Type, 'date_request_rejected' ) === false ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN status ENUM(
+                'wishlist','date_requested','date_request_rejected','awaiting_payment','pending',
+                'pending_provider_approval','confirmed','cancellation_requested',
+                'cancelled_client','cancelled_weather','cancelled_min_pax',
+                'cancelled_provider','rescheduled','completed'
+            ) NOT NULL DEFAULT 'pending'" );
+            if ( $wpdb->last_error ) {
+                $all_ok = false;
+                error_log( 'Amir Booking: no se pudo ampliar el ENUM de amir_bookings.status — ' . $wpdb->last_error );
+            }
+        }
+
+        $source_col = $wpdb->get_row( "SHOW COLUMNS FROM {$wpdb->prefix}amir_bookings LIKE 'booking_source'" );
+        if ( $source_col && strpos( $source_col->Type, 'date_request' ) === false ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN booking_source
+                ENUM('direct','tripadvisor','getyourguide','partner','manual','wishlist','date_request')
+                NOT NULL DEFAULT 'direct'" );
+            if ( $wpdb->last_error ) {
+                $all_ok = false;
+                error_log( 'Amir Booking: no se pudo ampliar el ENUM de amir_bookings.booking_source — ' . $wpdb->last_error );
+            }
+        }
+
+        if ( $all_ok ) {
+            set_transient( 'amir_booking_status_enum_ok', 1, HOUR_IN_SECONDS );
         }
     }
 
@@ -866,9 +1132,367 @@ class Installer {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN checked_in_at DATETIME DEFAULT NULL" );
         }
 
+        // 1.10.0: itinerario tipo timeline (§ 13.1 CONTRIBUTING.md) — array
+        // JSON de paradas { title_es, title_en, desc_es, desc_en, image_id,
+        // image_url, is_start }, opcional por tour. Sin DEFAULT literal a
+        // propósito (mismo motivo que itinerary_es/en/content_i18n arriba:
+        // MySQL/MariaDB puede rechazar DEFAULT en columnas LONGTEXT según el
+        // host — ver el bug real de content_i18n más arriba). El '[]' por
+        // defecto se resuelve en PHP (sync_to_db(), ToursController), no acá.
+        if ( ! in_array( 'itinerary_stops', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN itinerary_stops LONGTEXT" );
+        }
+
+        // 1.11.0: "datos destacados" — 2-4 bloques de ícono + título + detalle
+        // configurables por tour (ej. 🗣️ Idioma: Español/Inglés, 👥 Personas:
+        // 2–8, 🎂 Edad mínima: 12+), pedido del cliente para hacer más visibles
+        // datos que hoy solo aparecen como chips chicos en el hero. Freeform
+        // a propósito (no atado a los campos estructurados existentes, mismo
+        // criterio que includes/excludes) — el operador escribe lo que
+        // considera más relevante mostrar para ESE tour en particular.
+        if ( ! in_array( 'detail_facts', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN detail_facts LONGTEXT" );
+        }
+
+        // 1.12.0: "Highlights" — 4-5 bullets cortos arriba de la descripción
+        // larga (§ 13.2 CONTRIBUTING.md), mismo patrón que includes/excludes
+        // (una línea por bullet → JSON array vía Languages::tour_field()).
+        if ( ! in_array( 'highlights_es', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN highlights_es TEXT" );
+        }
+        if ( ! in_array( 'highlights_en', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN highlights_en TEXT" );
+        }
+
+        // 1.13.0: categorías de tour (§ 15.7 CONTRIBUTING.md) — JSON array de
+        // slugs de la taxonomía amir_tour_category (que ya existía en WP pero
+        // estaba desconectada de amir_tours). Sin DEFAULT literal, mismo
+        // motivo que itinerary_stops/detail_facts arriba.
+        if ( ! in_array( 'category_slugs', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN category_slugs LONGTEXT" );
+        }
+
+        // 1.14.0: cobro diferido a la confirmación del proveedor (§ 11.0
+        // CONTRIBUTING.md) — 'immediate' (default, comportamiento de siempre:
+        // se cobra al reservar) o 'on_approval' (no se cobra nada hasta que
+        // el proveedor aprueba; recién ahí se manda el link de pago real).
+        if ( ! in_array( 'provider_charge_mode', $tour_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN provider_charge_mode ENUM('immediate','on_approval') NOT NULL DEFAULT 'immediate'" );
+        }
+
+        // 1.16.0: amir_bookings generalizada para aceptar reservas de
+        // habitación (§ 16 CONTRIBUTING.md) sin duplicar toda la
+        // infraestructura de pago/emails/reembolsos — decisión del cliente
+        // 2026-07-31 de reusar esta tabla en vez de una tabla de reservas
+        // separada. tour_id/schedule_id pasan a admitir NULL (una reserva
+        // de habitación no tiene ninguno de los dos); tour_date SIGUE
+        // NOT NULL — para una reserva de habitación se le carga el
+        // check_in_date, así ninguna pantalla existente que ya asume
+        // tour_date poblado (Reservas, Reportes, emails, voucher) se rompe.
+        $booking_cols = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'item_type', $booking_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN tour_id INT UNSIGNED DEFAULT NULL" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN schedule_id INT UNSIGNED DEFAULT NULL" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN item_type ENUM('tour','room') NOT NULL DEFAULT 'tour' AFTER access_token" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN room_id INT UNSIGNED DEFAULT NULL AFTER schedule_id" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN check_out_date DATE DEFAULT NULL AFTER tour_date" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD KEY room_id (room_id)" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD KEY item_type (item_type)" );
+        }
+
+        // 1.17.0: amir_addons reusable para habitaciones (§ 16.4
+        // CONTRIBUTING.md, decisión cerrada 2026-07-31: reusar el catálogo
+        // existente en vez de crear uno nuevo). tour_id pasa a admitir NULL
+        // (un addon 'room' no pertenece a ningún tour); room_id y
+        // applies_to son columnas nuevas. Default 'tour' en applies_to deja
+        // el comportamiento de todos los addons existentes exactamente
+        // igual que antes.
+        $addon_cols = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_addons" );
+        if ( ! in_array( 'applies_to', $addon_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons MODIFY COLUMN tour_id INT UNSIGNED DEFAULT NULL" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN room_id INT UNSIGNED DEFAULT NULL AFTER tour_id" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN applies_to ENUM('tour','room','both') NOT NULL DEFAULT 'tour' AFTER room_id" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD KEY room_id (room_id)" );
+        }
+
+        // 1.18.0: carrito multi-ítem (§ 16 CONTRIBUTING.md, decisión
+        // 2026-07-31: carrito armado en el cliente/React, no persistido
+        // fila por fila — el checkout final crea de una todas las reservas
+        // reales). cart_group_id enlaza las N reservas (tour+habitación+
+        // extras) creadas en un mismo checkout, para poder confirmarlas
+        // todas juntas cuando llega UN solo pago que las cubre a todas.
+        $booking_cols2 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'cart_group_id', $booking_cols2, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN cart_group_id VARCHAR(36) DEFAULT NULL AFTER room_id" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD KEY cart_group_id (cart_group_id)" );
+        }
+
+        // 1.19.0: Google Calendar, un sentido (§ 15.4/§ 16 CONTRIBUTING.md)
+        // — guarda el event_id devuelto por la Calendar API para poder
+        // actualizar/borrar el evento correcto después (reprogramación,
+        // cancelación), en vez de crear uno nuevo cada vez.
+        $booking_cols3 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'google_calendar_event_id', $booking_cols3, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN google_calendar_event_id VARCHAR(255) DEFAULT NULL AFTER cart_group_id" );
+        }
+
+        // 1.20.0: amenities + video por habitación (§ 16.11 CONTRIBUTING.md,
+        // 2026-08-01) — versión mejorada de la página de detalle.
+        // flow_room_availability_rules la crea create_tables() más abajo
+        // (tabla nueva, dbDelta alcanza sin ALTER explícito).
+        $room_cols = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}flow_rooms" );
+        if ( ! in_array( 'amenities', $room_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}flow_rooms ADD COLUMN amenities LONGTEXT AFTER gallery_images" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}flow_rooms ADD COLUMN video_url VARCHAR(500) DEFAULT NULL AFTER amenities" );
+        }
+
+        // 1.21.0: tours "destacados" para el paso 1 del Flujo A del flujo
+        // continuo (§ 16.15 CONTRIBUTING.md) — checkbox explícito además de
+        // sort_order (decisión del cliente 2026-08-03: sort_order solo no
+        // alcanza, un operador con muchos tours propios quiere elegir a mano
+        // cuáles aparecen ahí, no "los primeros N").
+        $tour_cols_featured = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'featured', $tour_cols_featured, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN featured TINYINT(1) NOT NULL DEFAULT 0 AFTER sort_order" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD KEY featured (featured)" );
+        }
+
+        // 1.22.0 (2026-08-04): dos flags de visibilidad para tours de "venta
+        // separada" (§ 16.20/16.21 CONTRIBUTING.md, ej. un traslado que se
+        // reserva solo desde su propia ficha) — deliberadamente dos columnas
+        // independientes, no una sola: hide_from_lists saca el tour de
+        // [flow_tour_list] y de los listados del flujo continuo (Flujo A
+        // destacados, Flujo B catálogo); hide_from_suggestions lo saca solo
+        // de "otros tours sugeridos" (paso de extras). hide_from_lists tiene
+        // prioridad sobre featured — un tour oculto de listas nunca aparece
+        // ahí aunque esté marcado destacado.
+        $tour_cols_hide = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'hide_from_lists', $tour_cols_hide, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN hide_from_lists TINYINT(1) NOT NULL DEFAULT 0 AFTER featured" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN hide_from_suggestions TINYINT(1) NOT NULL DEFAULT 0 AFTER hide_from_lists" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD KEY hide_from_lists (hide_from_lists)" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD KEY hide_from_suggestions (hide_from_suggestions)" );
+        }
+
+        // 1.22.0: cupones también para habitaciones (§ 16.21 CONTRIBUTING.md)
+        // — mismo criterio que tour_id (NULL = global, o acotado a un
+        // recurso puntual). tour_id y room_id nunca conviven en el mismo
+        // cupón — CouponEngine::validate() lo rechaza si se mezclan.
+        $coupon_cols = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_coupons" );
+        if ( ! in_array( 'room_id', $coupon_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_coupons ADD COLUMN room_id INT UNSIGNED DEFAULT NULL AFTER tour_id" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_coupons ADD KEY room_id (room_id)" );
+        }
+
+        // 1.23.0 (2026-08-04): registro de consentimiento GDPR (§ 15.3,
+        // pieza 3 de 4) — antes el plugin solo validaba que los checkboxes
+        // de política/términos vinieran tildados, sin guardar cuándo ni qué
+        // texto vio el cliente. Ver BookingManager::consent_snapshot().
+        $booking_cols_consent = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'consent_recorded_at', $booking_cols_consent, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN consent_recorded_at DATETIME DEFAULT NULL AFTER checked_in_at" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN consent_text_hash VARCHAR(64) DEFAULT NULL AFTER consent_recorded_at" );
+        }
+
+        // 1.23.0: "derecho al olvido" (§ 15.3, pieza 4 de 4) — manual desde
+        // el admin (decisión del cliente 2026-08-04). anonymized_at deja
+        // registro de que la anonimización ya se hizo (evita repetirla y
+        // pisar el texto de "Cliente eliminado" con otro igual).
+        if ( ! in_array( 'anonymized_at', $booking_cols_consent, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN anonymized_at DATETIME DEFAULT NULL AFTER consent_text_hash" );
+        }
+
+        // 1.24.0 (2026-08-04): extras globales + productos digitales (§ 16.23
+        // CONTRIBUTING.md, decisión cerrada con el cliente) — reusa
+        // amir_addons en vez de una tabla nueva: 'global' en applies_to
+        // (tour_id y room_id ambos NULL) es un addon que no pertenece a
+        // ningún tour/habitación puntual y se ofrece en el paso de extras
+        // del flujo continuo sin importar qué haya en el carrito; 'digital'
+        // en pricing_type es un producto de entrega por archivo (guía PDF,
+        // etc.) en vez de una experiencia física — digital_file_url guarda
+        // el adjunto de la Media Library.
+        $addon_cols_v2 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_addons" );
+        if ( ! in_array( 'digital_file_url', $addon_cols_v2, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons MODIFY COLUMN applies_to ENUM('tour','room','both','global') NOT NULL DEFAULT 'tour'" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons MODIFY COLUMN pricing_type ENUM('per_unit','flat','digital') NOT NULL DEFAULT 'per_unit'" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN digital_file_url VARCHAR(500) DEFAULT NULL AFTER price_mxn" );
+        }
+
+        // 1.25.0 (2026-08-06): tours de fecha fija (pedido explícito del
+        // cliente) — un tour puntual (evento único) que se reserva SOLO ese
+        // día, sin calendario. Ver AvailabilityEngine::evaluate_rules() y
+        // BookingWidget.jsx (needsDateStep).
+        $tour_cols_v3 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'fixed_date', $tour_cols_v3, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN fixed_date DATE DEFAULT NULL AFTER wishlist_notified_at" );
+        }
+
+        // 1.26.0 (2026-08-08): "solicitar fecha" para tours de fecha fija
+        // (pedido del cliente en la misma sesión de 1.25.0, cerrado recién
+        // acá) — un cliente puede pedir una fecha distinta a la fija para
+        // que el operador la evalúe. Sin cobro al solicitar: mismo patrón
+        // que Lista de interés (BookingManager::create_wishlist()), NO el
+        // de proveedores externos (que cobra de entrada). create_tables()
+        // ya tenía 'date_requested'/'date_request' en los ENUM desde
+        // 1.25.0 (agregados a medio construir, ver CONTRIBUTING.md § 16.35)
+        // — acá recién se completa el ALTER TABLE para instalaciones
+        // existentes, que create_tables()/dbDelta no actualiza solo.
+        $booking_status_col = $wpdb->get_row(
+            "SHOW COLUMNS FROM {$wpdb->prefix}amir_bookings LIKE 'status'"
+        );
+        if ( $booking_status_col && strpos( $booking_status_col->Type, 'date_requested' ) === false ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN status ENUM(
+                'wishlist','date_requested','awaiting_payment','pending',
+                'pending_provider_approval','confirmed','cancellation_requested',
+                'cancelled_client','cancelled_weather','cancelled_min_pax',
+                'cancelled_provider','rescheduled','completed'
+            ) NOT NULL DEFAULT 'pending'" );
+        }
+        $booking_source_col = $wpdb->get_row(
+            "SHOW COLUMNS FROM {$wpdb->prefix}amir_bookings LIKE 'booking_source'"
+        );
+        if ( $booking_source_col && strpos( $booking_source_col->Type, 'date_request' ) === false ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN booking_source
+                ENUM('direct','tripadvisor','getyourguide','partner','manual','wishlist','date_request')
+                NOT NULL DEFAULT 'direct'" );
+        }
+
+        // 1.27.0 (2026-08-08): tours "solo a pedido" (§ CLAUDE.md, tercer
+        // modo de disponibilidad junto a calendario normal y fecha fija) —
+        // el tour conserva su calendario normal (o abre siempre si no tiene
+        // reglas), pero CADA reserva nace en 'date_requested' en vez de
+        // 'pending'/confirmarse — nunca se cobra hasta que el operador
+        // aprueba y manda el link de pago (mismo mecanismo que "solicitar
+        // fecha" en tours de fecha fija, § 16.37, reusado tal cual acá).
+        // Ver BookingManager::create_pending().
+        $tour_cols_v4 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'request_only', $tour_cols_v4, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN request_only TINYINT(1) NOT NULL DEFAULT 0 AFTER fixed_date" );
+        }
+
+        // 1.28.0 (2026-08-10): video en la ficha de cada tour (YouTube/Vimeo)
+        // — pedido del cliente, disponible en las TRES ediciones (decisión
+        // explícita: no es un diferenciador de Pro, es barato de dar y no
+        // compite con los diferenciadores reales de Pro/Pro Max). Solo la
+        // URL se persiste — proveedor + id se derivan en caliente al
+        // renderizar (Core\VideoEmbed::parse()), nunca se guardan aparte.
+        $tour_cols_v5 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'video_url', $tour_cols_v5, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN video_url VARCHAR(500) DEFAULT NULL AFTER category_slugs" );
+        }
+
+        // 1.30.0 (2026-08-16): "armá tu tour" — variante de "Solo a pedido"
+        // (request_only) para tours sin precio ni horario cargado, donde el
+        // cliente describe lo que quiere y el operador cotiza manualmente al
+        // aprobar. Pedido explícito del cliente. Reusa TODO el mecanismo de
+        // request_only/date_requested — custom_quote solo le dice al widget
+        // que saltee fecha/horario/precio, y a la pantalla de aprobación que
+        // deje cargar el monto a mano. Ver BookingManager::create_pending().
+        $tour_cols_v6 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'custom_quote', $tour_cols_v6, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN custom_quote TINYINT(1) NOT NULL DEFAULT 0 AFTER request_only" );
+        }
+
+        // 1.31.0 (2026-08-20): depósito parcial por tour — Pro Max primero
+        // (checkbox gateado por AMIR_EDITION en el editor, ver
+        // TourPostType::meta_box_main()). El cliente cobra solo deposit_pct%
+        // online al reservar; el resto se cobra después (efectivo o link de
+        // pago). amir_bookings.deposit_pct es un SNAPSHOT del % al momento
+        // de la reserva (si el operador cambia el % del tour después, no
+        // afecta reservas ya hechas — mismo criterio que
+        // cancellation_policy_pct). Ver BookingManager::create_pending()/
+        // calculate_refund(), BookingResult::$charge_mxn.
+        $tour_cols_v7 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'deposit_enabled', $tour_cols_v7, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN deposit_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER custom_quote" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN deposit_pct TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER deposit_enabled" );
+        }
+        $booking_cols_v7 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'deposit_pct', $booking_cols_v7, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN deposit_pct TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER refund_amount_mxn" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN balance_paid_at DATETIME DEFAULT NULL AFTER deposit_pct" );
+        }
+
+        // 1.32.0 (2026-08-20): "Reserva directa" (Pro Max) — pedido del
+        // cliente repasando por qué ningún tipo de tour muestra el widget
+        // clásico (calendario visible de entrada) por defecto en Pro Max:
+        // hoy `single-amir_tour.php`/`-immersive.php` SIEMPRE meten el tour
+        // en [flow_discovery] ahí ("upsell siempre", decisión 2026-08-03,
+        // § 16.15) — sin excepción, aunque el tour no tenga sentido
+        // combinarlo con nada (ej. un traslado puntual). skip_upsell deja
+        // optar por tour: si está activo, la ficha usa [flow_booking] (el
+        // widget clásico) en vez de [flow_discovery], incluso en Pro Max.
+        $tour_cols_v8 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'skip_upsell', $tour_cols_v8, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN skip_upsell TINYINT(1) NOT NULL DEFAULT 0 AFTER deposit_pct" );
+        }
+
+        // 1.33.0 (auditoría de rendimiento pre-empaquetado v5.7.14): las
+        // queries calientes de AvailabilityEngine (get_month_availability,
+        // llamado en cada navegación de mes del calendario del widget)
+        // filtran por tour_id+schedule_id+tour_date+status a la vez — solo
+        // había índices de una columna, así que MySQL elegía uno solo y
+        // filtraba el resto en memoria. Índice compuesto cubre exactamente
+        // ese patrón de WHERE.
+        $existing_indexes = $wpdb->get_col( "SHOW INDEX FROM {$wpdb->prefix}amir_bookings WHERE Key_name = 'idx_avail_lookup'", 2 );
+        if ( empty( $existing_indexes ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD INDEX idx_avail_lookup (tour_id, schedule_id, tour_date, status)" );
+        }
+
+        // 1.34.0 — Tarea 24 del roadmap: "contenido extra por tour" en el
+        // email de confirmación (ej. "este tour requiere pasaporte"), sin
+        // tocar la plantilla general. Mismo patrón simple es/en que
+        // what_to_expect_es/en — no content_i18n, porque TODO el sistema de
+        // emails de este plugin ya es es/en-only por diseño (ver
+        // BaseEmail::text()), no solo este campo.
+        $tour_cols_v9 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'email_extra_note_es', $tour_cols_v9, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN email_extra_note_es TEXT AFTER what_to_expect_en" );
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN email_extra_note_en TEXT AFTER email_extra_note_es" );
+        }
+
+        // 1.35.0 (v5.8.0) — "Requiere nombre de cada integrante" (pedido del
+        // cliente 2026-08-24): algunos tours (ej. actividades con seguro/
+        // briefing de seguridad) necesitan el nombre de cada pasajero, no
+        // solo la cantidad — opt-in por tour, la mayoría no lo necesita.
+        // participant_names guarda un JSON de nombres (adultos+niños, ver
+        // BookingManager::create_pending()) — se usa en el manifiesto PDF
+        // nuevo de TourFlow → Reportes.
+        $tour_cols_v10 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'require_participant_names', $tour_cols_v10, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN require_participant_names TINYINT(1) NOT NULL DEFAULT 0 AFTER skip_upsell" );
+        }
+        $booking_cols_v10 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'participant_names', $booking_cols_v10, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN participant_names TEXT AFTER special_requests" );
+        }
+
+        // 1.36.0 (v5.9.0) — FAQ opcional por tour (pedido del cliente
+        // 2026-08-25, a partir del bloque "Quick Questions" de la landing de
+        // Sicilia Mia — "por tour", no global). Mismo patrón de filas
+        // repetibles + JSON único que itinerary_stops/detail_facts (§ 13.1/
+        // 13.2) — question_es/en + answer_es/en por fila.
+        $tour_cols_v11 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_tours" );
+        if ( ! in_array( 'faq_items', $tour_cols_v11, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_tours ADD COLUMN faq_items LONGTEXT AFTER detail_facts" );
+        }
+
+        // 1.37.0 (v5.9.0, mismo pedido 2026-08-25) — venta suelta de un
+        // producto digital (ej. guía PDF), sin reservar ningún tour. Tercer
+        // valor de item_type ('product'), mismo criterio que cuando se
+        // sumó 'room' (§ 16 CONTRIBUTING.md) — una "reserva" de tipo
+        // producto vive en la misma amir_bookings (tour_id/room_id NULL,
+        // reusa pasarela/access_token/email tal cual). Ver
+        // CartController::create_product_order().
+        $item_type_col = $wpdb->get_row( "SHOW COLUMNS FROM {$wpdb->prefix}amir_bookings LIKE 'item_type'" );
+        if ( $item_type_col && strpos( $item_type_col->Type, "'product'" ) === false ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN item_type ENUM('tour','room','product') NOT NULL DEFAULT 'tour'" );
+        }
+
         self::create_tables();
         self::create_verify_page();
         self::create_provider_action_page();
+        self::create_discovery_page();
         update_option( 'amir_db_version', AMIR_DB_VERSION );
     }
 

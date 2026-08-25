@@ -33,6 +33,43 @@ final class PricingEngineTest extends TestCase {
         $this->assertCount( 2, $quote->breakdown ); // baby no suma porque price_mxn es 0
     }
 
+    /**
+     * Depósito parcial ("Depósito parcial por tour") — cuando el tour tiene
+     * deposit_enabled+deposit_pct, la cotización debe traer deposit_mxn
+     * (lo que se cobra ahora) y remaining_mxn (el resto) además de
+     * total_mxn — total_mxn nunca cambia de significado, sigue siendo el
+     * precio completo del tour.
+     */
+    public function test_quote_includes_deposit_breakdown_when_tour_has_deposit_enabled(): void {
+        $GLOBALS['wpdb']->tour_row   = (object) [ 'id' => 1, 'price_model' => 'percapita', 'deposit_enabled' => 1, 'deposit_pct' => 20 ];
+        $GLOBALS['wpdb']->price_rows = [
+            (object) [ 'person_type' => 'adult', 'group_min' => null, 'group_max' => null, 'price_mxn' => 500.00 ],
+        ];
+
+        $engine = new PricingEngine();
+        $quote  = $engine->quote( tour_id: 1, schedule_id: 0, date: '2026-08-01', adults: 2 );
+
+        $this->assertTrue( $quote->is_valid() );
+        $this->assertEqualsWithDelta( 1000.0, $quote->total_mxn, 0.001 );
+        $this->assertSame( 20, $quote->deposit_pct );
+        $this->assertEqualsWithDelta( 200.0, $quote->deposit_mxn, 0.001 );
+        $this->assertEqualsWithDelta( 800.0, $quote->remaining_mxn, 0.001 );
+    }
+
+    public function test_quote_has_no_deposit_breakdown_when_tour_deposit_disabled(): void {
+        $GLOBALS['wpdb']->tour_row   = (object) [ 'id' => 1, 'price_model' => 'percapita', 'deposit_enabled' => 0, 'deposit_pct' => 0 ];
+        $GLOBALS['wpdb']->price_rows = [
+            (object) [ 'person_type' => 'adult', 'group_min' => null, 'group_max' => null, 'price_mxn' => 500.00 ],
+        ];
+
+        $engine = new PricingEngine();
+        $quote  = $engine->quote( tour_id: 1, schedule_id: 0, date: '2026-08-01', adults: 1 );
+
+        $this->assertSame( 0, $quote->deposit_pct );
+        $this->assertSame( 0.0, $quote->deposit_mxn );
+        $this->assertSame( 0.0, $quote->remaining_mxn );
+    }
+
     public function test_percapita_model_fails_without_configured_adult_price(): void {
         $GLOBALS['wpdb']->tour_row   = (object) [ 'id' => 1, 'price_model' => 'percapita' ];
         $GLOBALS['wpdb']->price_rows = [];

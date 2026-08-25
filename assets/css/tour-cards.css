@@ -15,7 +15,7 @@
   background: #ffffff;
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 2px 16px rgba(29, 158, 117, .08);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, .08);
   border: 1px solid #e1f5ee;
   transition: transform .18s ease, box-shadow .18s ease;
   display: flex;
@@ -24,7 +24,7 @@
 
 .amir-tour-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 8px 28px rgba(29, 158, 117, .14);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .14);
 }
 
 /* Imagen */
@@ -67,7 +67,7 @@
   position: absolute;
   bottom: 10px;
   right: 10px;
-  background: rgba(29, 158, 117, .92);
+  background: var(--ab-teal, #1D9E75);
   color: #fff;
   border-radius: 8px;
   padding: 5px 10px;
@@ -120,7 +120,7 @@
 }
 
 .amir-tour-card__title a:hover {
-  color: #1D9E75;
+  color: var(--ab-teal, #1D9E75);
 }
 
 .amir-tour-card__excerpt {
@@ -149,8 +149,8 @@
   gap: 4px;
   font-size: 11px;
   font-weight: 600;
-  color: #0F6E56;
-  background: #e1f5ee;
+  color: var(--ab-teal-dark, #0F6E56);
+  background: var(--ab-teal-light, #e1f5ee);
   padding: 3px 9px;
   border-radius: 20px;
 }
@@ -183,22 +183,25 @@
 /* CTA */
 .amir-tour-card__cta {
   display: block;
-  width: 100%;
+  width: 100% !important;
+  height: auto !important;
+  margin-top: auto;
   padding: 12px;
-  background: #1D9E75;
+  background-color: var(--ab-teal, #1D9E75) !important;
+  background-image: none !important;
+  box-shadow: none !important;
   color: #ffffff !important;
   text-align: center;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 700;
-  text-decoration: none;
+  text-decoration: none !important;
   transition: background .15s;
-  margin-top: auto;
   box-sizing: border-box;
 }
 
 .amir-tour-card__cta:hover {
-  background: #0F6E56;
+  background-color: var(--ab-teal-dark, #0F6E56) !important;
   color: #ffffff !important;
 }
 
@@ -207,8 +210,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: auto !important;
+  height: auto !important;
+  margin: 0;
   padding: 13px 28px;
-  background: #1D9E75;
+  background-color: var(--ab-teal, #1D9E75) !important;
+  background-image: none !important;
+  /* Sin !important a propósito acá — Elementor sobreescribe estas mismas
+     propiedades a través de sus propios controles (fondo, tipografía,
+     radio de borde), con selectores {{WRAPPER}} .amir-el-btn de más
+     especificidad, así que igual ganan sin necesidad de !important. Lo
+     que sí se blinda es lo que Elementor NO expone como control (sombra,
+     "apariencia" nativa de <button>) para que el theme del sitio no se
+     filtre ahí. */
+  box-shadow: none !important;
   color: #ffffff !important;
   border-radius: 8px;
   font-size: 15px;
@@ -219,10 +234,13 @@
   transition: background .15s, transform .1s;
   font-family: inherit;
   line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
 
 .amir-el-btn:hover {
-  background: #0F6E56;
+  background: var(--ab-teal-dark, #0F6E56);
   color: #ffffff !important;
 }
 
@@ -259,7 +277,7 @@
 
 .amir-tour-card--list .amir-tour-card__cta {
   display: inline-block;
-  width: auto;
+  width: auto !important;
   padding: 10px 20px;
 }
 

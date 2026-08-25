@@ -10,55 +10,75 @@ defined( 'ABSPATH' ) || exit;
  */
 class PaymentLogPage {
 
-    private const EVENT_LABELS = [
-        'created'                      => [ 'label' => 'Cobro iniciado',        'color' => '#5a7068', 'bg' => '#f3f4f6' ],
-        'creation_failed'              => [ 'label' => 'Error al iniciar cobro','color' => '#dc2626', 'bg' => '#fef2f2' ],
-        'succeeded'                    => [ 'label' => 'Pago confirmado',       'color' => '#1D9E75', 'bg' => '#e8f5e9' ],
-        'webhook_succeeded'            => [ 'label' => 'Webhook: exitoso',      'color' => '#1D9E75', 'bg' => '#e8f5e9' ],
-        'webhook_failed'               => [ 'label' => 'Webhook: rechazado',    'color' => '#dc2626', 'bg' => '#fef2f2' ],
-        'webhook_refunded'             => [ 'label' => 'Webhook: reembolsado',  'color' => '#6366f1', 'bg' => '#eef2ff' ],
-        'confirm_check_not_succeeded'  => [ 'label' => 'Verificación: no exitoso', 'color' => '#BA7517', 'bg' => '#fef9ec' ],
-        'refund_succeeded'             => [ 'label' => 'Reembolso procesado',   'color' => '#1D9E75', 'bg' => '#e8f5e9' ],
-        'refund_failed'                => [ 'label' => 'Reembolso falló',       'color' => '#dc2626', 'bg' => '#fef2f2' ],
-        'refund_skipped'               => [ 'label' => 'Reembolso omitido',     'color' => '#BA7517', 'bg' => '#fef9ec' ],
-    ];
+    /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private function lang(): string {
+        return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
+    }
+
+    /** Traducción es/en para esta pantalla — ver lang(). */
+    private function tt( string $es, string $en ): string {
+        return $this->lang() === 'en' ? $en : $es;
+    }
+
+    private function event_labels(): array {
+        $en = $this->lang() === 'en';
+        return [
+            'created'                      => [ 'label' => $en ? 'Charge started'                        : 'Cobro iniciado',        'color' => '#5a7068', 'bg' => '#f3f4f6' ],
+            'creation_failed'              => [ 'label' => $en ? 'Error starting charge'                  : 'Error al iniciar cobro','color' => '#dc2626', 'bg' => '#fef2f2' ],
+            'succeeded'                    => [ 'label' => $en ? 'Payment confirmed'                      : 'Pago confirmado',       'color' => '#1D9E75', 'bg' => '#e8f5e9' ],
+            'webhook_succeeded'            => [ 'label' => $en ? 'Webhook: succeeded'                     : 'Webhook: exitoso',      'color' => '#1D9E75', 'bg' => '#e8f5e9' ],
+            'webhook_failed'               => [ 'label' => $en ? 'Webhook: rejected'                      : 'Webhook: rechazado',    'color' => '#dc2626', 'bg' => '#fef2f2' ],
+            'webhook_refunded'             => [ 'label' => $en ? 'Webhook: refunded'                      : 'Webhook: reembolsado',  'color' => '#6366f1', 'bg' => '#eef2ff' ],
+            'confirm_check_not_succeeded'  => [ 'label' => $en ? 'Verification: not successful'           : 'Verificación: no exitoso', 'color' => '#BA7517', 'bg' => '#fef9ec' ],
+            'confirm_check_unverifiable'   => [ 'label' => $en ? 'Verification: no response from gateway' : 'Verificación: sin respuesta de la pasarela', 'color' => '#BA7517', 'bg' => '#fef9ec' ],
+            'confirm_check_gateway_unconfigured' => [ 'label' => $en ? 'Verification: gateway not configured' : 'Verificación: pasarela sin configurar', 'color' => '#dc2626', 'bg' => '#fef2f2' ],
+            'confirm_check_reference_mismatch'   => [ 'label' => $en ? '⚠ Payment reference does not match' : '⚠ Referencia de pago no coincide', 'color' => '#dc2626', 'bg' => '#fef2f2' ],
+            'refund_succeeded'             => [ 'label' => $en ? 'Refund processed'                       : 'Reembolso procesado',   'color' => '#1D9E75', 'bg' => '#e8f5e9' ],
+            'refund_failed'                => [ 'label' => $en ? 'Refund failed'                          : 'Reembolso falló',       'color' => '#dc2626', 'bg' => '#fef2f2' ],
+            'refund_skipped'               => [ 'label' => $en ? 'Refund skipped'                         : 'Reembolso omitido',     'color' => '#BA7517', 'bg' => '#fef9ec' ],
+        ];
+    }
 
     public function render(): void {
         if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
-            wp_die( 'No tienes permisos suficientes para acceder a esta página.' );
+            wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
         }
 
         $search = sanitize_text_field( $_GET['s'] ?? '' );
         $events = $this->get_events( $search );
         ?>
         <div class="wrap ab-admin-wrap" style="max-width:1100px;">
-          <h1>💳 Log de pagos</h1>
+          <h1>💳 <?php echo esc_html( $this->tt( 'Log de pagos', 'Payment log' ) ); ?></h1>
           <p style="color:#5a7068;font-size:13px;max-width:70ch;">
-            Cada intento de cobro, confirmación, rechazo o reembolso queda registrado acá — incluyendo el motivo de rechazo cuando la pasarela lo informa. No reemplaza el dashboard de Stripe/Mercado Pago, pero evita tener que ir a buscar ahí para saber qué pasó con una reserva puntual.
+            <?php echo esc_html( $this->tt(
+              'Cada intento de cobro, confirmación, rechazo o reembolso queda registrado acá — incluyendo el motivo de rechazo cuando la pasarela lo informa. No reemplaza el dashboard de Stripe/Mercado Pago, pero evita tener que ir a buscar ahí para saber qué pasó con una reserva puntual.',
+              "Every charge attempt, confirmation, rejection, or refund is logged here — including the rejection reason when the gateway provides one. It doesn't replace the Stripe/Mercado Pago dashboard, but saves you from having to check there to find out what happened with a specific booking."
+            ) ); ?>
           </p>
 
           <form method="get" style="margin:16px 0;display:flex;gap:8px;max-width:420px;">
             <input type="hidden" name="page" value="amir-payment-log" />
-            <input type="text" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="Buscar por referencia (ej. <?php echo esc_attr( ( get_option( 'amir_booking_ref_prefix', 'BK' ) ?: 'BK' ) . '-' . date( 'Y' ) . '-00001' ); ?>)" style="flex:1;border:1px solid #c3d9d0;border-radius:6px;padding:8px 11px;font-size:13px;" />
-            <button type="submit" class="button">Buscar</button>
+            <input type="text" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php echo esc_attr( sprintf( $this->tt( 'Buscar por referencia (ej. %s)', 'Search by reference (e.g. %s)' ), ( get_option( 'amir_booking_ref_prefix', 'BK' ) ?: 'BK' ) . '-' . date( 'Y' ) . '-00001' ) ); ?>" style="flex:1;border:1px solid #c3d9d0;border-radius:6px;padding:8px 11px;font-size:13px;" />
+            <button type="submit" class="button"><?php echo esc_html( $this->tt( 'Buscar', 'Search' ) ); ?></button>
           </form>
 
           <table class="widefat striped">
             <thead>
               <tr>
-                <th>Fecha</th>
-                <th>Reserva</th>
-                <th>Cliente</th>
-                <th>Pasarela</th>
-                <th>Evento</th>
-                <th>Detalle</th>
+                <th><?php echo esc_html( $this->tt( 'Fecha', 'Date' ) ); ?></th>
+                <th><?php echo esc_html( $this->tt( 'Reserva', 'Booking' ) ); ?></th>
+                <th><?php echo esc_html( $this->tt( 'Cliente', 'Customer' ) ); ?></th>
+                <th><?php echo esc_html( $this->tt( 'Pasarela', 'Gateway' ) ); ?></th>
+                <th><?php echo esc_html( $this->tt( 'Evento', 'Event' ) ); ?></th>
+                <th><?php echo esc_html( $this->tt( 'Detalle', 'Detail' ) ); ?></th>
               </tr>
             </thead>
             <tbody>
               <?php if ( empty( $events ) ) : ?>
-                <tr><td colspan="6" style="text-align:center;color:#5a7068;padding:24px;">Sin eventos registrados todavía.</td></tr>
+                <tr><td colspan="6" style="text-align:center;color:#5a7068;padding:24px;"><?php echo esc_html( $this->tt( 'Sin eventos registrados todavía.', 'No events logged yet.' ) ); ?></td></tr>
               <?php else : foreach ( $events as $e ) :
-                $info = self::EVENT_LABELS[ $e->event_type ] ?? [ 'label' => $e->event_type, 'color' => '#5a7068', 'bg' => '#f3f4f6' ];
+                $labels = $this->event_labels();
+                $info = $labels[ $e->event_type ] ?? [ 'label' => $e->event_type, 'color' => '#5a7068', 'bg' => '#f3f4f6' ];
               ?>
                 <tr>
                   <td><?php echo esc_html( $e->created_at ); ?></td>

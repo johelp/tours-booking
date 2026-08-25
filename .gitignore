@@ -15,3 +15,8 @@ Thumbs.db
 
 # Configuración local de Claude Code
 .claude/settings.local.json
+
+# Artefactos de build de los 3 ZIPs de edición (build-editions-*.sh) — se
+# regeneran cada vez, nunca se versionan (ver CLAUDE.md § reglas críticas).
+/.build-stage/
+/dist-zips/

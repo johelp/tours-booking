@@ -54,6 +54,7 @@ final class BookingManagerProviderApprovalTest extends TestCase {
             'stripe_charge_id'        => '',
             'gateway_charge_id'       => '',
             'provider_response_token' => null,
+            'provider_responded_at'   => null,
             'provider_reject_reason'  => null,
             'internal_notes'          => '',
         ], $overrides );
@@ -108,6 +109,30 @@ final class BookingManagerProviderApprovalTest extends TestCase {
         $this->assertNotEmpty( $fake->last_update_data['provider_response_token'] );
     }
 
+    /**
+     * Depósito parcial ("Depósito parcial por tour") — un cobro que llega
+     * sobre una reserva YA 'confirmed' con saldo de depósito pendiente es
+     * el pago del SALDO, no una confirmación nueva: confirm() debe marcar
+     * balance_paid_at y devolver true SIN tocar `status` (la reserva ya
+     * estaba confirmada, no hay que reconfirmarla ni reenviar el voucher).
+     */
+    public function test_confirm_marks_balance_paid_instead_of_reconfirming_when_deposit_balance_pending(): void {
+        $fake              = $GLOBALS['wpdb'];
+        $fake->booking_row = $this->booking_row( [
+            'status'          => 'confirmed',
+            'item_type'       => 'tour',
+            'deposit_pct'     => 20,
+            'balance_paid_at' => null,
+        ] );
+
+        $manager = new BookingManager();
+        $ok      = $manager->confirm( 1, 'ch_balance_123' );
+
+        $this->assertTrue( $ok );
+        $this->assertArrayHasKey( 'balance_paid_at', $fake->last_update_data );
+        $this->assertArrayNotHasKey( 'status', $fake->last_update_data );
+    }
+
     // ── provider_approve() / provider_reject(): idempotencia ───────────────
 
     public function test_provider_approve_rejects_a_booking_already_processed(): void {
@@ -132,13 +157,42 @@ final class BookingManagerProviderApprovalTest extends TestCase {
 
     public function test_provider_approve_transitions_pending_approval_to_confirmed(): void {
         $fake              = $GLOBALS['wpdb'];
-        $fake->booking_row = $this->booking_row( [ 'status' => 'pending_provider_approval' ] );
+        // gateway_charge_id no vacío = modo 'immediate' (default): la reserva
+        // ya se cobró antes de llegar acá, provider_approve() debe confirmarla
+        // directo. El caso de cobro diferido (charge_id vacío → awaiting_payment
+        // en vez de confirmed) se cubre aparte, ver test de abajo.
+        $fake->booking_row = $this->booking_row( [
+            'status'            => 'pending_provider_approval',
+            'gateway_charge_id' => 'ch_test123',
+        ] );
 
         $manager = new BookingManager();
         $ok      = $manager->provider_approve( 1 );
 
         $this->assertTrue( $ok );
         $this->assertSame( 'confirmed', $fake->last_update_data['status'] );
+    }
+
+    /**
+     * Cobro diferido (§ 11.0 CONTRIBUTING.md, modo 'on_approval'): la reserva
+     * nunca se cobró (gateway_charge_id/stripe_charge_id vacíos, tal como los
+     * deja create_pending() en este modo) — provider_approve() no debe
+     * confirmarla directo, tiene que pasar a 'awaiting_payment' para recién
+     * ahí mandar el link de pago real.
+     */
+    public function test_provider_approve_goes_to_awaiting_payment_when_never_charged(): void {
+        $fake              = $GLOBALS['wpdb'];
+        $fake->booking_row = $this->booking_row( [
+            'status'            => 'pending_provider_approval',
+            'gateway_charge_id' => '',
+            'stripe_charge_id'  => '',
+        ] );
+
+        $manager = new BookingManager();
+        $ok      = $manager->provider_approve( 1 );
+
+        $this->assertTrue( $ok );
+        $this->assertSame( 'awaiting_payment', $fake->last_update_data['status'] );
     }
 
     public function test_provider_reject_transitions_pending_approval_to_cancelled(): void {

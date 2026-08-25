@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { loadStripe }          from '@stripe/stripe-js';
 import { Elements }            from '@stripe/react-stripe-js';
-import { StepPayment, StepPaymentMP } from './BookingWidget.jsx';
+import { StepPayment, StepPaymentMP, StepPaymentRedsys } from './BookingWidget.jsx';
 import { useT }                from './i18n.js';
+import { trackPurchase }       from './marketing.js';
 import './styles/widget.css';
 
 /**
@@ -22,9 +23,12 @@ export default function PayBooking({ bookingRef, token, lang: initLang }) {
   const [ gateway, setGateway ] = useState( 'stripe' );
   const [ clientSecret, setClientSecret ] = useState( '' );
   const [ mpData, setMpData ] = useState( null );
+  const [ redsysData, setRedsysData ] = useState( null );
   const [ bookingId, setBookingId ] = useState( null );
   const [ finalRef, setFinalRef ] = useState( bookingRef );
+  const [ totalMxn, setTotalMxn ] = useState( 0 );
   const stripeRef = useRef( null );
+  const purchaseFired = useRef( false );
   const t = useT( lang );
 
   useEffect( () => {
@@ -46,17 +50,42 @@ export default function PayBooking({ bookingRef, token, lang: initLang }) {
       } )
       .then( data => {
         setBookingId( data.booking_id );
+        setTotalMxn( data.total_mxn ?? 0 );
         if ( data.gateway === 'mercadopago' ) {
           setGateway( 'mercadopago' );
           setMpData({ preference_id: data.preference_id, init_point: data.init_point, sandbox_init_point: data.sandbox_init_point });
+        } else if ( data.gateway === 'redsys' ) {
+          setGateway( 'redsys' );
+          setRedsysData({
+            action_url:          data.redsys_action_url,
+            signature_version:   data.redsys_signature_version,
+            merchant_parameters: data.redsys_merchant_parameters,
+            signature:           data.redsys_signature,
+          });
         } else {
           setGateway( 'stripe' );
           setClientSecret( data.client_secret );
         }
         setPhase( 'pay' );
       } )
-      .catch( e => { setError( e.message ); setPhase( 'error' ); } );
+      .catch( e => { setError( e.message || t('err_generic') ); setPhase( 'error' ); } );
   }, [] );
+
+  // Purchase/purchase — cable suelto real corregido 2026-08-04 (documentado
+  // en CONTRIBUTING.md § 5.3): BookingWidget.jsx ya dispara este evento al
+  // confirmar una reserva NUEVA, pero pagar una reserva YA CARGADA (lista de
+  // interés convertida, o "cargar reserva + link de pago" desde el admin)
+  // nunca lo hacía — esas conversiones se perdían en Meta Pixel/GA4 en
+  // silencio. Mismo criterio que BookingWidget: una sola vez por reserva.
+  useEffect( () => {
+    if ( phase !== 'confirm' || purchaseFired.current ) return;
+    purchaseFired.current = true;
+    trackPurchase({
+      bookingRef: finalRef,
+      value:      totalMxn,
+      currency:   window.amirBooking?.currency ?? 'USD',
+    });
+  }, [ phase, finalRef, totalMxn ] );
 
   if ( phase === 'loading' ) return (
     <div className="ab-widget">
@@ -84,13 +113,13 @@ export default function PayBooking({ bookingRef, token, lang: initLang }) {
     </div>
   );
 
-  const stepProps = { t, goBack: () => {}, goNext: () => setPhase('confirm'), setBookingRef: setFinalRef, bookingId, mpData };
+  const stepProps = { t, goBack: () => {}, goNext: () => setPhase('confirm'), setBookingRef: setFinalRef, bookingRef: finalRef, bookingId, mpData, redsysData };
 
   return (
     <div className="ab-widget">
-      { gateway === 'mercadopago'
-        ? <StepPaymentMP {...stepProps} />
-        : (
+      { gateway === 'mercadopago' && <StepPaymentMP {...stepProps} /> }
+      { gateway === 'redsys' && <StepPaymentRedsys {...stepProps} /> }
+      { gateway === 'stripe' && (
           <Elements stripe={stripeRef.current} options={{ clientSecret, locale: lang }}>
             <StepPayment {...stepProps} />
           </Elements>

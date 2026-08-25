@@ -7,8 +7,9 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$lang  = function_exists('pll_current_language') ? pll_current_language('slug') : 'es';
-$lang  = \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
+// Mismo fix que templates/parts/tour-data.php: antes solo miraba Polylang
+// y caía a español si no estaba activo, ignorando WPML/locale del sitio.
+$lang  = \AmirBooking\Core\Shortcodes::detect_lang();
 $is_en = $lang === 'en';
 
 // Capturar token de partner de la URL
@@ -18,12 +19,20 @@ get_header();
 ?>
 
 <div class="amir-archive-tours">
+  <?php
+  // Sin marca/eslogan configurados en Personalización, texto genérico —
+  // antes esto decía "Experiencias en Bacalar" fijo, mismo bug de fondo
+  // que ya se corrigió en emails/voucher (§ 16.34 CONTRIBUTING.md): cualquier
+  // instalación que no fuera Amir Adventours mostraba la ubicación de otro
+  // operador. Esta plantilla es la que el plugin sugiere copiar al tema.
+  $archive_title    = get_option( 'amir_company_name', '' );
+  $archive_tagline  = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
+  ?>
   <div class="amir-archive-tours__header">
-    <h1><?php echo $is_en ? 'Experiences in Bacalar' : 'Experiencias en Bacalar'; ?></h1>
-    <p><?php echo $is_en
-      ? 'Discover the magic of the Lagoon of 7 Colors with our unique tours.'
-      : 'Descubre la magia de la Laguna de los 7 Colores con nuestros tours únicos.'; ?>
-    </p>
+    <h1><?php echo esc_html( $archive_title !== '' ? $archive_title : ( $is_en ? 'Our Tours' : 'Nuestros Tours' ) ); ?></h1>
+    <?php if ( $archive_tagline !== '' ) : ?>
+      <p><?php echo esc_html( $archive_tagline ); ?></p>
+    <?php endif; ?>
   </div>
 
   <?php wp_enqueue_style('amir-tour-cards'); ?>

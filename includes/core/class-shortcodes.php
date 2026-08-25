@@ -6,12 +6,15 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Shortcodes del plugin.
  *
- * [amir_booking tour_id="3"]
- * [amir_booking tour_id="3" lang="en"]
+ * `flow_*` es el nombre oficial desde v3.1.0 — `amir_*` sigue funcionando
+ * como alias de compatibilidad (ver Plugin::init()), nunca se remueve.
  *
- * [amir_tour_list]
+ * [flow_booking tour_id="3"]
+ * [flow_booking tour_id="3" lang="en"]
  *
- * [amir_verify_booking]
+ * [flow_tour_list]
+ *
+ * [flow_verify_booking]
  */
 class Shortcodes {
 
@@ -26,7 +29,7 @@ class Shortcodes {
         $lang    = Languages::is_active( $atts['lang'] ) ? $atts['lang'] : Languages::default_lang();
 
         if ( $tour_id <= 0 ) {
-            return '<p style="color:red">amir_booking: falta el parámetro tour_id</p>';
+            return '<p style="color:red">flow_booking: falta el parámetro tour_id</p>';
         }
 
         // Encolar assets solo cuando se usa el shortcode
@@ -41,6 +44,53 @@ class Shortcodes {
         );
     }
 
+    /**
+     * [flow_booking_variants tour_ids="12,13,14,15"]
+     *
+     * Un mismo producto vendido como N tours separados (ej. 4 habitaciones
+     * de un retiro, cada una con su propio precio/capacidad/`price_model`)
+     * — muestra un paso de elección (tarjeta por tour_id, foto + nombre +
+     * capacidad + "desde $X") y, al elegir una, monta el widget clásico de
+     * ESE tour. Los tours listados acá típicamente tienen
+     * `hide_from_lists=1` (no deben aparecer en [flow_tour_list]/catálogos
+     * normales, solo alcanzables desde este selector) — por eso el frontend
+     * los trae con GET /tours/{id} uno por uno (§ 16.93 CONTRIBUTING.md),
+     * nunca con el listado general, que ya excluye hide_from_lists=1.
+     */
+    public static function booking_variants( array $atts ): string {
+        $atts = shortcode_atts(
+            [
+                'tour_ids' => '',
+                'lang'     => self::detect_lang(),
+                'title_es' => 'Elegí tu opción',
+                'title_en' => 'Choose your option',
+                'columns'  => 2,
+            ],
+            $atts,
+            'flow_booking_variants'
+        );
+
+        $tour_ids = array_values( array_filter( array_map( 'intval', explode( ',', $atts['tour_ids'] ) ) ) );
+        $lang     = Languages::is_active( $atts['lang'] ) ? $atts['lang'] : Languages::default_lang();
+
+        if ( empty( $tour_ids ) ) {
+            return '<p style="color:red">flow_booking_variants: falta el parámetro tour_ids (ej. tour_ids="12,13,14,15")</p>';
+        }
+
+        self::enqueue_widget_assets();
+
+        return sprintf(
+            '<div data-flow-booking-variants="1" data-tour-ids="%s" data-lang="%s"'
+            . ' data-title-es="%s" data-title-en="%s" data-columns="%d" id="flow-booking-variants-%s"></div>',
+            esc_attr( implode( ',', $tour_ids ) ),
+            esc_attr( $lang ),
+            esc_attr( $atts['title_es'] ),
+            esc_attr( $atts['title_en'] ),
+            (int) $atts['columns'],
+            esc_attr( implode( '-', $tour_ids ) )
+        );
+    }
+
     public static function tour_list( array $atts ): string {
         $atts = shortcode_atts(
             [
@@ -49,7 +99,17 @@ class Shortcodes {
                 'layout'         => 'grid',
                 'limit'          => 0,
                 'ids'            => '',
-                'accent'         => '#1D9E75',
+                'category'       => '',
+                'source'         => 'all',
+                'provider_id'    => 0,
+                // '' a propósito (no '#1D9E75' fijo) — un default hardcodeado
+                // acá siempre gana en TourList.jsx (`dataset.accent || ...`),
+                // shortcode_atts() lo completa aunque el operador nunca haya
+                // puesto accent="..." — tapaba por completo el color de marca
+                // configurado en Personalización (bug real reportado
+                // 2026-08-25, mismo síntoma que el ya corregido 2026-08-21,
+                // esta vez la causa estaba acá y no en el JS).
+                'accent'         => '',
                 'bg_color'       => '#ffffff',
                 'text_color'     => '#1a2e24',
                 'radius'         => 16,
@@ -60,6 +120,7 @@ class Shortcodes {
                 'show_duration'  => 'yes',
                 'show_languages' => 'yes',
                 'show_capacity'  => 'yes',
+                'show_free_cancellation' => 'yes',
                 'cta_text_es'    => 'Reservar ahora',
                 'cta_text_en'    => 'Book now',
             ],
@@ -69,20 +130,25 @@ class Shortcodes {
 
         $layout = in_array( $atts['layout'], [ 'grid', 'list' ], true ) ? $atts['layout'] : 'grid';
         $yesno  = fn( $v ) => in_array( strtolower( (string) $v ), [ 'yes', '1', 'true' ], true ) ? 'yes' : 'no';
+        $source = in_array( $atts['source'], [ 'all', 'own', 'provider' ], true ) ? $atts['source'] : 'all';
 
         self::enqueue_widget_assets();
 
         return sprintf(
             '<div data-amir-tour-list="1" data-lang="%s" data-columns="%d" data-layout="%s" data-limit="%d"'
-            . ' data-ids="%s" data-accent="%s" data-bg-color="%s" data-text-color="%s" data-radius="%d" data-image-ratio="%s"'
+            . ' data-ids="%s" data-category="%s" data-source="%s" data-provider-id="%d"'
+            . ' data-accent="%s" data-bg-color="%s" data-text-color="%s" data-radius="%d" data-image-ratio="%s"'
             . ' data-show-excerpt="%s" data-show-price="%s" data-show-age="%s" data-show-duration="%s"'
-            . ' data-show-languages="%s" data-show-capacity="%s" data-cta-es="%s" data-cta-en="%s"'
+            . ' data-show-languages="%s" data-show-capacity="%s" data-show-free-cancellation="%s" data-cta-es="%s" data-cta-en="%s"'
             . ' id="amir-tour-list"></div>',
             esc_attr( $atts['lang'] ),
             (int) $atts['columns'],
             esc_attr( $layout ),
             (int) $atts['limit'],
             esc_attr( preg_replace( '/[^0-9,]/', '', $atts['ids'] ) ),
+            esc_attr( sanitize_title( $atts['category'] ) ),
+            esc_attr( $source ),
+            (int) $atts['provider_id'],
             esc_attr( $atts['accent'] ),
             esc_attr( $atts['bg_color'] ),
             esc_attr( $atts['text_color'] ),
@@ -94,6 +160,7 @@ class Shortcodes {
             $yesno( $atts['show_duration'] ),
             $yesno( $atts['show_languages'] ),
             $yesno( $atts['show_capacity'] ),
+            $yesno( $atts['show_free_cancellation'] ),
             esc_attr( $atts['cta_text_es'] ),
             esc_attr( $atts['cta_text_en'] )
         );
@@ -117,6 +184,122 @@ class Shortcodes {
             esc_attr( $atts['lang'] ),
             (int) $atts['columns'],
             esc_attr( $atts['accent'] )
+        );
+    }
+
+    /**
+     * [flow_spots_left] — chip de urgencia real ("Solo 3 lugares para el 15
+     * de agosto"), pedido explícito del cliente 2026-08-12 como algo
+     * "práctico, moderno, funcional" para sumar al catálogo de shortcodes.
+     * Sin fecha puntual: busca la próxima fecha con cupo real (nunca
+     * inventa un número — usa el mismo AvailabilityEngine que el resto del
+     * plugin). Universal a las tres ediciones, no hay nada Pro Max acá.
+     */
+    public static function spots_left( array $atts ): string {
+        $atts = shortcode_atts(
+            [
+                'tour_id'   => 0,
+                'date'      => '',
+                'threshold' => 5,
+                'only_if_low' => 'no',
+                'lang'      => self::detect_lang(),
+            ],
+            $atts,
+            'flow_spots_left'
+        );
+
+        $tour_id = (int) $atts['tour_id'];
+        if ( $tour_id <= 0 ) {
+            return '<p style="color:red">flow_spots_left: falta el parámetro tour_id</p>';
+        }
+        $lang = Languages::is_active( $atts['lang'] ) ? $atts['lang'] : Languages::default_lang();
+
+        self::enqueue_widget_assets();
+
+        return sprintf(
+            '<span data-flow-spots-left="1" data-tour-id="%d" data-date="%s" data-threshold="%d" data-only-if-low="%s" data-lang="%s"></span>',
+            $tour_id,
+            esc_attr( $atts['date'] ),
+            (int) $atts['threshold'],
+            $atts['only_if_low'] === 'yes' ? 'yes' : 'no',
+            esc_attr( $lang )
+        );
+    }
+
+    /**
+     * [flow_tour_dates] — pills con las próximas fechas disponibles de un
+     * tour puntual (opcionalmente acotadas a un mes), pensado para landings
+     * de promoción tipo "últimas fechas de agosto". Cada pill linkea
+     * directo a la ficha del tour con `?date=` — la ficha (widget clásico o
+     * flujo continuo en Pro Max) ya la toma para arrancar con esa fecha
+     * preseleccionada, sin repetir el paso de calendario.
+     */
+    public static function tour_dates( array $atts ): string {
+        $atts = shortcode_atts(
+            [
+                'tour_id' => 0,
+                'month'   => '', // "YYYY-MM" — vacío = mes actual
+                'limit'   => 6,
+                'title'   => '',
+                'accent'  => '#1D9E75',
+                'cta_text_es' => 'Reservar',
+                'cta_text_en' => 'Book',
+                'lang'    => self::detect_lang(),
+            ],
+            $atts,
+            'flow_tour_dates'
+        );
+
+        $tour_id = (int) $atts['tour_id'];
+        if ( $tour_id <= 0 ) {
+            return '<p style="color:red">flow_tour_dates: falta el parámetro tour_id</p>';
+        }
+        $lang  = Languages::is_active( $atts['lang'] ) ? $atts['lang'] : Languages::default_lang();
+        $month = preg_match( '/^\d{4}-\d{2}$/', $atts['month'] ) ? $atts['month'] : '';
+
+        self::enqueue_widget_assets();
+
+        return sprintf(
+            '<div data-flow-tour-dates="1" data-tour-id="%d" data-month="%s" data-limit="%d" data-title="%s"'
+            . ' data-accent="%s" data-cta-es="%s" data-cta-en="%s" data-lang="%s"></div>',
+            $tour_id,
+            esc_attr( $month ),
+            max( 1, (int) $atts['limit'] ),
+            esc_attr( $atts['title'] ),
+            esc_attr( $atts['accent'] ),
+            esc_attr( $atts['cta_text_es'] ),
+            esc_attr( $atts['cta_text_en'] ),
+            esc_attr( $lang )
+        );
+    }
+
+    /**
+     * [flow_search_bar] — barra de búsqueda standalone (Pro Max), pensada
+     * para el hero de un home: al enviar, redirige a la página que tenga
+     * [flow_explore] con fecha/huéspedes ya cargados en la URL — ExploreFlow.jsx
+     * los toma al montar y dispara la búsqueda sola, sin repreguntar nada.
+     */
+    public static function search_bar( array $atts ): string {
+        $atts = shortcode_atts(
+            [
+                'redirect_url' => '',
+                'lang'         => self::detect_lang( AMIR_EDITION === 'pro_max' ? 'en' : null ),
+            ],
+            $atts,
+            'flow_search_bar'
+        );
+
+        if ( trim( $atts['redirect_url'] ) === '' ) {
+            return '<p style="color:red">flow_search_bar: falta el parámetro redirect_url (la página con [flow_explore])</p>';
+        }
+        $lang = Languages::is_active( $atts['lang'] ) ? $atts['lang'] : 'en';
+
+        self::enqueue_widget_assets();
+
+        return sprintf(
+            '<div data-flow-search-bar="1" data-redirect-url="%s" data-lang="%s"></div>',
+            esc_url( $atts['redirect_url'] ),
+            esc_attr( $lang )
         );
     }
 
@@ -183,6 +366,8 @@ class Shortcodes {
                 'pending'                => array( 'label' => __( 'Pendiente de pago',      'amir-booking' ), 'color' => '#BA7517', 'bg' => '#fef9ec', 'icon' => '⏳' ),
                 'wishlist'               => array( 'label' => __( 'Lista de interés',       'amir-booking' ), 'color' => '#6366f1', 'bg' => '#eef2ff', 'icon' => '📋' ),
                 'awaiting_payment'       => array( 'label' => __( 'Lista para pagar',        'amir-booking' ), 'color' => '#BA7517', 'bg' => '#fef9ec', 'icon' => '💳' ),
+                'date_requested'         => array( 'label' => __( 'Solicitud recibida',      'amir-booking' ), 'color' => '#1a6fa8', 'bg' => '#e8f4ff', 'icon' => '📅' ),
+                'date_request_rejected'  => array( 'label' => __( 'Solicitud no confirmada',  'amir-booking' ), 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '❌' ),
                 'cancelled_client'       => array( 'label' => __( 'Cancelada',               'amir-booking' ), 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '❌' ),
                 'cancelled_weather'      => array( 'label' => __( 'Cancelada (clima)',       'amir-booking' ), 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '🌧' ),
                 'cancelled_min_pax'      => array( 'label' => __( 'Cancelada (cupo)',        'amir-booking' ), 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '❌' ),
@@ -242,17 +427,48 @@ class Shortcodes {
             if ( $schedule_label ) {
                 $rows .= $row( __( 'Salida', 'amir-booking' ), esc_html( $schedule_label ) );
             }
-            $rows .= $row( __( 'Pasajeros', 'amir-booking' ), esc_html( $pax ) );
-            $rows .= $row( __( 'Pasajero', 'amir-booking' ),  esc_html( $b->customer_name ) );
-            $rows .= $row( __( 'Total', 'amir-booking' ),     esc_html( \AmirBooking\Core\Currency::format( (float) $b->total_mxn ) ) );
+            $rows .= $row( __( 'Pasajeros', 'amir-booking' ),        esc_html( $pax ) );
+            $rows .= $row( __( 'Nombre del pasajero', 'amir-booking' ), esc_html( $b->customer_name ) );
+
+            // Reservas "Armá tu tour" (amir_tours.custom_quote) nacen en
+            // $0 a propósito — el operador recién carga el precio real al
+            // aprobar (BookingsPage::handle_detail_action(), 'approve_date_
+            // request'). Sin este caso especial, el cliente veía "Total: $0"
+            // en vez de "A cotizar", mismo texto que ya usa StepSummary del
+            // widget para el mismo escenario (ver BookingWidget.jsx).
+            if ( $b->status === 'date_requested' && (float) $b->total_mxn <= 0 ) {
+                $rows .= $row( __( 'Total', 'amir-booking' ), esc_html__( 'A cotizar', 'amir-booking' ) );
+            } else {
+                $rows .= $row( __( 'Total', 'amir-booking' ), esc_html( \AmirBooking\Core\Currency::format( (float) $b->total_mxn ) ) );
+            }
+
+            // Depósito parcial ("Depósito parcial por tour") — si esta
+            // reserva ya está confirmada pero el saldo sigue pendiente,
+            // aclarar cuánto falta: sin esto, "Total" arriba muestra el
+            // precio completo del tour aunque el link de pago de más abajo
+            // solo cobre el saldo restante — confuso si no se aclara.
+            $balance_pending = $b->status === 'confirmed'
+                && ( $b->item_type ?? 'tour' ) === 'tour'
+                && (int) ( $b->deposit_pct ?? 0 ) > 0
+                && empty( $b->balance_paid_at );
+            $balance_mxn = 0.0;
+            if ( $balance_pending ) {
+                $deposit_charged = round( (float) $b->total_mxn * (int) $b->deposit_pct / 100, 2 );
+                $balance_mxn      = round( (float) $b->total_mxn - $deposit_charged, 2 );
+                $rows .= $row(
+                    __( 'Saldo pendiente', 'amir-booking' ),
+                    '<span style="color:#BA7517;">' . esc_html( \AmirBooking\Core\Currency::format( $balance_mxn ) ) . '</span>'
+                );
+            }
 
             $verified_label = __( 'Reserva verificada', 'amir-booking' );
 
             // Reserva esperando pago (link de "cargar reserva + pagar" o lista
-            // de interés convertida al abrir el tour): montar el flujo de pago
-            // real justo debajo del estado, en la misma página.
+            // de interés convertida al abrir el tour), O una reserva ya
+            // confirmada con saldo de depósito pendiente: montar el flujo de
+            // pago real justo debajo del estado, en la misma página.
             $pay_widget = '';
-            if ( in_array( $b->status, array( 'awaiting_payment', 'pending' ), true ) ) {
+            if ( in_array( $b->status, array( 'awaiting_payment', 'pending' ), true ) || $balance_pending ) {
                 self::enqueue_widget_assets();
                 $pay_widget = '<div style="background:#fff;padding:0 24px 24px;">'
                     . sprintf(
@@ -365,7 +581,7 @@ class Shortcodes {
                 ) );
             }
 
-            $reason = mb_substr( sanitize_textarea_field( $_POST['reject_reason'] ?? '' ), 0, 500 );
+            $reason = mb_substr( sanitize_textarea_field( wp_unslash( $_POST['reject_reason'] ?? '' ) ), 0, 500 );
 
             if ( $do === 'approve' ) {
                 $ok = $manager->provider_approve( (int) $booking->id );
@@ -452,7 +668,13 @@ class Shortcodes {
 
     // ── Assets ────────────────────────────────────────────────────────────
 
-    private static function enqueue_widget_assets(): void {
+    /**
+     * Público porque TourFlow\Rooms\RoomShortcodes también lo necesita — el
+     * buscador de habitaciones (§ 16 CONTRIBUTING.md) se monta desde el
+     * MISMO bundle JS (booking-widget.js ya incluye RoomSearch.jsx), no hay
+     * un segundo build que mantener.
+     */
+    public static function enqueue_widget_assets(): void {
         if ( wp_script_is( 'amir-booking-widget', 'enqueued' ) ) {
             return;
         }
@@ -490,6 +712,11 @@ class Shortcodes {
 
         wp_localize_script( 'amir-booking-widget', 'amirBooking', [
             'apiUrl'   => rest_url( 'amir/v1/' ),
+            // Namespace REST nuevo de habitaciones/carrito (Pro Max, § 16
+            // CONTRIBUTING.md) — RoomSearch.jsx/roomsApi.js lo usan tal
+            // cual, sin depender de que exista si la edición no es pro_max
+            // (la URL se arma igual, el endpoint devuelve 404 si no aplica).
+            'flowApiUrl' => rest_url( 'flow/v1/' ),
             'nonce'    => wp_create_nonce( 'wp_rest' ),
             'stripePk' => $pk_key,
             'siteUrl'     => get_site_url(),
@@ -501,12 +728,22 @@ class Shortcodes {
             'i18n'     => self::widget_i18n_map(),
             'activeLanguages'  => Languages::active(),
             'progressLabels'   => \AmirBooking\Core\WidgetTheme::progress_labels(),
-            'marketing'        => \AmirBooking\Core\Marketing::widget_config(),
+            'widgetStyle'      => \AmirBooking\Core\WidgetTheme::style_key(),
+            // Marketing es Pro y superior (el ZIP Lite no incluye class-marketing.php)
+            // — sin esta guarda, cada carga del widget (booking_widget está en
+            // el núcleo de Lite) rompería con un fatal error por clase faltante.
+            'marketing'        => ( in_array( AMIR_EDITION, [ 'pro', 'pro_max' ], true ) && class_exists( \AmirBooking\Core\Marketing::class ) )
+                ? \AmirBooking\Core\Marketing::widget_config()
+                : [ 'gadsConversionId' => '', 'gadsConversionLabel' => '' ],
             // Texto de política de cancelación editable desde Configuración
             // — si el operador no cargó nada, el widget sigue mostrando las
             // 3 líneas fijas de siempre (i18n.js: policy_line1/2/3).
             'policyTextEs'     => get_option( 'amir_policy_text_es', '' ),
             'policyTextEn'     => get_option( 'amir_policy_text_en', '' ),
+            // Términos y condiciones — checkbox propio, separado del de
+            // cancelación (GDPR pide consentimientos específicos).
+            'termsTextEs'      => get_option( 'amir_terms_text_es', '' ),
+            'termsTextEn'      => get_option( 'amir_terms_text_en', '' ),
         ] );
     }
 
@@ -628,19 +865,30 @@ class Shortcodes {
 
     // ── Detectar idioma activo (compatible con Polylang / WPML) ──────────
 
-    private static function detect_lang(): string {
+    /**
+     * $fallback opcional (default null = Languages::default_lang(), 'es' —
+     * comportamiento histórico sin cambios para todo lo existente, ej.
+     * Amir Adventours). Los shortcodes nuevos de Pro Max (flow_room_search,
+     * flow_room_list, flow_discovery) pasan 'en' acá — decisión del cliente
+     * 2026-08-04: esos componentes son English-first, sin tocar la
+     * convención ES-base del resto del plugin (Languages::default_lang()
+     * queda igual, sigue siendo la base del modelo de contenido).
+     */
+    public static function detect_lang( ?string $fallback = null ): string {
+        $fallback = $fallback ?? \AmirBooking\Core\Languages::default_lang();
+
         // Polylang
         if ( function_exists( 'pll_current_language' ) ) {
             $lang = pll_current_language( 'slug' );
-            return \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
+            return \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : $fallback;
         }
         // WPML
         if ( defined( 'ICL_LANGUAGE_CODE' ) ) {
             $lang = ICL_LANGUAGE_CODE;
-            return \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
+            return \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : $fallback;
         }
         // Fallback: lang del sitio WP
         $lang = substr( get_locale(), 0, 2 );
-        return \AmirBooking\Core\Languages::is_active( $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
+        return \AmirBooking\Core\Languages::is_active( $lang ) ? $lang : $fallback;
     }
 }

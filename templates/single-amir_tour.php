@@ -1,6 +1,6 @@
 <?php
 /**
- * Template para la página individual de un tour (CPT amir_tour).
+ * Template "Clásica" para la página individual de un tour (CPT amir_tour).
  *
  * Cómo usar:
  *   1. Copiar este archivo a la carpeta raíz de tu tema activo.
@@ -11,6 +11,10 @@
  *   del plugin (amir-price-from, amir-duration, etc.)
  *
  * Este template es el fallback funcional que funciona con cualquier tema.
+ * Hay una segunda plantilla ("Inmersiva", single-amir_tour-immersive.php)
+ * seleccionable en Personalización → Plantilla de detalle de tour — ambas
+ * comparten la misma carga de datos (templates/parts/tour-data.php), solo
+ * cambia el layout visual.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -19,164 +23,8 @@ get_header();
 
 while ( have_posts() ) :
     the_post();
-
-    $post_id    = get_the_ID();
-    $db_id = (int) get_post_meta( $post_id, '_amir_tour_db_id', true );
-
-    if ( ! $db_id ) {
-        global $wpdb;
-        $inserted = $wpdb->insert( "{$wpdb->prefix}amir_tours", [
-            'slug'           => get_post_field( 'post_name', $post_id ) ?: sanitize_title( get_the_title( $post_id ) ),
-            'status'         => 'active',
-            'price_model'    => get_post_meta( $post_id, '_amir_price_model', true ) ?: 'percapita',
-            'name_es'        => get_the_title( $post_id ),
-            'name_en'        => get_post_meta( $post_id, '_amir_name_en', true ) ?: get_the_title( $post_id ),
-            'description_es' => wp_strip_all_tags( get_post_field( 'post_content', $post_id ) ),
-            'duration_minutes' => (int) get_post_meta( $post_id, '_amir_duration_minutes', true ),
-            'min_age'        => (int) get_post_meta( $post_id, '_amir_min_age', true ),
-            'max_capacity'   => (int) get_post_meta( $post_id, '_amir_max_capacity', true ) ?: 10,
-            'min_passengers' => (int) get_post_meta( $post_id, '_amir_min_passengers', true ) ?: 1,
-            'languages'      => '["Español"]',
-            'gallery_images' => '[]',
-            'sort_order'     => (int) get_post_meta( $post_id, '_amir_sort_order', true ),
-        ] );
-        if ( $inserted ) {
-            $db_id = (int) $wpdb->insert_id;
-            update_post_meta( $post_id, '_amir_tour_db_id', $db_id );
-        }
-    }
-    $lang       = function_exists('pll_current_language') ? pll_current_language('slug') : 'es';
-    $lang       = \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
-    $is_en      = $lang === 'en';
-
-    // Campos del tour — contenido multi-idioma vía Languages::tour_field():
-    // es/en siguen leyendo el post meta de siempre, cualquier idioma 3+
-    // (agregado por el operador en Configuración → Idiomas) lee del JSON
-    // _amir_content_i18n guardado por el editor del CPT.
-    $tour_i18n_obj = (object) [
-        'name_es'            => get_the_title( $post_id ),
-        'name_en'            => get_post_meta( $post_id, '_amir_name_en', true ),
-        'meeting_point_es'   => get_post_meta( $post_id, '_amir_meeting_point_es', true ),
-        'meeting_point_en'   => get_post_meta( $post_id, '_amir_meeting_point_en', true ),
-        'what_to_expect_es'  => get_post_meta( $post_id, '_amir_what_to_expect_es', true ),
-        'what_to_expect_en'  => get_post_meta( $post_id, '_amir_what_to_expect_en', true ),
-        'includes_es'        => get_post_meta( $post_id, '_amir_includes_es', true ) ?: '[]',
-        'includes_en'        => get_post_meta( $post_id, '_amir_includes_en', true ) ?: '[]',
-        'excludes_es'        => get_post_meta( $post_id, '_amir_excludes_es', true ) ?: '[]',
-        'excludes_en'        => get_post_meta( $post_id, '_amir_excludes_en', true ) ?: '[]',
-        'content_i18n'       => get_post_meta( $post_id, '_amir_content_i18n', true ) ?: '{}',
-    ];
-    $name_en        = $tour_i18n_obj->name_en;
-    $duration       = (int) get_post_meta( $post_id, '_amir_duration_minutes', true );
-    $min_age        = (int) get_post_meta( $post_id, '_amir_min_age',    true );
-    $max_capacity   = (int) get_post_meta( $post_id, '_amir_max_capacity', true );
-    $languages_str  = get_post_meta( $post_id, '_amir_languages',        true );
-    $languages      = json_decode( $languages_str ?: '[]', true );
-    $meeting        = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'meeting_point', $lang );
-    $lat            = get_post_meta( $post_id, '_amir_meeting_lat',      true );
-    $lng            = get_post_meta( $post_id, '_amir_meeting_lng',      true );
-    $what_to_expect = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'what_to_expect', $lang );
-    $includes_raw   = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'includes', $lang );
-    $excludes_raw   = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'excludes', $lang );
-    $includes       = is_array( $includes_raw ) ? $includes_raw : ( json_decode( $includes_raw ?: '[]', true ) ?: [] );
-    $excludes       = is_array( $excludes_raw ) ? $excludes_raw : ( json_decode( $excludes_raw ?: '[]', true ) ?: [] );
-    $gallery_ids    = json_decode( get_post_meta( $post_id, '_amir_gallery_ids', true ) ?: '[]', true );
-    $price_model    = get_post_meta( $post_id, '_amir_price_model',      true );
-
-    // Precio mínimo
-    $price_from = 0;
-    if ( $db_id ) {
-        global $wpdb;
-        $price_from = (float) $wpdb->get_var( $wpdb->prepare(
-            "SELECT MIN(price_mxn) FROM {$wpdb->prefix}amir_prices WHERE tour_id=%d AND price_mxn>0", $db_id
-        ) );
-    }
-
-    // Marketplace de proveedores externos (§ 11 CONTRIBUTING.md): aviso
-    // discreto si el tour lo opera un proveedor externo — sin nombrarlo,
-    // para no darle al cliente pistas para reservar directo con él la
-    // próxima vez, saltando TourFlow. Un proveedor desactivado se trata
-    // igual que "sin proveedor" (mismo criterio que BookingManager::confirm()).
-    $has_provider = false;
-    if ( $db_id ) {
-        global $wpdb;
-        $provider_id = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT provider_id FROM {$wpdb->prefix}amir_tours WHERE id=%d", $db_id
-        ) );
-        if ( $provider_id > 0 ) {
-            $has_provider = (bool) $wpdb->get_var( $wpdb->prepare(
-                "SELECT active FROM {$wpdb->prefix}amir_providers WHERE id=%d", $provider_id
-            ) );
-        }
-    }
-
-    $title        = \AmirBooking\Core\Languages::tour_field( $tour_i18n_obj, 'name', $lang ) ?: get_the_title();
-    $description  = get_the_content();
-    $cover        = get_the_post_thumbnail_url( $post_id, 'full' );
-    $duration_fmt = $duration >= 60
-        ? round($duration/60,1) . ($is_en?' h':' h')
-        : $duration . ($is_en?' min':' min');
+    include AMIR_PLUGIN_DIR . 'templates/parts/tour-data.php';
 ?>
-
-<!-- Schema.org TouristTrip — datos ricos para rich results de Google y para
-     motores de búsqueda con IA (ChatGPT, Perplexity, Google AI Overview),
-     armados con los mismos datos estructurados que ya tiene el tour
-     (precio, duración, imágenes, ubicación) — ver Core\StructuredData. -->
-<script type="application/ld+json">
-<?php
-$gallery_urls = array_values( array_filter( array_map(
-    fn( $img_id ) => wp_get_attachment_image_url( $img_id, 'large' ),
-    $gallery_ids
-) ) );
-if ( $cover ) {
-    array_unshift( $gallery_urls, $cover );
-}
-
-echo json_encode( \AmirBooking\Core\StructuredData::tour_schema( [
-    'name'             => $title,
-    'description'      => wp_strip_all_tags( $description ),
-    'url'              => get_permalink(),
-    'images'           => $gallery_urls,
-    'duration_minutes' => $duration,
-    'min_age'          => $min_age,
-    'languages'        => $languages,
-    'lat'              => $lat,
-    'lng'              => $lng,
-    'meeting_point'    => $meeting,
-    'price_from'       => $price_from,
-    'currency'         => \AmirBooking\Core\Currency::code(),
-    'provider_name'    => get_bloginfo( 'name' ),
-    'provider_url'     => home_url( '/' ),
-] ), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT );
-?>
-</script>
-
-<?php
-// ViewContent/view_item — solo si hay algún píxel configurado (los scripts
-// base de fbq/gtag ya se imprimieron en wp_head vía Core\Marketing). El
-// resto del embudo (InitiateCheckout, Purchase) lo dispara el widget de
-// React — ver react-src/src/marketing.js.
-$has_pixels = get_option( 'amir_meta_pixel_id' ) || get_option( 'amir_gads_conversion_id' ) || get_option( 'amir_ga4_id' );
-if ( $has_pixels && $db_id ) :
-    $view_event_data = [
-        'id'       => $db_id,
-        'name'     => $title,
-        'price'    => $price_from,
-        'currency' => \AmirBooking\Core\Currency::code(),
-    ];
-?>
-<script>
-(function(){
-  var t = <?php echo wp_json_encode( $view_event_data, JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
-  if (window.fbq) {
-    fbq('track', 'ViewContent', { content_ids: [String(t.id)], content_type: 'product', value: t.price, currency: t.currency });
-  }
-  if (window.gtag) {
-    gtag('event', 'view_item', { currency: t.currency, value: t.price, items: [{ item_id: String(t.id), item_name: t.name, price: t.price }] });
-  }
-})();
-</script>
-<?php endif; ?>
 
 <div class="amir-single-tour">
 
@@ -184,7 +32,7 @@ if ( $has_pixels && $db_id ) :
   <div class="amir-single-tour__hero" <?php if ($cover) echo 'style="background-image:url('.esc_url($cover).')"'; ?>>
     <div class="amir-single-tour__hero-overlay">
       <div class="amir-single-tour__hero-content">
-        <h1 class="amir-single-tour__title"><?php echo esc_html($title); ?></h1>
+        <h1 class="amir-single-tour__title" style="color:<?php echo esc_attr( get_option( 'amir_detail_title_color', '#ffffff' ) ); ?> !important;"><?php echo esc_html($title); ?></h1>
         <div class="amir-single-tour__hero-chips">
           <?php if ($duration) : ?>
             <span class="amir-chip">⏱ <?php echo esc_html($duration_fmt); ?></span>
@@ -213,14 +61,43 @@ if ( $has_pixels && $db_id ) :
 
   <div class="amir-single-tour__body">
 
-    <!-- Galería -->
-    <?php if (!empty($gallery_ids)) : ?>
+    <!-- Datos destacados — ícono+título+detalle configurables por tour (§ 13.2 CONTRIBUTING.md) -->
+    <?php
+    $visible_facts = array_values( array_filter( $detail_facts, fn( $f ) => $f['label'] !== '' ) );
+    if ( ! empty( $visible_facts ) ) :
+    ?>
+    <div class="amir-facts-row">
+      <?php foreach ( $visible_facts as $fact ) : ?>
+        <div class="amir-facts-row__item">
+          <?php if ( $fact['icon'] ) : ?><span class="amir-facts-row__icon"><?php echo esc_html( $fact['icon'] ); ?></span><?php endif; ?>
+          <div class="amir-facts-row__text">
+            <span class="amir-facts-row__label"><?php echo esc_html( $fact['label'] ); ?></span>
+            <?php if ( $fact['value'] ) : ?><span class="amir-facts-row__value"><?php echo esc_html( $fact['value'] ); ?></span><?php endif; ?>
+          </div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <!-- Galería (+ video, si el tour tiene uno cargado — § 16.46 CONTRIBUTING.md) -->
+    <?php if (!empty($gallery_ids) || $video_info) : ?>
     <div class="amir-gallery">
+      <?php if ($video_info) : ?>
+        <a href="#" class="amir-gallery__item amir-gallery__item--video"
+           data-amir-lightbox-video="<?php echo esc_attr( $video_info['provider'] . '|' . $video_info['id'] . '|' . ( $video_info['hash'] ?? '' ) ); ?>">
+          <?php if ($video_info['provider'] === 'youtube') : ?>
+            <img src="<?php echo esc_url( "https://img.youtube.com/vi/{$video_info['id']}/hqdefault.jpg" ); ?>" alt="<?php echo esc_attr($title); ?>" loading="lazy" />
+          <?php endif; ?>
+          <span class="amir-gallery__play" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </span>
+        </a>
+      <?php endif; ?>
       <?php foreach ($gallery_ids as $img_id) :
         $url = wp_get_attachment_image_url($img_id,'large');
         if (!$url) continue;
       ?>
-        <a href="<?php echo esc_url(wp_get_attachment_url($img_id)); ?>" class="amir-gallery__item">
+        <a href="<?php echo esc_url(wp_get_attachment_url($img_id)); ?>" class="amir-gallery__item" data-amir-lightbox-img>
           <img src="<?php echo esc_url($url); ?>" alt="<?php echo esc_attr($title); ?>" loading="lazy" />
         </a>
       <?php endforeach; ?>
@@ -235,6 +112,13 @@ if ( $has_pixels && $db_id ) :
         <!-- Descripción -->
         <div class="amir-single-tour__section">
           <h2><?php echo $is_en?'About this experience':'Acerca de esta experiencia'; ?></h2>
+          <?php if ( ! empty( $highlights ) ) : ?>
+            <ul class="amir-highlights">
+              <?php foreach ( $highlights as $item ) : ?>
+                <li><?php echo esc_html( $item ); ?></li>
+              <?php endforeach; ?>
+            </ul>
+          <?php endif; ?>
           <div class="amir-single-tour__description">
             <?php the_content(); ?>
           </div>
@@ -246,6 +130,44 @@ if ( $has_pixels && $db_id ) :
           <h2><?php echo $is_en?'What to expect':'Qué esperar'; ?></h2>
           <div class="amir-single-tour__description">
             <?php echo wp_kses_post(nl2br($what_to_expect)); ?>
+          </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Itinerario tipo timeline — opcional por tour, ver § 13.1 CONTRIBUTING.md -->
+        <?php if ( ! empty( $itinerary_stops ) ) : ?>
+        <div class="amir-single-tour__section">
+          <div class="amir-itinerary-header">
+            <h2><?php echo $is_en ? 'Itinerary' : 'Itinerario'; ?></h2>
+            <button type="button" class="amir-itinerary-collapse-all"
+                    onclick="this.closest('.amir-single-tour__section').querySelector('.amir-itinerary-wrap').querySelectorAll('details').forEach(function(d){ d.open = false; })">
+              <?php echo $is_en ? 'Collapse all' : 'Colapsar todo'; ?>
+            </button>
+          </div>
+          <div class="amir-itinerary-wrap">
+            <div class="amir-itinerary">
+              <?php foreach ( $itinerary_stops as $stop ) :
+                if ( $stop['title'] === '' ) continue;
+              ?>
+                <details class="amir-itinerary__stop<?php echo $stop['is_start'] ? ' amir-itinerary__stop--start' : ''; ?>" open>
+                  <summary>
+                    <span class="amir-itinerary__marker"><?php echo $stop['is_start'] ? '📍' : ''; ?></span>
+                    <span class="amir-itinerary__title"><?php echo esc_html( $stop['title'] ); ?></span>
+                    <span class="amir-itinerary__chevron">▾</span>
+                  </summary>
+                  <?php if ( $stop['desc'] || $stop['image_url'] ) : ?>
+                    <div class="amir-itinerary__body">
+                      <?php if ( $stop['image_url'] ) : ?>
+                        <img src="<?php echo esc_url( $stop['image_url'] ); ?>" alt="<?php echo esc_attr( $stop['title'] ); ?>" class="amir-itinerary__img" loading="lazy" />
+                      <?php endif; ?>
+                      <?php if ( $stop['desc'] ) : ?>
+                        <p><?php echo esc_html( $stop['desc'] ); ?></p>
+                      <?php endif; ?>
+                    </div>
+                  <?php endif; ?>
+                </details>
+              <?php endforeach; ?>
+            </div>
           </div>
         </div>
         <?php endif; ?>
@@ -299,13 +221,46 @@ if ( $has_pixels && $db_id ) :
         </div>
         <?php endif; ?>
 
+        <!-- FAQ opcional por tour, ver § 16.93 CONTRIBUTING.md -->
+        <?php if ( ! empty( $faq_items ) ) : ?>
+        <div class="amir-single-tour__section">
+          <h2>❓ <?php echo $is_en ? 'Frequently asked questions' : 'Preguntas frecuentes'; ?></h2>
+          <div class="amir-faq">
+            <?php foreach ( $faq_items as $faq ) :
+              if ( $faq['question'] === '' ) continue;
+            ?>
+              <details class="amir-faq__item">
+                <summary>
+                  <span class="amir-faq__q"><?php echo esc_html( $faq['question'] ); ?></span>
+                  <span class="amir-faq__chevron">▾</span>
+                </summary>
+                <?php if ( $faq['answer'] ) : ?>
+                  <div class="amir-faq__a"><?php echo wp_kses_post( nl2br( esc_html( $faq['answer'] ) ) ); ?></div>
+                <?php endif; ?>
+              </details>
+            <?php endforeach; ?>
+          </div>
+        </div>
+        <?php endif; ?>
+
       </div><!-- main -->
 
       <!-- Widget de reserva (sticky en desktop) -->
       <div class="amir-single-tour__booking-col">
         <div class="amir-single-tour__booking-sticky">
           <?php if ( $db_id ) : ?>
-            <?php echo do_shortcode( '[amir_booking tour_id="' . $db_id . '" lang="' . $lang . '"]' ); ?>
+            <?php if ( defined( 'AMIR_EDITION' ) && AMIR_EDITION === 'pro_max' && ! $skip_upsell ) : ?>
+              <?php // Pro Max: reservar desde la ficha del tour continúa con el
+              // flujo de upsell (habitaciones/extras), no termina en una
+              // confirmación aislada — decisión del cliente 2026-08-03
+              // (CONTRIBUTING.md § 16.15), "upsell siempre". Excepción:
+              // skip_upsell (checkbox "Reserva directa" del editor, § 16.76)
+              // — un tour que no combina con nada más cae al widget clásico
+              // de abajo aunque el sitio sea Pro Max. ?>
+              <?php echo do_shortcode( '[flow_discovery mode="experience" tour_id="' . $db_id . '" lang="' . $lang . '"]' ); ?>
+            <?php else : ?>
+              <?php echo do_shortcode( '[flow_booking tour_id="' . $db_id . '" lang="' . $lang . '"]' ); ?>
+            <?php endif; ?>
           <?php else : ?>
             <div style="background:#f8fdfb;border:1px solid #e1f5ee;border-radius:12px;padding:24px;text-align:center;color:#5a7068;font-size:14px;">
               <?php echo $is_en ? 'Contact us to book this tour.' : 'Contáctanos para reservar.'; ?>
@@ -322,6 +277,16 @@ if ( $has_pixels && $db_id ) :
     </div><!-- cols -->
   </div><!-- body -->
 </div><!-- single-tour -->
+
+<!-- Lightbox liviano en JS vanilla (mismo patrón que single-flow_room.php,
+     § 16.12 CONTRIBUTING.md) — bug real corregido 2026-08-03: la galería
+     antes linkeaba directo al archivo de imagen (sin target ni lightbox),
+     así que un clic navegaba la pestaña actual fuera del sitio sin forma de
+     volver. -->
+<div id="amir-lightbox" class="amir-lightbox" hidden>
+  <button type="button" class="amir-lightbox__close" aria-label="Cerrar">✕</button>
+  <div class="amir-lightbox__content"></div>
+</div>
 
 <?php
 $brand_color      = esc_attr( get_option( 'amir_brand_color', '#1D9E75' ) );
@@ -343,9 +308,22 @@ $brand_color_dark = esc_attr( get_option( 'amir_brand_color_dark', '#0F6E56' ) )
 
 .amir-single-tour__body { max-width:1140px; margin:0 auto; padding:32px 20px 48px; }
 
+/* Datos destacados */
+.amir-facts-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:28px; }
+.amir-facts-row__item { display:flex; align-items:center; gap:10px; background:var(--teal-light); border-radius:10px; padding:12px 14px; }
+.amir-facts-row__icon { font-size:22px; line-height:1; flex-shrink:0; }
+.amir-facts-row__text { display:flex; flex-direction:column; min-width:0; }
+.amir-facts-row__label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--teal-dark); }
+.amir-facts-row__value { font-size:13px; color:#1a2e24; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Highlights */
+.amir-highlights { list-style:none; margin:0 0 16px; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; }
+.amir-highlights li { font-size:13px; color:#1a2e24; font-weight:600; padding-left:22px; position:relative; }
+.amir-highlights li::before { content:"✓"; position:absolute; left:0; color:var(--teal); font-weight:700; }
+
 /* Galería */
 .amir-gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; margin-bottom:32px; }
-.amir-gallery__item { display:block; aspect-ratio:4/3; overflow:hidden; border-radius:8px; }
+.amir-gallery__item { display:block; aspect-ratio:4/3; overflow:hidden; border-radius:8px; cursor:zoom-in; }
 .amir-gallery__item img { width:100%; height:100%; object-fit:cover; transition:transform .3s; }
 .amir-gallery__item:hover img { transform:scale(1.05); }
 
@@ -362,6 +340,24 @@ $brand_color_dark = esc_attr( get_option( 'amir_brand_color_dark', '#0F6E56' ) )
 .amir-single-tour__maps-link { color:var(--teal); font-size:13px; font-weight:600; text-decoration:none; }
 .amir-single-tour__maps-link:hover { text-decoration:underline; }
 
+/* Itinerario tipo timeline */
+.amir-itinerary-header { display:flex; align-items:center; justify-content:space-between; margin:0 0 14px; padding-bottom:8px; border-bottom:2px solid var(--teal-light); }
+.amir-itinerary-header h2 { margin:0; padding:0; border:none; font-size:20px; font-weight:700; color:#1a2e24; }
+.amir-itinerary-collapse-all { background:none; border:none; color:var(--teal); font-size:12px; font-weight:600; cursor:pointer; padding:0; }
+.amir-itinerary-collapse-all:hover { text-decoration:underline; }
+.amir-itinerary__stop { position:relative; padding-left:28px; margin-left:10px; }
+.amir-itinerary__stop:not(:last-child) { border-left:2px dotted #c3d9d0; }
+.amir-itinerary__marker { position:absolute; left:-11px; top:12px; width:20px; height:20px; border-radius:50%; background:#fff; border:2px solid var(--teal); box-sizing:border-box; display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1; }
+.amir-itinerary__stop--start .amir-itinerary__marker { background:var(--teal); border-color:var(--teal); }
+.amir-itinerary__stop summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px; padding:8px 0; }
+.amir-itinerary__stop summary::-webkit-details-marker { display:none; }
+.amir-itinerary__title { font-weight:700; color:#1a2e24; font-size:14px; }
+.amir-itinerary__chevron { margin-left:auto; color:#5a7068; font-size:12px; transition:transform .15s; }
+.amir-itinerary__stop[open] .amir-itinerary__chevron { transform:rotate(180deg); }
+.amir-itinerary__body { padding:0 0 16px 4px; }
+.amir-itinerary__img { width:100%; max-width:320px; border-radius:8px; margin:0 0 10px; display:block; }
+.amir-itinerary__body p { font-size:13px; color:#3d3d3a; line-height:1.6; margin:0; }
+
 /* Incluye / No incluye */
 .amir-incl-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
 .amir-incl-title { display:flex; align-items:center; gap:6px; font-size:14px; }
@@ -372,92 +368,82 @@ $brand_color_dark = esc_attr( get_option( 'amir_brand_color_dark', '#0F6E56' ) )
 .amir-incl-list--yes li::before { content:"✓"; color:var(--teal); font-weight:700; flex-shrink:0; }
 .amir-incl-list--no  li::before { content:"✕"; color:#c53030; font-weight:700; flex-shrink:0; }
 
+/* FAQ opcional por tour */
+.amir-faq { display:flex; flex-direction:column; gap:8px; }
+.amir-faq__item { border:1px solid #e1f5ee; border-radius:10px; padding:4px 16px; }
+.amir-faq__item summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:12px 0; }
+.amir-faq__item summary::-webkit-details-marker { display:none; }
+.amir-faq__q { font-weight:700; color:#1a2e24; font-size:14px; }
+.amir-faq__chevron { margin-left:auto; color:#5a7068; font-size:12px; transition:transform .15s; }
+.amir-faq__item[open] .amir-faq__chevron { transform:rotate(180deg); }
+.amir-faq__a { font-size:13.5px; color:#3d3d3a; line-height:1.6; padding:0 0 14px; }
+
 @media (max-width:768px) {
   .amir-single-tour__cols { grid-template-columns:1fr; }
   .amir-single-tour__booking-sticky { position:static; }
   .amir-incl-grid { grid-template-columns:1fr; }
+  .amir-highlights { grid-template-columns:1fr; }
   .amir-single-tour__booking-col { order:-1; }
 }
+
+.amir-lightbox { position:fixed; inset:0; background:rgba(0,0,0,.9); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; }
+.amir-lightbox[hidden] { display:none; }
+.amir-lightbox__content { max-width:min(960px,92vw); max-height:86vh; width:100%; }
+.amir-lightbox__content img { width:100%; height:100%; max-height:86vh; object-fit:contain; display:block; margin:0 auto; }
+.amir-lightbox__close { position:absolute; top:16px; right:20px; background:none; border:none; color:#fff; font-size:28px; cursor:pointer; line-height:1; }
+/* Video en la galería — miniatura estática + botón de play, el iframe
+   real recién se inyecta al hacer click (§ 16.46 CONTRIBUTING.md, no
+   cargar YouTube/Vimeo de entrada). */
+.amir-gallery__item--video { position:relative; background:#0e2b30; }
+.amir-gallery__play { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; background:rgba(0,0,0,.28); transition:background .15s; }
+.amir-gallery__item--video:hover .amir-gallery__play { background:rgba(0,0,0,.4); }
+.amir-gallery__play svg { filter:drop-shadow(0 1px 3px rgba(0,0,0,.5)); }
+.amir-lightbox__video { position:relative; width:100%; padding-top:56.25%; }
+.amir-lightbox__video iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
 </style>
 
-<?php
-// ── Tours sugeridos ──────────────────────────────────────────────────────
-wp_enqueue_style( 'amir-tour-cards' );
+<script>
+(function(){
+  var lightbox = document.getElementById('amir-lightbox');
+  if (!lightbox) return;
+  var content = lightbox.querySelector('.amir-lightbox__content');
 
-$suggested = new WP_Query( [
-    'post_type'      => 'amir_tour',
-    'post_status'    => 'publish',
-    'posts_per_page' => 3,
-    'post__not_in'   => [ $post_id ],
-    'meta_key'       => '_amir_sort_order',
-    'orderby'        => 'meta_value_num',
-    'order'          => 'ASC',
-] );
+  function open(html){
+    content.innerHTML = html;
+    lightbox.hidden = false;
+  }
+  function close(){
+    lightbox.hidden = true;
+    content.innerHTML = '';
+  }
 
-if ( $suggested->have_posts() ) :
-?>
-<section class="amir-suggested">
-  <div class="amir-suggested__inner">
-    <h2 class="amir-suggested__title">
-      <?php echo $is_en ? 'You might also like' : 'También te puede interesar'; ?>
-    </h2>
-    <div class="amir-suggested__scroll">
-      <?php while ( $suggested->have_posts() ) : $suggested->the_post(); ?>
-        <?php
-        $s_pid     = get_the_ID();
-        $s_db_id   = (int) get_post_meta( $s_pid, '_amir_tour_db_id', true );
-        $s_name_en = get_post_meta( $s_pid, '_amir_name_en', true );
-        $s_title   = $is_en ? ( $s_name_en ?: get_the_title() ) : get_the_title();
-        $s_cover   = get_the_post_thumbnail_url( $s_pid, 'medium_large' );
-        $s_link    = get_permalink();
-        $s_dur     = (int) get_post_meta( $s_pid, '_amir_duration_minutes', true );
-        $s_dur_fmt = $s_dur >= 60 ? round( $s_dur / 60, 1 ) . 'h' : $s_dur . 'min';
-        $s_price   = 0;
-        if ( $s_db_id ) {
-            global $wpdb;
-            $s_price = (float) $wpdb->get_var( $wpdb->prepare(
-                "SELECT MIN(price_mxn) FROM {$wpdb->prefix}amir_prices WHERE tour_id=%d AND price_mxn>0",
-                $s_db_id
-            ) );
-        }
-        ?>
-        <article class="amir-tour-card amir-suggested__card">
-          <div class="amir-tour-card__img-wrap">
-            <?php if ( $s_cover ) : ?>
-              <a href="<?php echo esc_url( $s_link ); ?>">
-                <img src="<?php echo esc_url( $s_cover ); ?>"
-                     alt="<?php echo esc_attr( $s_title ); ?>"
-                     class="amir-tour-card__img" loading="lazy" />
-              </a>
-            <?php endif; ?>
-            <?php if ( $s_dur ) : ?>
-              <span class="amir-tour-card__duration-badge">⏱ <?php echo esc_html( $s_dur_fmt ); ?></span>
-            <?php endif; ?>
-            <?php if ( $s_price > 0 ) : ?>
-              <div class="amir-tour-card__price-badge">
-                <span class="amir-tour-card__price-badge-label"><?php echo $is_en ? 'From' : 'Desde'; ?></span>
-                <span class="amir-tour-card__price-badge-value">$<?php echo number_format( $s_price, 0, '.', ',' ); ?></span>
-                <span class="amir-tour-card__price-badge-cur"> <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></span>
-              </div>
-            <?php endif; ?>
-          </div>
-          <div class="amir-tour-card__body">
-            <h3 class="amir-tour-card__title">
-              <a href="<?php echo esc_url( $s_link ); ?>"><?php echo esc_html( $s_title ); ?></a>
-            </h3>
-            <p class="amir-tour-card__excerpt">
-              <?php echo wp_trim_words( get_the_excerpt(), 14, '…' ); ?>
-            </p>
-            <a href="<?php echo esc_url( $s_link ); ?>" class="amir-tour-card__cta">
-              <?php echo $is_en ? 'Book now' : 'Reservar ahora'; ?>
-            </a>
-          </div>
-        </article>
-      <?php endwhile; wp_reset_postdata(); ?>
-    </div>
-  </div>
-</section>
-<?php endif; ?>
+  document.querySelectorAll('[data-amir-lightbox-img]').forEach(function(el){
+    el.addEventListener('click', function(e){
+      e.preventDefault();
+      open('<img src="' + el.getAttribute('href') + '" alt="">');
+    });
+  });
+
+  document.querySelectorAll('[data-amir-lightbox-video]').forEach(function(el){
+    el.addEventListener('click', function(e){
+      e.preventDefault();
+      var parts = el.getAttribute('data-amir-lightbox-video').split('|');
+      var provider = parts[0], id = parts[1], hash = parts[2] || '';
+      var src = provider === 'youtube'
+        ? 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0'
+        : 'https://player.vimeo.com/video/' + id + '?autoplay=1' + (hash ? '&h=' + hash : '');
+      var allow = provider === 'youtube' ? 'autoplay; encrypted-media' : 'autoplay; fullscreen; picture-in-picture';
+      open('<div class="amir-lightbox__video"><iframe src="' + src + '" allow="' + allow + '" allowfullscreen></iframe></div>');
+    });
+  });
+
+  lightbox.querySelector('.amir-lightbox__close').addEventListener('click', close);
+  lightbox.addEventListener('click', function(e){ if (e.target === lightbox) close(); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
+})();
+</script>
+
+<?php include AMIR_PLUGIN_DIR . 'templates/parts/tour-suggested.php'; ?>
 
 <?php endwhile; ?>
 

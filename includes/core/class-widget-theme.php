@@ -66,6 +66,20 @@ class WidgetTheme {
         'pill'    => [ 'label' => 'Muy redondeado',  'value' => 20 ],
     ];
 
+    /**
+     * Estilo visual de [flow_booking] — pedido explícito del cliente
+     * (2026-08-16): un segundo "look" del mismo widget de 7 pasos, misma
+     * lógica/estado/validaciones, solo cambia CSS/layout — mismo criterio
+     * que Clásica/Inmersiva para la ficha del tour, pero sin duplicar el
+     * componente (acá no hace falta: es un re-skin, no una estructura
+     * distinta). Universal a las 3 ediciones, igual que el resto de esta
+     * sección de Personalización.
+     */
+    private const STYLES = [
+        'classic'   => [ 'label' => 'Clásica (compacta)' ],
+        'fullwidth' => [ 'label' => 'Fullwidth (paso ancho)' ],
+    ];
+
     // ── Accessors para la UI de Configuración ─────────────────────────────
 
     public static function fonts(): array {
@@ -78,6 +92,10 @@ class WidgetTheme {
 
     public static function radii(): array {
         return self::RADII;
+    }
+
+    public static function styles(): array {
+        return self::STYLES;
     }
 
     public static function font_key(): string {
@@ -95,6 +113,11 @@ class WidgetTheme {
         return array_key_exists( $key, self::RADII ) ? $key : 'rounded';
     }
 
+    public static function style_key(): string {
+        $key = get_option( 'amir_widget_style', 'classic' );
+        return array_key_exists( $key, self::STYLES ) ? $key : 'classic';
+    }
+
     /** URL del <link> de Google Fonts a encolar, vacío si es la fuente de sistema. */
     public static function google_font_url(): string {
         return self::FONTS[ self::font_key() ]['google_url'] ?? '';
@@ -108,30 +131,45 @@ class WidgetTheme {
     // ── CSS inline ─────────────────────────────────────────────────────────
 
     public static function render_inline_css(): string {
+        $v = self::resolved_values();
+
+        return ":root{"
+            . "--ab-teal:{$v['color']};"
+            . "--ab-teal-dark:{$v['color_dark']};"
+            . "--ab-teal-light:{$v['color_light']};"
+            . "--ab-teal-mid:{$v['color_mid']};"
+            . "--ab-font:{$v['font_stack']};"
+            . "--ab-font-scale:{$v['font_scale']};"
+            . "--ab-radius:{$v['radius']}px;"
+            . "--ab-radius-sm:{$v['radius_sm']}px;"
+            . '}';
+    }
+
+    /**
+     * Mismos valores resueltos que render_inline_css(), pero como datos en
+     * vez de texto CSS — para un cliente que no puede consumir `:root{...}`
+     * directo (app móvil nativa, web headless). Ver GET /amir/v1/config en
+     * ConfigController.
+     */
+    public static function resolved_values(): array {
         $color = get_option( 'amir_widget_color', '#1D9E75' );
         if ( ! preg_match( '/^#[0-9A-Fa-f]{6}$/', $color ) ) {
             $color = '#1D9E75';
         }
 
-        $dark  = self::darken( $color, 0.7 );
-        $light = self::lighten( $color, 0.15 );
-        $mid   = self::lighten( $color, 0.4 );
+        $radius = self::RADII[ self::radius_key() ]['value'];
 
-        $font      = self::FONTS[ self::font_key() ]['stack'];
-        $scale     = self::SCALES[ self::scale_key() ]['value'];
-        $radius    = self::RADII[ self::radius_key() ]['value'];
-        $radius_sm = max( 4, $radius - 4 );
-
-        return ":root{"
-            . "--ab-teal:{$color};"
-            . "--ab-teal-dark:{$dark};"
-            . "--ab-teal-light:{$light};"
-            . "--ab-teal-mid:{$mid};"
-            . "--ab-font:{$font};"
-            . "--ab-font-scale:{$scale};"
-            . "--ab-radius:{$radius}px;"
-            . "--ab-radius-sm:{$radius_sm}px;"
-            . '}';
+        return [
+            'color'       => $color,
+            'color_dark'  => self::darken( $color, 0.7 ),
+            'color_light' => self::lighten( $color, 0.15 ),
+            'color_mid'   => self::lighten( $color, 0.4 ),
+            'font_key'    => self::font_key(),
+            'font_stack'  => self::FONTS[ self::font_key() ]['stack'],
+            'font_scale'  => self::SCALES[ self::scale_key() ]['value'],
+            'radius'      => $radius,
+            'radius_sm'   => max( 4, $radius - 4 ),
+        ];
     }
 
     // ── Matemática de color ────────────────────────────────────────────────

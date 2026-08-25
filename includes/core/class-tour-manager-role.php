@@ -83,6 +83,19 @@ class TourManagerRole {
 
     // ── Hooks de comportamiento ───────────────────────────────────────────
 
+    // Bug real corregido 2026-08-04 ("Sorry, you are not allowed to access
+    // this page" al entrar a Tours, reportado probando en vivo en
+    // caliafarm.com): esta clase registraba SU PROPIA copia del submenú
+    // Tours/Nuevo tour (add_tour_submenu(), ya eliminado) apuntando al mismo
+    // slug edit.php?post_type=amir_tour que AdminMenu::add_menus() ya
+    // registra — pero con la capacidad 'edit_amir_tours', que nunca se le
+    // otorga a NINGÚN rol (ni siquiera Administrador; get_capabilities() de
+    // acá abajo usa 'edit_posts', no 'edit_amir_tours' — quedó de alguna
+    // versión anterior del rol y nadie lo notó porque WordPress, al tener
+    // dos registros para el mismo slug, a veces resuelve el acceso contra
+    // el que tiene la capacidad rota). AdminMenu::add_menus() ya cubre
+    // Tours/Nuevo tour para todos los roles (Tour Manager incluido, vía
+    // 'manage_amir_booking') — este duplicado no hacía falta.
     public static function register_hooks(): void {
         // Redirigir al login exitoso
         add_filter( 'login_redirect',     [ __CLASS__, 'redirect_after_login'  ], 10, 3 );
@@ -90,8 +103,6 @@ class TourManagerRole {
         add_action( 'admin_init',         [ __CLASS__, 'redirect_from_wp_admin' ] );
         // Ocultar menús innecesarios
         add_action( 'admin_menu',         [ __CLASS__, 'hide_unrelated_menus'  ], 999 );
-        // Mostrar el CPT dentro de nuestro menú
-        add_action( 'admin_menu',         [ __CLASS__, 'add_tour_submenu'      ], 10 );
         // Quitar "Ver el sitio" y noticias de WP del adminbar
         add_action( 'admin_bar_menu',     [ __CLASS__, 'clean_admin_bar'       ], 999 );
         // Capacidades dinámicas para el CPT
@@ -171,26 +182,6 @@ class TourManagerRole {
         foreach ( $remove as $item ) {
             remove_menu_page( $item );
         }
-    }
-
-    // ── Agregar CPT al menú del plugin ────────────────────────────────────
-
-    public static function add_tour_submenu(): void {
-        // El CPT se registró con show_in_menu=false, lo colocamos bajo nuestro menú
-        add_submenu_page(
-            'amir-booking',
-            __( 'Tours', 'amir-booking' ),
-            __( 'Tours (editar)', 'amir-booking' ),
-            'edit_amir_tours',
-            'edit.php?post_type=amir_tour'
-        );
-        add_submenu_page(
-            'amir-booking',
-            __( 'Nuevo tour', 'amir-booking' ),
-            __( '+ Nuevo tour', 'amir-booking' ),
-            'edit_amir_tours',
-            'post-new.php?post_type=amir_tour'
-        );
     }
 
     // ── Limpiar admin bar ─────────────────────────────────────────────────

@@ -75,9 +75,10 @@ El tour queda automáticamente disponible en:
 
 **Opción A — Shortcode (cualquier página o tema):**
 ```
-[amir_booking tour_id="1"]
-[amir_booking tour_id="1" lang="en"]
+[flow_booking tour_id="1"]
+[flow_booking tour_id="1" lang="en"]
 ```
+(`[amir_booking ...]` sigue funcionando como alias de compatibilidad para instalaciones viejas — `flow_*` es el nombre a usar de acá en adelante.)
 
 **Opción B — Elementor:**
 1. Abrir la página del tour en el editor de Elementor
@@ -209,14 +210,16 @@ chmod 755 wp-content/uploads/amir-booking/
 ## Shortcodes disponibles
 
 ```
-[amir_booking tour_id="X"]                Widget de reserva para el tour X
-[amir_booking tour_id="X" lang="en"]      Widget en inglés
-[amir_tour_list]                          Grilla de todos los tours activos
-[amir_tour_list lang="en" layout="list"]  Grilla o lista, en inglés
-[amir_verify_booking]                     Página de verificación pública (requiere ?ref= + ?token= o ?email=)
+[flow_booking tour_id="X"]                Widget de reserva para el tour X
+[flow_booking tour_id="X" lang="en"]      Widget en inglés
+[flow_tour_list]                          Grilla de todos los tours activos
+[flow_tour_list lang="en" layout="list"]  Grilla o lista, en inglés
+[flow_verify_booking]                     Página de verificación pública (requiere ?ref= + ?token= o ?email=)
 ```
 
-La página `/verificar-reserva/` con `[amir_verify_booking]` se crea automáticamente en la activación (opción `amir_verify_page_id`).
+`amir_booking`/`amir_tour_list`/`amir_verify_booking`/`amir_wishlist`/`amir_provider_action` siguen registrados como alias de compatibilidad (mismo comportamiento, nombre viejo) — no hace falta migrar contenido ya publicado.
+
+La página `/verificar-reserva/` con `[flow_verify_booking]` se crea automáticamente en la activación (opción `amir_verify_page_id`).
 
 ---
 

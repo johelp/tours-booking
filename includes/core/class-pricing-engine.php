@@ -53,6 +53,19 @@ class PricingEngine {
             $quote = $this->apply_addons( $quote, $tour_id, $addons, $adults + $children, $lang );
         }
 
+        // Depósito parcial ("Depósito parcial por tour", Pro Max) — estimado
+        // para mostrarle al cliente ANTES de agregar al carrito cuánto paga
+        // ahora vs. después. El cálculo real y autoritativo (que además
+        // respeta la exclusión mutua con cobro diferido de proveedor/"solo a
+        // pedido") vive en BookingManager::create_pending() — acá alcanza
+        // con el % configurado en el tour, sin duplicar esa lógica completa.
+        $deposit_pct = (int) ( $tour->deposit_enabled ?? 0 ) ? (int) ( $tour->deposit_pct ?? 0 ) : 0;
+        if ( $deposit_pct >= 1 && $deposit_pct <= 99 && $quote->is_valid() ) {
+            $quote->deposit_pct   = $deposit_pct;
+            $quote->deposit_mxn   = round( $quote->total_mxn * $deposit_pct / 100, 2 );
+            $quote->remaining_mxn = round( $quote->total_mxn - $quote->deposit_mxn, 2 );
+        }
+
         return $quote;
     }
 
@@ -211,6 +224,21 @@ class PricingEngine {
             ];
         }
 
+        // Bug real y grave encontrado en vivo 2026-08-12 (caliafarm.com/stag,
+        // tour de proveedor externo con price_mxn=0 cargado — nunca se le
+        // configuró un precio real): $adult_price=0.0 no es null, así que
+        // pasaba el chequeo de arriba, pero el total resultante ($0) hacía
+        // que PriceQuote::is_valid() lo rechazara (exige total_mxn > 0) SIN
+        // que nada acá seteara un mensaje de error — el widget recibía un
+        // 422 con error:"" y lo tragaba en silencio (ver también el fix del
+        // lado del cliente): el sitio quedaba "roto" sin ningún aviso, ni
+        // para el cliente final ni para el operador. Ahora cualquier total
+        // en $0 (precio mal configurado, no un cupón del 100% — esos se
+        // aplican después de este punto) devuelve un error explícito.
+        if ( $total <= 0 ) {
+            return PriceQuote::error( 'Precio no configurado para este tour — contactá al operador' );
+        }
+
         return new PriceQuote( round( $total, 2 ), $this->convert_to_usd( $total ), $breakdown, 'percapita' );
     }
 
@@ -245,6 +273,13 @@ class PricingEngine {
         }
 
         $total = (float) $matched->price_mxn;
+
+        // Mismo bug/fix que quote_percapita() — ver el comentario ahí.
+        if ( $total <= 0 ) {
+            return PriceQuote::error(
+                sprintf( 'Precio no configurado para %d personas en este tour — contactá al operador', $total_pax )
+            );
+        }
 
         return new PriceQuote(
             round( $total, 2 ),
@@ -301,6 +336,55 @@ class PricingEngine {
         return round( $total, 2 );
     }
 
+    /**
+     * Precio mínimo vigente de adulto, sin fecha/horario puntual — para el
+     * "desde $X" de una tarjeta de catálogo (flujo Explorar, § 16.46
+     * CONTRIBUTING.md). Mismo criterio de vigencia que get_prices_for()
+     * (valid_from/valid_until contra hoy), pero sin filtrar por schedule_id:
+     * una tarjeta de catálogo no tiene horario elegido todavía. Devuelve
+     * null si el tour no tiene ninguna fila 'adult' vigente (ej. modelo de
+     * precio por grupo, que usa person_type='group').
+     */
+    public function min_adult_price( int $tour_id ): ?float {
+        global $wpdb;
+        $today = current_time( 'Y-m-d' );
+        $price = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT MIN(price_mxn) FROM {$wpdb->prefix}amir_prices
+                 WHERE tour_id = %d AND person_type = 'adult'
+                   AND ( valid_from  IS NULL OR valid_from  <= %s )
+                   AND ( valid_until IS NULL OR valid_until >= %s )",
+                $tour_id,
+                $today,
+                $today
+            )
+        );
+        if ( $price !== null ) {
+            return (float) $price;
+        }
+
+        // Bug real encontrado 2026-08-25 armando el selector de variantes
+        // (§ 16.93 CONTRIBUTING.md, [flow_booking_variants]): un tour con
+        // price_model='group' (precio fijo por rango de personas, ej. "la
+        // habitación completa cuesta $X sin importar cuántos la ocupan") no
+        // tiene NINGUNA fila person_type='adult' — sin este fallback, el
+        // "desde $X" quedaba siempre vacío en CUALQUIER lugar que reusara
+        // este helper (tarjetas de [flow_tour_list]/Discovery también, no
+        // solo el selector nuevo).
+        $group_price = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT MIN(price_mxn) FROM {$wpdb->prefix}amir_prices
+                 WHERE tour_id = %d AND person_type = 'group'
+                   AND ( valid_from  IS NULL OR valid_from  <= %s )
+                   AND ( valid_until IS NULL OR valid_until >= %s )",
+                $tour_id,
+                $today,
+                $today
+            )
+        );
+        return $group_price !== null ? (float) $group_price : null;
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
@@ -345,7 +429,7 @@ class PricingEngine {
         global $wpdb;
         return $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, price_model FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+                "SELECT id, price_model, deposit_enabled, deposit_pct FROM {$wpdb->prefix}amir_tours WHERE id = %d",
                 $tour_id
             )
         );
@@ -445,6 +529,18 @@ class PriceQuote {
     public $coupon_error = '';
     /** @var float suma de add-ons ya incluida en total_mxn (a precio completo, el cupón no la toca) */
     public $addons_mxn = 0.0;
+    /**
+     * @var int 0-99, % de depósito activo en el tour ("Depósito parcial por
+     * tour", Pro Max) — 0 = sin depósito, se cobra el total completo.
+     * total_mxn NUNCA cambia de significado por esto, sigue siendo el
+     * precio total — deposit_mxn/remaining_mxn son solo para mostrarle al
+     * cliente cuánto paga ahora vs. después ANTES de agregar al carrito.
+     */
+    public $deposit_pct = 0;
+    /** @var float monto del depósito (lo que se cobra ahora), 0 si no hay depósito activo */
+    public $deposit_mxn = 0.0;
+    /** @var float total_mxn - deposit_mxn, 0 si no hay depósito activo */
+    public $remaining_mxn = 0.0;
 
     public function __construct( float $total_mxn, float $usd_reference, array $breakdown, string $model, string $error = '' ) {
         $this->total_mxn     = $total_mxn;
@@ -474,6 +570,9 @@ class PriceQuote {
             'discount_mxn'  => $this->discount_mxn,
             'coupon_error'  => $this->coupon_error,
             'addons_mxn'    => $this->addons_mxn,
+            'deposit_pct'    => $this->deposit_pct,
+            'deposit_mxn'    => $this->deposit_mxn,
+            'remaining_mxn'  => $this->remaining_mxn,
         ];
     }
 }

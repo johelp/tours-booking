@@ -15,10 +15,14 @@ defined( 'ABSPATH' ) || exit;
 class CouponEngine {
 
     /**
-     * Valida un código de cupón para un tour específico.
+     * Valida un código de cupón para un tour Y/O una habitación (nunca los
+     * dos a la vez — un cupón scoped a un tour puntual jamás aplica a
+     * habitaciones, y viceversa; un cupón sin tour_id NI room_id es global,
+     * aplica a cualquiera de los dos). $room_id se agregó en 2026-08-04
+     * (§ 16.21 CONTRIBUTING.md) — antes los cupones eran 100% tour-only.
      * Devuelve el registro del cupón si es válido, o un CouponResult de error.
      */
-    public function validate( string $code, int $tour_id ): CouponResult {
+    public function validate( string $code, int $tour_id = 0, int $room_id = 0 ): CouponResult {
         global $wpdb;
 
         $code = strtoupper( trim( $code ) );
@@ -47,8 +51,16 @@ class CouponEngine {
             return CouponResult::error( 'Este cupón alcanzó su límite de usos' );
         }
 
-        if ( $coupon->tour_id !== null && (int) $coupon->tour_id !== $tour_id ) {
-            return CouponResult::error( 'Este cupón no aplica para este tour' );
+        if ( $coupon->tour_id !== null ) {
+            if ( $room_id > 0 || (int) $coupon->tour_id !== $tour_id ) {
+                return CouponResult::error( 'Este cupón no aplica para este tour' );
+            }
+        }
+
+        if ( isset( $coupon->room_id ) && $coupon->room_id !== null ) {
+            if ( $tour_id > 0 || (int) $coupon->room_id !== $room_id ) {
+                return CouponResult::error( 'Este cupón no aplica para esta habitación' );
+            }
         }
 
         return CouponResult::success( $coupon );

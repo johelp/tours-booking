@@ -11,9 +11,19 @@ defined( 'ABSPATH' ) || exit;
  */
 class ProvidersPage {
 
+    /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private function lang(): string {
+        return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
+    }
+
+    /** Traducción es/en para esta pantalla — ver lang(). */
+    private function tt( string $es, string $en ): string {
+        return $this->lang() === 'en' ? $en : $es;
+    }
+
     public function render(): void {
         if ( ! current_user_can( 'manage_options' ) ) {
-            wp_die( 'No tienes permisos suficientes para acceder a esta página.' );
+            wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
         }
 
         $this->handle_actions();
@@ -41,13 +51,15 @@ class ProvidersPage {
         <div class="wrap ab-admin-wrap" style="max-width:1100px;">
         <?php $this->styles(); ?>
         <h1 style="display:flex;align-items:center;justify-content:space-between;">
-          <span>🤝 Proveedores</span>
+          <span>🤝 <?php echo esc_html( $this->tt( 'Proveedores', 'Providers' ) ); ?></span>
           <button onclick="document.getElementById('amir-new-provider-form').style.display='block';this.style.display='none';"
-                  class="button button-primary">+ Nuevo proveedor</button>
+                  class="button button-primary">+ <?php echo esc_html( $this->tt( 'Nuevo proveedor', 'New provider' ) ); ?></button>
         </h1>
         <p style="color:#5a7068;font-size:13px;max-width:700px;">
-          Proveedores externos cuyos tours TourFlow revende con margen propio (marketplace). El cliente paga a TourFlow —
-          la reserva queda pendiente de que el proveedor confirme disponibilidad por email antes de darse por confirmada.
+          <?php echo esc_html( $this->tt(
+            'Proveedores externos cuyos tours TourFlow revende con margen propio (marketplace). El cliente paga a TourFlow — la reserva queda pendiente de que el proveedor confirme disponibilidad por email antes de darse por confirmada.',
+            'External providers whose tours TourFlow resells with its own margin (marketplace). The customer pays TourFlow — the booking stays pending until the provider confirms availability by email before being considered confirmed.'
+          ) ); ?>
         </p>
 
         <?php if ( $message ) : ?>
@@ -55,17 +67,17 @@ class ProvidersPage {
         <?php endif; ?>
 
         <div id="amir-new-provider-form" style="display:none;background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px;margin-bottom:24px;">
-          <h3 style="margin:0 0 16px;color:#1D9E75;">Nuevo proveedor</h3>
+          <h3 style="margin:0 0 16px;color:#1D9E75;"><?php echo esc_html( $this->tt( 'Nuevo proveedor', 'New provider' ) ); ?></h3>
           <form method="post">
             <?php wp_nonce_field( 'amir_provider_action' ); ?>
             <input type="hidden" name="amir_action" value="create_provider" />
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
               <div>
-                <label class="ab-label">Nombre del negocio *</label>
+                <label class="ab-label"><?php echo esc_html( $this->tt( 'Nombre del negocio *', 'Business name *' ) ); ?></label>
                 <input type="text" name="business_name" required placeholder="Kayaks del Caribe" style="<?php echo $this->input_style(); ?> width:100%;" />
               </div>
               <div>
-                <label class="ab-label">Persona de contacto</label>
+                <label class="ab-label"><?php echo esc_html( $this->tt( 'Persona de contacto', 'Contact person' ) ); ?></label>
                 <input type="text" name="contact_name" placeholder="Juan Pérez" style="<?php echo $this->input_style(); ?> width:100%;" />
               </div>
             </div>
@@ -75,17 +87,17 @@ class ProvidersPage {
                 <input type="email" name="email" required placeholder="contacto@proveedor.com" style="<?php echo $this->input_style(); ?> width:100%;" />
               </div>
               <div>
-                <label class="ab-label">Teléfono / WhatsApp</label>
+                <label class="ab-label"><?php echo esc_html( $this->tt( 'Teléfono / WhatsApp', 'Phone / WhatsApp' ) ); ?></label>
                 <input type="text" name="phone" placeholder="+52 983 000 0000" style="<?php echo $this->input_style(); ?> width:100%;" />
               </div>
             </div>
             <div style="margin-bottom:14px;">
-              <label class="ab-label">Notas internas</label>
+              <label class="ab-label"><?php echo esc_html( $this->tt( 'Notas internas', 'Internal notes' ) ); ?></label>
               <textarea name="notes" rows="2" style="<?php echo $this->input_style(); ?> width:100%;font-family:inherit;"></textarea>
             </div>
             <div style="display:flex;gap:10px;">
-              <button type="submit" class="button button-primary">Crear proveedor</button>
-              <button type="button" onclick="document.getElementById('amir-new-provider-form').style.display='none';" class="button">Cancelar</button>
+              <button type="submit" class="button button-primary"><?php echo esc_html( $this->tt( 'Crear proveedor', 'Create provider' ) ); ?></button>
+              <button type="button" onclick="document.getElementById('amir-new-provider-form').style.display='none';" class="button"><?php echo esc_html( $this->tt( 'Cancelar', 'Cancel' ) ); ?></button>
             </div>
           </form>
         </div>
@@ -93,17 +105,17 @@ class ProvidersPage {
         <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;overflow:hidden;">
         <table style="width:100%;border-collapse:collapse;">
           <thead><tr style="background:#f8fdfb;">
-            <th class="ab-th">Negocio</th>
-            <th class="ab-th">Contacto</th>
+            <th class="ab-th"><?php echo esc_html( $this->tt( 'Negocio', 'Business' ) ); ?></th>
+            <th class="ab-th"><?php echo esc_html( $this->tt( 'Contacto', 'Contact' ) ); ?></th>
             <th class="ab-th">Email</th>
-            <th class="ab-th">Teléfono</th>
+            <th class="ab-th"><?php echo esc_html( $this->tt( 'Teléfono', 'Phone' ) ); ?></th>
             <th class="ab-th">Tours</th>
-            <th class="ab-th">Estado</th>
+            <th class="ab-th"><?php echo esc_html( $this->tt( 'Estado', 'Status' ) ); ?></th>
             <th class="ab-th"></th>
           </tr></thead>
           <tbody>
           <?php if ( empty( $providers ) ) : ?>
-            <tr><td colspan="7" class="ab-td" style="text-align:center;color:#5a7068;padding:24px;">Sin proveedores creados todavía.</td></tr>
+            <tr><td colspan="7" class="ab-td" style="text-align:center;color:#5a7068;padding:24px;"><?php echo esc_html( $this->tt( 'Sin proveedores creados todavía.', 'No providers created yet.' ) ); ?></td></tr>
           <?php else : foreach ( $providers as $p ) : $n_tours = $tour_counts[ (int) $p->id ] ?? 0; ?>
             <tr style="border-bottom:1px solid #f5f5f5;">
               <td class="ab-td"><strong><?php echo esc_html( $p->business_name ); ?></strong></td>
@@ -113,26 +125,26 @@ class ProvidersPage {
               <td class="ab-td"><?php echo (int) $n_tours; ?></td>
               <td class="ab-td">
                 <?php if ( (int) $p->active === 1 ) : ?>
-                  <span style="color:#1D9E75;font-weight:700;font-size:12px;">✓ Activo</span>
+                  <span style="color:#1D9E75;font-weight:700;font-size:12px;">✓ <?php echo esc_html( $this->tt( 'Activo', 'Active' ) ); ?></span>
                 <?php else : ?>
-                  <span style="color:#5a7068;font-size:12px;">Inactivo</span>
+                  <span style="color:#5a7068;font-size:12px;"><?php echo esc_html( $this->tt( 'Inactivo', 'Inactive' ) ); ?></span>
                 <?php endif; ?>
               </td>
               <td class="ab-td">
                 <button type="button" class="button button-small"
-                        onclick="document.getElementById('amir-edit-provider-<?php echo (int) $p->id; ?>').style.display='block';">Editar</button>
+                        onclick="document.getElementById('amir-edit-provider-<?php echo (int) $p->id; ?>').style.display='block';"><?php echo esc_html( $this->tt( 'Editar', 'Edit' ) ); ?></button>
                 <form method="post" style="display:inline;">
                   <?php wp_nonce_field( 'amir_provider_action' ); ?>
                   <input type="hidden" name="amir_action" value="toggle_provider" />
                   <input type="hidden" name="id" value="<?php echo (int) $p->id; ?>" />
-                  <button type="submit" class="button button-small"><?php echo (int) $p->active === 1 ? 'Desactivar' : 'Activar'; ?></button>
+                  <button type="submit" class="button button-small"><?php echo (int) $p->active === 1 ? esc_html( $this->tt( 'Desactivar', 'Deactivate' ) ) : esc_html( $this->tt( 'Activar', 'Activate' ) ); ?></button>
                 </form>
                 <?php if ( $n_tours === 0 ) : ?>
-                <form method="post" style="display:inline;" onsubmit="return confirm('¿Eliminar este proveedor?');">
+                <form method="post" style="display:inline;" onsubmit="return confirm('<?php echo esc_js( $this->tt( '¿Eliminar este proveedor?', 'Delete this provider?' ) ); ?>');">
                   <?php wp_nonce_field( 'amir_provider_action' ); ?>
                   <input type="hidden" name="amir_action" value="delete_provider" />
                   <input type="hidden" name="id" value="<?php echo (int) $p->id; ?>" />
-                  <button type="submit" class="button button-small" style="color:#e24b4a;">Eliminar</button>
+                  <button type="submit" class="button button-small" style="color:#e24b4a;"><?php echo esc_html( $this->tt( 'Eliminar', 'Delete' ) ); ?></button>
                 </form>
                 <?php endif; ?>
               </td>
@@ -145,11 +157,11 @@ class ProvidersPage {
                   <input type="hidden" name="id" value="<?php echo (int) $p->id; ?>" />
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
                     <div>
-                      <label class="ab-label">Nombre del negocio *</label>
+                      <label class="ab-label"><?php echo esc_html( $this->tt( 'Nombre del negocio *', 'Business name *' ) ); ?></label>
                       <input type="text" name="business_name" required value="<?php echo esc_attr( $p->business_name ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
                     </div>
                     <div>
-                      <label class="ab-label">Persona de contacto</label>
+                      <label class="ab-label"><?php echo esc_html( $this->tt( 'Persona de contacto', 'Contact person' ) ); ?></label>
                       <input type="text" name="contact_name" value="<?php echo esc_attr( $p->contact_name ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
                     </div>
                   </div>
@@ -159,17 +171,17 @@ class ProvidersPage {
                       <input type="email" name="email" required value="<?php echo esc_attr( $p->email ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
                     </div>
                     <div>
-                      <label class="ab-label">Teléfono / WhatsApp</label>
+                      <label class="ab-label"><?php echo esc_html( $this->tt( 'Teléfono / WhatsApp', 'Phone / WhatsApp' ) ); ?></label>
                       <input type="text" name="phone" value="<?php echo esc_attr( $p->phone ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
                     </div>
                   </div>
                   <div style="margin-bottom:14px;">
-                    <label class="ab-label">Notas internas</label>
+                    <label class="ab-label"><?php echo esc_html( $this->tt( 'Notas internas', 'Internal notes' ) ); ?></label>
                     <textarea name="notes" rows="2" style="<?php echo $this->input_style(); ?> width:100%;font-family:inherit;"><?php echo esc_textarea( $p->notes ); ?></textarea>
                   </div>
                   <div style="display:flex;gap:10px;">
-                    <button type="submit" class="button button-primary">Guardar cambios</button>
-                    <button type="button" onclick="document.getElementById('amir-edit-provider-<?php echo (int) $p->id; ?>').style.display='none';" class="button">Cancelar</button>
+                    <button type="submit" class="button button-primary"><?php echo esc_html( $this->tt( 'Guardar cambios', 'Save changes' ) ); ?></button>
+                    <button type="button" onclick="document.getElementById('amir-edit-provider-<?php echo (int) $p->id; ?>').style.display='none';" class="button"><?php echo esc_html( $this->tt( 'Cancelar', 'Cancel' ) ); ?></button>
                   </div>
                 </form>
               </td>
@@ -191,10 +203,10 @@ class ProvidersPage {
         $action = sanitize_key( $_POST['amir_action'] );
 
         if ( $action === 'create_provider' ) {
-            $business_name = sanitize_text_field( $_POST['business_name'] ?? '' );
+            $business_name = sanitize_text_field( wp_unslash( $_POST['business_name'] ?? '' ) );
             $email         = sanitize_email( $_POST['email'] ?? '' );
             if ( $business_name === '' || ! is_email( $email ) ) {
-                set_transient( 'amir_provider_message', 'Nombre del negocio y un email válido son obligatorios.', 30 );
+                set_transient( 'amir_provider_message', $this->tt( 'Nombre del negocio y un email válido son obligatorios.', 'Business name and a valid email are required.' ), 30 );
                 return;
             }
 
@@ -202,10 +214,10 @@ class ProvidersPage {
                 "{$wpdb->prefix}amir_providers",
                 [
                     'business_name' => $business_name,
-                    'contact_name'  => sanitize_text_field( $_POST['contact_name'] ?? '' ),
+                    'contact_name'  => sanitize_text_field( wp_unslash( $_POST['contact_name'] ?? '' ) ),
                     'email'         => $email,
-                    'phone'         => sanitize_text_field( $_POST['phone'] ?? '' ),
-                    'notes'         => sanitize_textarea_field( $_POST['notes'] ?? '' ),
+                    'phone'         => sanitize_text_field( wp_unslash( $_POST['phone'] ?? '' ) ),
+                    'notes'         => sanitize_textarea_field( wp_unslash( $_POST['notes'] ?? '' ) ),
                     'active'        => 1,
                     'created_at'    => current_time( 'mysql' ),
                     'updated_at'    => current_time( 'mysql' ),
@@ -214,17 +226,17 @@ class ProvidersPage {
             );
 
             $msg = $inserted
-                ? "Proveedor \"{$business_name}\" creado correctamente."
-                : 'Error al crear el proveedor.';
+                ? sprintf( $this->tt( 'Proveedor "%s" creado correctamente.', 'Provider "%s" created successfully.' ), $business_name )
+                : $this->tt( 'Error al crear el proveedor.', 'Error creating the provider.' );
             set_transient( 'amir_provider_message', $msg, 30 );
         }
 
         if ( $action === 'update_provider' && ! empty( $_POST['id'] ) ) {
             $id            = (int) $_POST['id'];
-            $business_name = sanitize_text_field( $_POST['business_name'] ?? '' );
+            $business_name = sanitize_text_field( wp_unslash( $_POST['business_name'] ?? '' ) );
             $email         = sanitize_email( $_POST['email'] ?? '' );
             if ( $business_name === '' || ! is_email( $email ) ) {
-                set_transient( 'amir_provider_message', 'Nombre del negocio y un email válido son obligatorios.', 30 );
+                set_transient( 'amir_provider_message', $this->tt( 'Nombre del negocio y un email válido son obligatorios.', 'Business name and a valid email are required.' ), 30 );
                 return;
             }
 
@@ -232,10 +244,10 @@ class ProvidersPage {
                 "{$wpdb->prefix}amir_providers",
                 [
                     'business_name' => $business_name,
-                    'contact_name'  => sanitize_text_field( $_POST['contact_name'] ?? '' ),
+                    'contact_name'  => sanitize_text_field( wp_unslash( $_POST['contact_name'] ?? '' ) ),
                     'email'         => $email,
-                    'phone'         => sanitize_text_field( $_POST['phone'] ?? '' ),
-                    'notes'         => sanitize_textarea_field( $_POST['notes'] ?? '' ),
+                    'phone'         => sanitize_text_field( wp_unslash( $_POST['phone'] ?? '' ) ),
+                    'notes'         => sanitize_textarea_field( wp_unslash( $_POST['notes'] ?? '' ) ),
                     'updated_at'    => current_time( 'mysql' ),
                 ],
                 [ 'id' => $id ],
@@ -243,14 +255,14 @@ class ProvidersPage {
                 [ '%d' ]
             );
 
-            set_transient( 'amir_provider_message', "Proveedor \"{$business_name}\" actualizado correctamente.", 30 );
+            set_transient( 'amir_provider_message', sprintf( $this->tt( 'Proveedor "%s" actualizado correctamente.', 'Provider "%s" updated successfully.' ), $business_name ), 30 );
         }
 
         if ( $action === 'toggle_provider' && ! empty( $_POST['id'] ) ) {
             $id      = (int) $_POST['id'];
             $current = (int) $wpdb->get_var( $wpdb->prepare( "SELECT active FROM {$wpdb->prefix}amir_providers WHERE id = %d", $id ) );
             $wpdb->update( "{$wpdb->prefix}amir_providers", [ 'active' => $current ? 0 : 1 ], [ 'id' => $id ], [ '%d' ], [ '%d' ] );
-            set_transient( 'amir_provider_message', 'Proveedor actualizado.', 30 );
+            set_transient( 'amir_provider_message', $this->tt( 'Proveedor actualizado.', 'Provider updated.' ), 30 );
         }
 
         if ( $action === 'delete_provider' && ! empty( $_POST['id'] ) ) {
@@ -260,11 +272,11 @@ class ProvidersPage {
             // los tours o desactivar el proveedor en su lugar.
             $n_tours = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->prefix}amir_tours WHERE provider_id = %d", $id ) );
             if ( $n_tours > 0 ) {
-                set_transient( 'amir_provider_message', "No se puede eliminar: tiene {$n_tours} tour(s) asignado(s). Desactivalo en su lugar.", 30 );
+                set_transient( 'amir_provider_message', sprintf( $this->tt( 'No se puede eliminar: tiene %d tour(s) asignado(s). Desactivalo en su lugar.', "Can't delete: it has %d tour(s) assigned. Deactivate it instead." ), $n_tours ), 30 );
                 return;
             }
             $wpdb->delete( "{$wpdb->prefix}amir_providers", [ 'id' => $id ], [ '%d' ] );
-            set_transient( 'amir_provider_message', 'Proveedor eliminado.', 30 );
+            set_transient( 'amir_provider_message', $this->tt( 'Proveedor eliminado.', 'Provider deleted.' ), 30 );
         }
     }
 

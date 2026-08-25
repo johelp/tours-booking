@@ -24,6 +24,25 @@ final class Plugin {
         // ── Custom Post Type ──────────────────────────────────────────────
         ( new \AmirBooking\CPT\TourPostType() )->register();
 
+        // Habitaciones (Pro Max, CONTRIBUTING.md § 16) — namespace nuevo
+        // TourFlow\, no-op si AMIR_EDITION !== 'pro_max' (ver
+        // RoomPostType::register()).
+        if ( class_exists( \TourFlow\Rooms\RoomPostType::class ) ) {
+            ( new \TourFlow\Rooms\RoomPostType() )->register();
+        }
+        if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Rooms\RoomConfirmationEmail::class ) ) {
+            add_action( 'flow_room_booking_confirmed', [ \TourFlow\Rooms\RoomConfirmationEmail::class, 'send_for' ] );
+            add_action( 'flow_room_booking_rescheduled', [ \TourFlow\Rooms\RoomConfirmationEmail::class, 'send_reschedule_for' ] );
+        }
+        if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Cart\CartConfirmationEmail::class ) ) {
+            add_action( 'flow_cart_confirmed', [ \TourFlow\Cart\CartConfirmationEmail::class, 'send_for' ] );
+        }
+
+        // Google Calendar, un solo sentido (Pro Max, § 15.4/§ 16 CONTRIBUTING.md).
+        if ( AMIR_EDITION === 'pro_max' ) {
+            GoogleCalendarSync::register_hooks();
+        }
+
         // ── Rol Tour Manager ──────────────────────────────────────────────
         TourManagerRole::register_hooks();
 
@@ -34,23 +53,59 @@ final class Plugin {
         ( new Assets() )->register();
         ( new I18n() )->register();
 
+        // ── Personalización del widget también vía Customizer nativo ──────
+        // Pedido del cliente 2026-08-03 — mismas opciones que Configuración
+        // → 🎨 Widget de reserva (WidgetTheme), disponible en todas las
+        // ediciones (no es una feature Pro, ya no lo era en Configuración).
+        ( new Customizer() )->register();
+
         // ── Templates del plugin (fallback si el tema no los tiene) ───────
         add_filter( 'template_include', [ TemplateLoader::class, 'load' ] );
 
         // ── REST API ──────────────────────────────────────────────────────
         add_action( 'rest_api_init', function () {
+            Cors::apply();
+
             ( new \AmirBooking\Api\ToursController() )->register_routes();
             ( new \AmirBooking\Api\AvailabilityController() )->register_routes();
             ( new \AmirBooking\Api\BookingController() )->register_routes();
             ( new \AmirBooking\Api\PricesController() )->register_routes();
             ( new \AmirBooking\Api\NotificationsController() )->register_routes();
-            ( new \AmirBooking\Api\WishlistController() )->register_routes();
+
+            // Pro y superior (Pro Max hereda todo lo de Pro, decisión del
+            // cliente 2026-08-03 — nunca === 'pro' estricto): lista de
+            // interés y API pública (/config) para integraciones externas
+            // (app móvil / web headless). El ZIP Lite no incluye estos
+            // archivos — class_exists() evita un fatal si el autoloader no
+            // los encuentra.
+            if ( in_array( AMIR_EDITION, [ 'pro', 'pro_max' ], true ) ) {
+                if ( class_exists( \AmirBooking\Api\WishlistController::class ) ) {
+                    ( new \AmirBooking\Api\WishlistController() )->register_routes();
+                }
+                if ( class_exists( \AmirBooking\Api\ConfigController::class ) ) {
+                    ( new \AmirBooking\Api\ConfigController() )->register_routes();
+                }
+            }
+
+            // Habitaciones (Pro Max, CONTRIBUTING.md § 16) — namespace REST
+            // nuevo flow/v1, no-op si AMIR_EDITION !== 'pro_max'.
+            if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Rooms\RoomBookingController::class ) ) {
+                ( new \TourFlow\Rooms\RoomBookingController() )->register_routes();
+            }
+            if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Cart\CartController::class ) ) {
+                ( new \TourFlow\Cart\CartController() )->register_routes();
+            }
+            // Flujo continuo (§ 16.15 CONTRIBUTING.md) — destacados/catálogo por rango de fechas.
+            if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Discovery\DiscoveryController::class ) ) {
+                ( new \TourFlow\Discovery\DiscoveryController() )->register_routes();
+            }
         } );
 
         // ── Admin (site-level) ────────────────────────────────────────────
         if ( is_admin() ) {
             ( new \AmirBooking\Admin\AdminMenu() )->register();
             ( new \AmirBooking\Admin\NotificationBadge() )->register();
+            ( new \AmirBooking\Admin\FieldPage() )->register();
         }
 
         // ── Network Admin (solo en Multisite, solo para Super Admin) ──────
@@ -67,11 +122,74 @@ final class Plugin {
         }
 
         // ── Shortcodes ────────────────────────────────────────────────────
+        // `flow_*` es el nombre oficial desde v3.1.0 — coincide con el
+        // nombre del producto (TourFlow). `amir_*` queda registrado para
+        // siempre como alias silencioso: son los mismos shortcodes de antes
+        // (mismo callback), así que cualquier página ya publicada con
+        // [amir_booking] (ej. Amir Adventours) sigue funcionando exactamente
+        // igual, sin que nadie tenga que migrar contenido. Nunca remover el
+        // alias — es la única razón de que exista.
+        add_shortcode( 'flow_booking',        [ Shortcodes::class, 'booking_widget' ] );
+        add_shortcode( 'flow_tour_list',      [ Shortcodes::class, 'tour_list'      ] );
+        add_shortcode( 'flow_verify_booking', [ Shortcodes::class, 'verify_booking' ] );
+
+        // Universal a las tres ediciones (§ 16.54 CONTRIBUTING.md, pedido
+        // explícito del cliente 2026-08-12) — sin alias amir_*, son features
+        // nuevas, no hay contenido viejo que migrar.
+        add_shortcode( 'flow_spots_left', [ Shortcodes::class, 'spots_left' ] );
+        add_shortcode( 'flow_tour_dates', [ Shortcodes::class, 'tour_dates' ] );
+        // Selector de variantes (§ 16.93 CONTRIBUTING.md, pedido explícito
+        // del cliente 2026-08-25 a partir de un caso real — un mismo
+        // producto vendido como N tours separados, ej. 4 habitaciones de un
+        // retiro a precio fijo cada una) — universal, no depende de nada de
+        // Pro Max, es solo el widget clásico detrás de un paso de elección.
+        add_shortcode( 'flow_booking_variants', [ Shortcodes::class, 'booking_variants' ] );
+
         add_shortcode( 'amir_booking',        [ Shortcodes::class, 'booking_widget' ] );
         add_shortcode( 'amir_tour_list',      [ Shortcodes::class, 'tour_list'      ] );
-        add_shortcode( 'amir_wishlist',       [ Shortcodes::class, 'wishlist_list'  ] );
         add_shortcode( 'amir_verify_booking', [ Shortcodes::class, 'verify_booking' ] );
-        add_shortcode( 'amir_provider_action', [ Shortcodes::class, 'provider_action' ] );
+
+        // Pro y superior: lista de interés y marketplace de proveedores
+        // externos — Pro Max hereda todo lo de Pro (decisión del cliente
+        // 2026-08-03), nunca `=== 'pro'` estricto.
+        if ( in_array( AMIR_EDITION, [ 'pro', 'pro_max' ], true ) ) {
+            add_shortcode( 'flow_wishlist',        [ Shortcodes::class, 'wishlist_list'  ] );
+            add_shortcode( 'flow_provider_action', [ Shortcodes::class, 'provider_action' ] );
+            add_shortcode( 'amir_wishlist',        [ Shortcodes::class, 'wishlist_list'  ] );
+            add_shortcode( 'amir_provider_action', [ Shortcodes::class, 'provider_action' ] );
+        }
+
+        // Pro Max: buscador de habitaciones (§ 16 CONTRIBUTING.md) — sin
+        // alias amir_*, es feature nueva, no hay contenido viejo que migrar.
+        if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Rooms\RoomShortcodes::class ) ) {
+            add_shortcode( 'flow_room_search', [ \TourFlow\Rooms\RoomShortcodes::class, 'room_search' ] );
+            add_shortcode( 'flow_room_list',   [ \TourFlow\Rooms\RoomShortcodes::class, 'room_list'   ] );
+        }
+
+        // Pro Max: flujo continuo de descubrimiento (§ 16.15 CONTRIBUTING.md).
+        if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Discovery\DiscoveryShortcodes::class ) ) {
+            add_shortcode( 'flow_discovery', [ \TourFlow\Discovery\DiscoveryShortcodes::class, 'discovery' ] );
+        }
+
+        // Pro Max: flujo Explorar, búsqueda-primero (§ 16.46 CONTRIBUTING.md)
+        // — convive con flow_discovery, no lo reemplaza.
+        if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Discovery\ExploreShortcodes::class ) ) {
+            add_shortcode( 'flow_explore', [ \TourFlow\Discovery\ExploreShortcodes::class, 'explore' ] );
+
+            // Barra de búsqueda standalone para el hero de un home, redirige
+            // a la página con [flow_explore] (§ 16.54 CONTRIBUTING.md) —
+            // gateado igual que flow_explore, no tiene sentido sin él.
+            add_shortcode( 'flow_search_bar', [ Shortcodes::class, 'search_bar' ] );
+        }
+
+        // Pro Max: venta suelta de un producto digital, sin reservar ningún
+        // tour (§ 16.9x CONTRIBUTING.md, pedido 2026-08-25) — reusa el
+        // catálogo de Extras globales (TourFlow → 🎁 Extras globales) y el
+        // checkout de carrito existente, no tiene sentido en Lite/Pro sin
+        // esa pantalla admin.
+        if ( AMIR_EDITION === 'pro_max' && class_exists( \TourFlow\Cart\ProductShortcode::class ) ) {
+            add_shortcode( 'flow_product', [ \TourFlow\Cart\ProductShortcode::class, 'product' ] );
+        }
 
         // ── Cron jobs ─────────────────────────────────────────────────────
         ( new CronManager() )->register();
@@ -89,7 +207,10 @@ final class Plugin {
         ( new \AmirBooking\Partners\PartnerTracker() )->register();
 
         // ── Marketing (Meta Pixel / Google Ads / GA4) ─────────────────────
-        Marketing::init();
+        // Pro y superior (Pro Max incluido). El ZIP Lite no incluye class-marketing.php.
+        if ( in_array( AMIR_EDITION, [ 'pro', 'pro_max' ], true ) && class_exists( Marketing::class ) ) {
+            Marketing::init();
+        }
 
         // ── Reembolsos ────────────────────────────────────────────────────
         // BookingManager::cancel() dispara esta acción cuando la política de
@@ -184,5 +305,13 @@ final class Plugin {
         // columna que no llegó a crearse queda faltante para siempre. Chequeo
         // barato (una sola vez por request) fuera del gate de versión.
         Installer::ensure_tour_columns();
+
+        // Mismo criterio, para el ENUM de amir_bookings.status/booking_source
+        // — bug real confirmado en producción: reactivar el plugin corría
+        // create_tables() (dbDelta, no altera ENUMs existentes) y pisaba
+        // amir_db_version igual, dejando 'date_requested' faltante para
+        // siempre sin que maybe_update() lo volviera a intentar. Ver el
+        // docblock de Installer::ensure_booking_status_enum().
+        Installer::ensure_booking_status_enum();
     }
 }

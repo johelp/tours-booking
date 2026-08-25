@@ -20,7 +20,12 @@ export default function WishlistList({ lang = 'es', rootEl = null }) {
   const [ loading, setLoading ] = useState( true );
 
   const columns = Math.min( 3, Math.max( 1, parseInt( rootEl?.dataset?.columns || '3', 10 ) ) );
-  const accent  = rootEl?.dataset?.accent || '#1D9E75';
+  // Bug real 2026-08-21 (mismo que [flow_tour_list], TourList.jsx): sin
+  // accent="..." explícito, esto ignoraba el color de marca configurado en
+  // Personalización. A diferencia de TourList.jsx, acá no hay matemática de
+  // color (shade()) sobre el valor, así que el string var(--ab-teal) se
+  // puede usar directo en el CSS de abajo, sin resolverlo primero.
+  const accent  = rootEl?.dataset?.accent || 'var(--ab-teal, #1D9E75)';
 
   useEffect( () => {
     getUpcomingTours( lang )
@@ -55,19 +60,34 @@ export default function WishlistList({ lang = 'es', rootEl = null }) {
         .wl-date { font-size:12px; color:${accent}; font-weight:700; margin:0 0 8px; text-transform:capitalize; }
         .wl-excerpt { font-size:13px; color:#556760; line-height:1.6; margin:0 0 14px; }
         .wl-count { font-size:12px; color:${accent}; font-weight:700; margin:0 0 14px; }
-        .wl-toggle { width:100%; padding:11px 16px; background:${accent}; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; }
+        .wl-toggle {
+          width:100%; margin:0; padding:11px 16px;
+          background-color:${accent} !important; background-image:none !important; box-shadow:none !important;
+          color:#fff !important; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit;
+          appearance:none; -webkit-appearance:none; -moz-appearance:none;
+        }
         .wl-form { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
         .wl-form input, .wl-form select, .wl-form textarea { padding:10px 12px; border:1px solid #c3d9d0; border-radius:8px; font-size:13px; font-family:inherit; box-sizing:border-box; width:100%; }
         .wl-row { display:flex; gap:8px; }
         .wl-row > * { flex:1; }
         .wl-people-label { font-size:12px; font-weight:700; color:#1a2e24; margin:2px 0; }
         .wl-counter { display:flex; align-items:center; gap:10px; }
-        .wl-counter button { width:30px; height:30px; border-radius:50%; border:1px solid #c3d9d0; background:#fff; font-size:16px; cursor:pointer; line-height:1; }
+        .wl-counter button {
+          width:30px !important; height:30px !important; min-width:0; padding:0 !important; box-sizing:border-box; margin:0; border-radius:50%; border:1px solid #c3d9d0; box-shadow:none;
+          background-color:#fff !important; background-image:none !important;
+          color:#1a2e24 !important; font-size:16px; font-family:inherit; cursor:pointer; line-height:1;
+          appearance:none; -webkit-appearance:none; -moz-appearance:none;
+        }
         .wl-counter button:disabled { opacity:.4; cursor:default; }
         .wl-counter span { min-width:20px; text-align:center; font-weight:700; }
         .wl-price { font-size:13px; color:#5a7068; margin-top:2px; }
         .wl-price strong { color:#1a2e24; font-size:16px; }
-        .wl-submit { padding:12px 16px; background:${accent}; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; margin-top:4px; }
+        .wl-submit {
+          padding:12px 16px; margin:4px 0 0;
+          background-color:${accent} !important; background-image:none !important; box-shadow:none !important;
+          color:#fff !important; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit;
+          appearance:none; -webkit-appearance:none; -moz-appearance:none;
+        }
         .wl-submit:disabled { opacity:.6; cursor:default; }
         .wl-ok { font-size:13px; color:${accent}; font-weight:600; }
         .wl-err { font-size:12px; color:#dc2626; }

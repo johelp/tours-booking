@@ -56,4 +56,46 @@ final class LanguagesTest extends TestCase {
         ];
         $this->assertSame( 'Tour à Bacalar', Languages::tour_field( $tour, 'name', 'fr' ) );
     }
+
+    public function test_faq_items_resolves_requested_language(): void {
+        $tour = (object) [
+            'faq_items' => wp_json_encode( [
+                [ 'question_es' => '¿Puedo ir solo?', 'question_en' => 'Can I come alone?', 'answer_es' => 'Sí, claro.', 'answer_en' => 'Yes, of course.' ],
+            ] ),
+        ];
+        $this->assertSame(
+            [ [ 'question' => 'Can I come alone?', 'answer' => 'Yes, of course.' ] ],
+            Languages::faq_items( $tour, 'en' )
+        );
+    }
+
+    public function test_faq_items_falls_back_to_spanish_when_translation_missing(): void {
+        $tour = (object) [
+            'faq_items' => wp_json_encode( [
+                [ 'question_es' => '¿Qué pasa si llueve?', 'question_en' => '', 'answer_es' => 'Se reprograma.', 'answer_en' => '' ],
+            ] ),
+        ];
+        $this->assertSame(
+            [ [ 'question' => '¿Qué pasa si llueve?', 'answer' => 'Se reprograma.' ] ],
+            Languages::faq_items( $tour, 'en' )
+        );
+    }
+
+    public function test_faq_items_discards_rows_without_any_question(): void {
+        $tour = (object) [
+            'faq_items' => wp_json_encode( [
+                [ 'question_es' => '', 'question_en' => '', 'answer_es' => 'Huérfana, sin pregunta.' ],
+                [ 'question_es' => '¿Hay wifi?', 'answer_es' => 'Sí.' ],
+            ] ),
+        ];
+        $this->assertSame(
+            [ [ 'question' => '¿Hay wifi?', 'answer' => 'Sí.' ] ],
+            Languages::faq_items( $tour, 'es' )
+        );
+    }
+
+    public function test_faq_items_returns_empty_array_when_no_faq(): void {
+        $tour = (object) [ 'faq_items' => '[]' ];
+        $this->assertSame( [], Languages::faq_items( $tour, 'es' ) );
+    }
 }

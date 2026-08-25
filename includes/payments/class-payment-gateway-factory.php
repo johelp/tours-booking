@@ -22,7 +22,17 @@ class PaymentGatewayFactory {
             case 'mercadopago':
                 return new MercadoPagoGateway();
             default:
-                return null;
+                // Punto de extensión para "plugins satélite" (ej.
+                // redsys-for-tourflow) — un plugin aparte que implementa
+                // PaymentGatewayInterface puede registrarse acá sin que este
+                // archivo necesite saber que existe. $id es el valor guardado
+                // en amir_bookings.payment_gateway / amir_default_gateway;
+                // 'manual' (pagos cargados a mano desde el admin, ver
+                // BookingsPage::handle_detail_action() case 'record_manual_payment')
+                // cae acá también y resuelve a null a propósito — no hay
+                // pasarela real que reembolsar automáticamente.
+                $gateway = apply_filters( 'amir_payment_gateway_resolve', null, $id );
+                return $gateway instanceof PaymentGatewayInterface ? $gateway : null;
         }
     }
 

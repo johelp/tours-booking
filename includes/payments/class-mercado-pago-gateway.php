@@ -45,7 +45,7 @@ class MercadoPagoGateway implements PaymentGatewayInterface {
             'items' => [ [
                 'title'       => $company . ' — ' . $booking->booking_ref,
                 'quantity'    => 1,
-                'unit_price'  => round( (float) $booking->total_mxn, 2 ),
+                'unit_price'  => round( (float) $booking->charge_mxn, 2 ),
                 'currency_id' => $currency,
             ] ],
             'external_reference' => $booking->booking_ref,
