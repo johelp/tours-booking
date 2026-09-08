@@ -1137,8 +1137,9 @@ function ExtrasStep( { t, lang, currency, cart, setCart, catalogTours, tourCache
 							const qty = current?.qty ?? 0;
 							return (
 								<div key={ a.id } className={ `ab-people-row${ qty > 0 ? ' selected' : '' }` }>
+									{ a.image_url && <img className="ab-people-thumb" src={ a.image_url } alt="" loading="lazy" /> }
 									<div className="ab-people-info">
-										<div className="ab-people-label">{ a.pricing_type === 'digital' ? '📄 ' : '🎁 ' }{ a.name }</div>
+										<div className="ab-people-label">{ a.image_url ? '' : ( a.pricing_type === 'digital' ? '📄 ' : '🎁 ' ) }{ a.name }</div>
 									</div>
 									<div className="ab-people-price">${ a.price_mxn?.toLocaleString( 'es-MX' ) } { currency }</div>
 									{ a.pricing_type === 'per_unit' ? (

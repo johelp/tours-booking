@@ -6,12 +6,18 @@ import { fmtMoney } from './components/shared.jsx';
 import { useScrollToErrorOnMobile, useScrollToTopOnChange } from './hooks.js';
 
 /**
- * [flow_product addon_id="X"] — venta suelta de un producto digital (ej.
- * guía PDF) sin reservar ningún tour, CONTRIBUTING.md § 16.9x. Pensado para
- * incrustarse en una página de venta propia del operador (landing, texto
- * de marketing alrededor) — este componente es solo el "comprar ahora":
- * nombre + foto (si tiene) + precio + checkout + pago, sin ningún paso de
- * fecha/personas/calendario, porque un producto digital no tiene eso.
+ * [flow_product] o [flow_product addon_id="X"] — venta suelta de un
+ * producto digital (ej. guía PDF) sin reservar ningún tour, CONTRIBUTING.md
+ * § 16.9x. Con `addon_id`: pensado para incrustarse en una página de venta
+ * propia del operador (landing, texto de marketing alrededor) — este
+ * componente es solo el "comprar ahora": nombre + foto (si tiene) + precio
+ * + checkout + pago, sin ningún paso de fecha/personas/calendario, porque
+ * un producto digital no tiene eso. Sin `addon_id`: catálogo de TODOS los
+ * productos digitales activos (mismo patrón de picker que
+ * [flow_booking_variants]/BookingVariants.jsx) — elegís uno y pasa al mismo
+ * "comprar ahora", sin salir de la página. Pedido real del cliente
+ * 2026-08-26: probando el shortcode sin addon_id esperaba ver el catálogo,
+ * no un error.
  *
  * Reusa TAL CUAL el checkout de carrito ya existente (POST /cart/checkout,
  * POST /cart/{id}/confirm-payment) con un ítem nuevo `type:'product'` — ver
@@ -25,8 +31,10 @@ export default function ProductOrder( { lang: initLang, addonId } ) {
 	const [ lang ] = useState( initLang || 'es' );
 	const t = ( es, en ) => ( lang === 'en' ? en : es );
 	const currency = window.amirBooking?.currency ?? 'MXN';
+	const catalogMode = ! addonId;
 
-	const [ step, setStep ] = useState( 'loading' ); // loading | details | payment | confirmation
+	const [ step, setStep ] = useState( 'loading' ); // loading | catalog | details | payment | confirmation
+	const [ catalog, setCatalog ] = useState( null );
 	const [ product, setProduct ] = useState( null );
 	const [ error, setError ] = useState( '' );
 	const [ loading, setLoading ] = useState( false );
@@ -48,28 +56,46 @@ export default function ProductOrder( { lang: initLang, addonId } ) {
 	useEffect( () => {
 		RoomsAPI.getGlobalAddons( lang )
 			.then( addons => {
-				const found = addons.find( a => a.id === addonId );
-				if ( ! found || found.pricing_type !== 'digital' ) {
-					setError( t( 'Este producto ya no está disponible.', 'This product is no longer available.' ) );
+				const digitalAddons = addons.filter( a => a.pricing_type === 'digital' );
+
+				if ( ! catalogMode ) {
+					const found = digitalAddons.find( a => a.id === addonId );
+					if ( ! found ) {
+						setError( t( 'Este producto ya no está disponible.', 'This product is no longer available.' ) );
+						setStep( 'details' );
+						return;
+					}
+					setProduct( found );
 					setStep( 'details' );
 					return;
 				}
-				setProduct( found );
-				setStep( 'details' );
+
+				if ( digitalAddons.length === 0 ) {
+					setError( t( 'No hay productos disponibles por el momento.', 'No products available right now.' ) );
+					setStep( 'catalog' );
+					return;
+				}
+				setCatalog( digitalAddons );
+				setStep( 'catalog' );
 			} )
 			.catch( () => {
-				setError( t( 'No pudimos cargar el producto. Intenta de nuevo.', "We couldn't load the product. Please try again." ) );
-				setStep( 'details' );
+				setError( t( 'No pudimos cargar los productos. Intenta de nuevo.', "We couldn't load the products. Please try again." ) );
+				setStep( catalogMode ? 'catalog' : 'details' );
 			} );
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- addonId/lang fijos del shortcode
 	}, [] );
+
+	function pickFromCatalog( p ) {
+		setProduct( p );
+		setStep( 'details' );
+	}
 
 	async function handleBuy( customer ) {
 		setError( '' );
 		setLoading( true );
 		try {
 			const resp = await RoomsAPI.cartCheckout( {
-				items: [ { type: 'product', addon_id: addonId } ],
+				items: [ { type: 'product', addon_id: product.id } ],
 				...customer,
 			} );
 			setCartGroupId( resp.cart_group_id );
@@ -87,7 +113,7 @@ export default function ProductOrder( { lang: initLang, addonId } ) {
 	}
 
 	return (
-		<div className="fpr-wrap" ref={wrapRef}>
+		<div className={ `fpr-wrap${ step === 'catalog' ? ' fpr-wrap-catalog' : '' }` } ref={wrapRef}>
 			<style>{ PRODUCT_CSS }</style>
 
 			{ error && <div className="ab-error-banner">⚠ { error }</div> }
@@ -96,9 +122,35 @@ export default function ProductOrder( { lang: initLang, addonId } ) {
 				<div className="fpr-card fpr-card-sk" />
 			) }
 
+			{ step === 'catalog' && catalog && (
+				<div className="fpr-catalog-grid">
+					{ catalog.map( p => (
+						<div key={ p.id } className="fpr-catalog-card" onClick={ () => pickFromCatalog( p ) }>
+							{ p.image_url ? (
+								<img className="fpr-catalog-img" src={ p.image_url } alt={ p.name } loading="lazy" decoding="async" />
+							) : (
+								<div className="fpr-catalog-img fpr-img-ph" aria-hidden="true">🏷️</div>
+							) }
+							<div className="fpr-catalog-body">
+								<div className="fpr-catalog-title">{ p.name }</div>
+								<div className="fpr-catalog-price">{ fmtMoney( p.price_mxn, currency, lang ) }</div>
+								<button type="button" className="ab-btn ab-btn-primary fpr-buy-btn">{ t( 'Comprar', 'Buy' ) } →</button>
+							</div>
+						</div>
+					) ) }
+				</div>
+			) }
+
 			{ step === 'details' && product && (
-				<ProductCheckoutForm product={ product } lang={ lang } t={ t } currency={ currency }
-					loading={ loading } onBuy={ handleBuy } />
+				<>
+					{ catalogMode && (
+						<button type="button" className="ab-btn ab-btn-ghost fpr-back" onClick={ () => { setProduct( null ); setError( '' ); setStep( 'catalog' ); } }>
+							← { t( 'Ver otros productos', 'See other products' ) }
+						</button>
+					) }
+					<ProductCheckoutForm product={ product } lang={ lang } t={ t } currency={ currency }
+						loading={ loading } onBuy={ handleBuy } />
+				</>
 			) }
 
 			{ step === 'payment' && clientSecret && (
@@ -133,6 +185,11 @@ function ProductCheckoutForm( { product, lang, t, currency, loading, onBuy } ) {
 
 	return (
 		<div className="fpr-card">
+			{ product.image_url ? (
+				<img className="fpr-img" src={ product.image_url } alt={ product.name } loading="lazy" decoding="async" />
+			) : (
+				<div className="fpr-img fpr-img-ph" aria-hidden="true">🏷️</div>
+			) }
 			<h2 className="fpr-title">{ product.name }</h2>
 			<div className="fpr-price">{ fmtMoney( product.price_mxn, currency, lang ) }</div>
 
@@ -212,9 +269,20 @@ function ProductPaymentStep( { t, cartGroupId, onSuccess } ) {
 
 const PRODUCT_CSS = `
 .fpr-wrap { max-width:480px; margin:0 auto; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#1a2e24; }
+.fpr-wrap-catalog { max-width:900px; }
+.fpr-back { margin-bottom:16px; }
+.fpr-catalog-grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); }
+.fpr-catalog-card { background:#fff; border:1px solid #e1f5ee; border-radius:var(--ab-radius,12px); overflow:hidden; cursor:pointer; transition:box-shadow .15s,transform .15s; display:flex; flex-direction:column; }
+.fpr-catalog-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); }
+.fpr-catalog-img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; }
+.fpr-catalog-body { padding:14px 16px 16px; display:flex; flex-direction:column; gap:6px; flex:1; }
+.fpr-catalog-title { font-size:15px; font-weight:800; }
+.fpr-catalog-price { font-size:18px; font-weight:900; color:var(--ab-teal,#1D9E75); margin-bottom:4px; }
 .fpr-card { background:#fff; border:1px solid #e1f5ee; border-radius:var(--ab-radius,12px); padding:24px; }
 .fpr-card-sk { height:220px; background:linear-gradient(90deg,#eef4f1 25%,#f6faf8 37%,#eef4f1 63%); background-size:400% 100%; animation:fpr-shimmer 1.4s ease infinite; }
 @keyframes fpr-shimmer { 0%{background-position:100% 50%} 100%{background-position:0 50%} }
+.fpr-img { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:var(--ab-radius-sm,8px); margin-bottom:14px; display:block; }
+.fpr-img-ph { background:#eafbf4; display:flex; align-items:center; justify-content:center; font-size:36px; }
 .fpr-title { font-size:20px; font-weight:800; margin:0 0 6px; }
 .fpr-price { font-size:26px; font-weight:900; color:var(--ab-teal,#1D9E75); margin-bottom:18px; }
 .fpr-field { display:flex; flex-direction:column; gap:4px; margin-bottom:14px; }

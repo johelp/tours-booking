@@ -59,22 +59,42 @@ class CartController {
 		$cart_group_id = sanitize_text_field( $request->get_param( 'cart_group_id' ) );
 
 		global $wpdb;
-		$primary = $wpdb->get_row( $wpdb->prepare(
-			"SELECT * FROM {$wpdb->prefix}amir_bookings WHERE cart_group_id = %s ORDER BY id ASC LIMIT 1",
+		$bookings = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM {$wpdb->prefix}amir_bookings WHERE cart_group_id = %s ORDER BY id ASC",
 			$cart_group_id
 		) );
-		if ( ! $primary ) {
+		if ( empty( $bookings ) ) {
 			status_header( 404 );
 			echo 'Carrito no encontrado.';
 			exit;
 		}
 
-		// Mismo criterio de autorización que el voucher de tours — token o
-		// email, nunca solo la referencia (adivinable).
+		// Bug real reportado en vivo (caliafarm.com/stag, 2026-08-25): el
+		// link del email daba "Acceso no autorizado". Causa raíz: esta
+		// función autorizaba contra UNA sola reserva "primaria" del carrito
+		// elegida por `ORDER BY id ASC` (la primera creada) — pero
+		// CartConfirmationEmail::send_for()/CartVoucherGenerator ya elegían
+		// SU "primaria" con un criterio distinto (`ORDER BY item_type ASC,
+		// tour_date ASC`, para mostrar tours antes que habitaciones). En un
+		// carrito mixto (ej. tour + habitación, o tour + producto) las dos
+		// consultas podían apuntar a reservas DISTINTAS — cada una con su
+		// propio access_token — así que el token que viajaba en el email
+		// (de la reserva que la consulta del email eligió) no coincidía con
+		// el que este endpoint pedía (de la reserva que ESTA consulta
+		// elegía). Corregido autorizando contra CUALQUIERA de las reservas
+		// del carrito, no una sola elegida arbitrariamente — es lo
+		// correcto de todos modos: todas pertenecen a la misma compra.
 		$token   = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
 		$email   = sanitize_email( $request->get_param( 'email' ) ?? '' );
 		$manager = new \AmirBooking\Core\BookingManager();
-		if ( ! $manager->authorize_public_access( $primary, $token, $email ) ) {
+		$authorized = false;
+		foreach ( $bookings as $b ) {
+			if ( $manager->authorize_public_access( $b, $token, $email ) ) {
+				$authorized = true;
+				break;
+			}
+		}
+		if ( ! $authorized ) {
 			status_header( 403 );
 			echo 'Acceso no autorizado.';
 			exit;

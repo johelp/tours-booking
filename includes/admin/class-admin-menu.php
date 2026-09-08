@@ -14,6 +14,7 @@ class AdminMenu {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
         // La descarga del PDF debe ocurrir antes de que WordPress envíe cualquier HTML
         add_action( 'admin_init',   [ $this, 'maybe_stream_pdf' ] );
+        add_action( 'admin_init',   [ $this, 'maybe_stream_cart_pdf' ] );
 
         // Mismo motivo — export CSV de Reportes y Reservas. Bug real
         // reportado por el cliente (2026-08-24): antes se disparaban desde
@@ -120,6 +121,31 @@ class AdminMenu {
         }
 
         ( new \AmirBooking\Core\VoucherGenerator() )->stream( (int) $_GET['id'] );
+        exit;
+    }
+
+    /**
+     * ?page=amir-bookings-list&action=cart_pdf&cart_group_id=X — voucher
+     * GENERAL del carrito, el mismo documento que ya recibió el cliente por
+     * email (CartVoucherGenerator, no VoucherGenerator). Bug real reportado
+     * en vivo (2026-08-25): el admin solo tenía el botón del voucher
+     * INDIVIDUAL (por tour, VoucherGenerator::stream() arriba) incluso para
+     * reservas que vinieron de un carrito — mostraba/generaba un documento
+     * distinto al que el cliente realmente tiene. Gateado a Pro Max porque
+     * CartVoucherGenerator vive en includes/cart/ (solo esa edición).
+     */
+    public function maybe_stream_cart_pdf(): void {
+        if (
+            ( $_GET['page']   ?? '' ) !== 'amir-bookings-list' ||
+            ( $_GET['action'] ?? '' ) !== 'cart_pdf'           ||
+            empty( $_GET['cart_group_id'] )                    ||
+            ! class_exists( \TourFlow\Cart\CartVoucherGenerator::class ) ||
+            ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' )
+        ) {
+            return;
+        }
+
+        ( new \TourFlow\Cart\CartVoucherGenerator() )->stream_for_cart( sanitize_text_field( $_GET['cart_group_id'] ) );
         exit;
     }
 

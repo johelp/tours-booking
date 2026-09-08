@@ -32,6 +32,7 @@ class GlobalAddonsPage {
         }
 
         $this->handle_actions();
+        wp_enqueue_media();
 
         $message = get_transient( 'amir_global_addon_message' );
         if ( $message ) {
@@ -70,6 +71,7 @@ class GlobalAddonsPage {
         <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;overflow:hidden;">
         <table style="width:100%;border-collapse:collapse;">
           <thead><tr style="background:#f8fdfb;">
+            <th class="ab-th"><?php echo esc_html( $this->tt( 'ID', 'ID' ) ); ?></th>
             <th class="ab-th"><?php echo esc_html( $this->tt( 'Nombre', 'Name' ) ); ?></th>
             <th class="ab-th"><?php echo esc_html( $this->tt( 'Tipo', 'Type' ) ); ?></th>
             <th class="ab-th"><?php echo esc_html( $this->tt( 'Precio', 'Price' ) ); ?></th>
@@ -78,9 +80,15 @@ class GlobalAddonsPage {
           </tr></thead>
           <tbody>
           <?php if ( empty( $addons ) ) : ?>
-            <tr><td colspan="5" class="ab-td" style="text-align:center;color:#5a7068;padding:24px;"><?php echo esc_html( $this->tt( 'Sin extras globales creados todavía.', 'No global extras created yet.' ) ); ?></td></tr>
+            <tr><td colspan="6" class="ab-td" style="text-align:center;color:#5a7068;padding:24px;"><?php echo esc_html( $this->tt( 'Sin extras globales creados todavía.', 'No global extras created yet.' ) ); ?></td></tr>
           <?php else : foreach ( $addons as $a ) : ?>
             <tr style="border-bottom:1px solid #f5f5f5;">
+              <td class="ab-td">
+                <code title="<?php echo esc_attr( $this->tt( 'Clic para copiar — es el addon_id que va en [flow_product addon_id=\"…\"]', 'Click to copy — this is the addon_id used in [flow_product addon_id="…"]' ) ); ?>"
+                      onclick="navigator.clipboard.writeText('<?php echo (int) $a->id; ?>');var t=this.nextElementSibling;t.style.opacity=1;setTimeout(function(){t.style.opacity=0;},900);"
+                      style="cursor:pointer;background:#f0faf6;color:#0F6E56;padding:2px 7px;border-radius:5px;font-size:12px;"><?php echo (int) $a->id; ?></code>
+                <span style="color:#1D9E75;font-size:11px;opacity:0;transition:opacity .2s;margin-left:5px;">✓ <?php echo esc_html( $this->tt( 'copiado', 'copied' ) ); ?></span>
+              </td>
               <td class="ab-td"><strong><?php echo esc_html( $a->name_es ); ?></strong><br><span style="font-size:11px;color:#5a7068;"><?php echo esc_html( $a->name_en ); ?></span></td>
               <td class="ab-td"><?php echo esc_html( $this->pricing_type_label( $a->pricing_type ) ); ?></td>
               <td class="ab-td"><?php echo esc_html( \AmirBooking\Core\Currency::format( (float) $a->price_mxn ) ); ?></td>
@@ -109,7 +117,7 @@ class GlobalAddonsPage {
               </td>
             </tr>
             <tr id="amir-edit-addon-<?php echo (int) $a->id; ?>" style="display:none;">
-              <td colspan="5" class="ab-td" style="background:#f8fdfb;">
+              <td colspan="6" class="ab-td" style="background:#f8fdfb;">
                 <?php $this->render_form( 'update_addon', $a ); ?>
                 <button type="button" onclick="document.getElementById('amir-edit-addon-<?php echo (int) $a->id; ?>').style.display='none';" class="button" style="margin-top:10px;"><?php echo esc_html( $this->tt( 'Cancelar', 'Cancel' ) ); ?></button>
               </td>
@@ -146,6 +154,33 @@ class GlobalAddonsPage {
             frame.open();
           } );
         } );
+        document.querySelectorAll( '.amir-addon-image-select-btn' ).forEach( function ( btn ) {
+          btn.addEventListener( 'click', function ( e ) {
+            e.preventDefault();
+            var form    = btn.closest( 'form' );
+            var input   = form.querySelector( '.amir-addon-image-id' );
+            var preview = form.querySelector( '.amir-addon-image-preview' );
+            var removeBtn = form.querySelector( '.amir-addon-image-remove-btn' );
+            var frame = wp.media( { title: '<?php echo esc_js( $this->tt( 'Seleccionar foto', 'Select photo' ) ); ?>', button: { text: '<?php echo esc_js( $this->tt( 'Usar esta foto', 'Use this photo' ) ); ?>' }, multiple: false, library: { type: 'image' } } );
+            frame.on( 'select', function () {
+              var att = frame.state().get( 'selection' ).first().toJSON();
+              input.value = att.id;
+              preview.style.display = '';
+              preview.querySelector( 'img' ).src = ( att.sizes && att.sizes.thumbnail ? att.sizes.thumbnail.url : att.url );
+              removeBtn.style.display = '';
+            } );
+            frame.open();
+          } );
+        } );
+        document.querySelectorAll( '.amir-addon-image-remove-btn' ).forEach( function ( btn ) {
+          btn.addEventListener( 'click', function ( e ) {
+            e.preventDefault();
+            var form = btn.closest( 'form' );
+            form.querySelector( '.amir-addon-image-id' ).value = '';
+            form.querySelector( '.amir-addon-image-preview' ).style.display = 'none';
+            btn.style.display = 'none';
+          } );
+        } );
         </script>
         <?php
     }
@@ -166,6 +201,20 @@ class GlobalAddonsPage {
               <label class="ab-label"><?php echo esc_html( sprintf( $this->tt( 'Nombre (%s) *', 'Name (%s) *' ), 'English' ) ); ?></label>
               <input type="text" name="name_en" required value="<?php echo esc_attr( $a->name_en ?? '' ); ?>" style="<?php echo $this->input_style(); ?> width:100%;" />
             </div>
+          </div>
+          <div class="amir-addon-image-field" style="margin-bottom:14px;">
+            <label class="ab-label"><?php echo esc_html( $this->tt( 'Foto (opcional)', 'Photo (optional)' ) ); ?></label>
+            <input type="hidden" name="image_id" class="amir-addon-image-id" value="<?php echo (int) ( $a->image_id ?? 0 ) ?: ''; ?>" />
+            <div class="amir-addon-image-preview" style="margin-bottom:6px;<?php echo ( $a->image_id ?? 0 ) ? '' : 'display:none;'; ?>">
+              <?php $img_url = ( $a->image_id ?? 0 ) ? wp_get_attachment_image_url( (int) $a->image_id, 'thumbnail' ) : ''; ?>
+              <img src="<?php echo esc_url( $img_url ); ?>" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e1f5ee;" />
+            </div>
+            <button type="button" class="button amir-addon-image-select-btn"><?php echo esc_html( $this->tt( 'Elegir foto de la Media Library', 'Choose photo from the Media Library' ) ); ?></button>
+            <button type="button" class="button amir-addon-image-remove-btn" style="<?php echo ( $a->image_id ?? 0 ) ? '' : 'display:none;'; ?>"><?php echo esc_html( $this->tt( 'Quitar', 'Remove' ) ); ?></button>
+            <p style="font-size:11px;color:#8a9a93;margin:4px 0 0;"><?php echo esc_html( $this->tt(
+              'Se muestra en la tarjeta de producto de [flow_product] y en el paso de extras del flujo de reserva. Sin foto, se muestra un ícono genérico.',
+              "Shown on the [flow_product] product card and in the booking flow's extras step. Without a photo, a generic icon is shown instead."
+            ) ); ?></p>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
             <div>
@@ -250,8 +299,9 @@ class GlobalAddonsPage {
                 // extra físico quede con un archivo "fantasma" adjunto de
                 // cuando alguien lo probó como digital y cambió de idea.
                 'digital_file_url' => $digital_path,
+                'image_id'         => (int) ( $_POST['image_id'] ?? 0 ) ?: null,
             ];
-            $formats = [ '%s', '%s', '%s', '%s', '%f', '%s' ];
+            $formats = [ '%s', '%s', '%s', '%s', '%f', '%s', '%d' ];
 
             if ( $action === 'create_addon' ) {
                 // Bug real corregido 2026-08-04: el %format% tiene que

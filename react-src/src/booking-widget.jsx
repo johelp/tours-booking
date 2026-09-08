@@ -38,10 +38,12 @@ document.addEventListener( 'DOMContentLoaded', () => {
   });
 
   // Venta suelta de un producto digital — [flow_product] (CONTRIBUTING.md § 16.9x)
+  // addon_id="0" (sin atributo en el shortcode) monta igual, en modo
+  // catálogo — ver ProductOrder.jsx. Antes esto directamente no montaba
+  // nada, así que [flow_product] sin addon_id quedaba vacío en la página.
   document.querySelectorAll( '[data-flow-product]' ).forEach( el => {
     const lang    = el.dataset.lang ?? 'es';
-    const addonId = parseInt( el.dataset.addonId, 10 );
-    if ( ! addonId ) return;
+    const addonId = parseInt( el.dataset.addonId, 10 ) || 0;
     createRoot( el ).render(
       <ProductOrder lang={lang} addonId={addonId} />
     );

@@ -834,7 +834,8 @@ function CartDrawerBody( { t, lang, currency, cart, removeFromCart, cartTotal, h
 						const qty = current?.qty ?? 0;
 						return (
 							<div key={ a.id } className={ `ab-people-row${ qty > 0 ? ' selected' : '' }` }>
-								<div className="ab-people-info"><div className="ab-people-label">{ a.pricing_type === 'digital' ? '📄 ' : '🎁 ' }{ a.name }</div></div>
+								{ a.image_url && <img className="ab-people-thumb" src={ a.image_url } alt="" loading="lazy" /> }
+								<div className="ab-people-info"><div className="ab-people-label">{ a.image_url ? '' : ( a.pricing_type === 'digital' ? '📄 ' : '🎁 ' ) }{ a.name }</div></div>
 								<div className="ab-people-price">${ a.price_mxn?.toLocaleString( 'es-MX' ) } { currency }</div>
 								{ a.pricing_type === 'per_unit' ? (
 									<input type="number" min="0" value={ qty } style={ { width: 60 } }
@@ -931,7 +932,8 @@ function SuggestExtrasStep( { t, currency, globalAddons, cart, setGlobalAddonQty
 					const qty = current?.qty ?? 0;
 					return (
 						<div key={ a.id } className={ `ab-people-row${ qty > 0 ? ' selected' : '' }` }>
-							<div className="ab-people-info"><div className="ab-people-label">{ a.pricing_type === 'digital' ? '📄 ' : '🎁 ' }{ a.name }</div></div>
+							{ a.image_url && <img className="ab-people-thumb" src={ a.image_url } alt="" loading="lazy" /> }
+							<div className="ab-people-info"><div className="ab-people-label">{ a.image_url ? '' : ( a.pricing_type === 'digital' ? '📄 ' : '🎁 ' ) }{ a.name }</div></div>
 							<div className="ab-people-price">${ a.price_mxn?.toLocaleString( 'es-MX' ) } { currency }</div>
 							{ a.pricing_type === 'per_unit' ? (
 								<input type="number" min="0" value={ qty } style={ { width: 60 } }

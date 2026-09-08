@@ -662,8 +662,20 @@ class BookingsPage {
               <?php endif; ?>
               <?php endif; ?>
 
-              <!-- Voucher — solo tours: VoucherGenerator también hace INNER JOIN con amir_tours, sin equivalente para habitaciones todavía -->
-              <?php if ( $b->item_type !== 'room' && ( $b->status === 'confirmed' || $b->status === 'completed' ) ) : ?>
+              <!-- Voucher — bug real reportado en vivo (2026-08-25): una
+                   reserva de carrito (cart_group_id) mostraba acá el
+                   voucher INDIVIDUAL (VoucherGenerator, solo tours) en vez
+                   del voucher GENERAL que el cliente realmente recibió por
+                   email (CartVoucherGenerator) — dos documentos distintos.
+                   Con cart_group_id, siempre el general; sin él (solo
+                   tours reservados por el widget clásico, sin carrito), el
+                   individual de siempre. -->
+              <?php if ( $b->cart_group_id && ( $b->status === 'confirmed' || $b->status === 'completed' ) ) : ?>
+              <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=cart_pdf&cart_group_id='.urlencode($b->cart_group_id)); ?>"
+                 class="button" style="width:100%;text-align:center;display:block;margin-bottom:10px;box-sizing:border-box;" target="_blank">
+                📄 <?php echo esc_html( $this->tt( 'Ver voucher PDF (el mismo que recibió el cliente)', 'View PDF voucher (same one the customer received)' ) ); ?>
+              </a>
+              <?php elseif ( $b->item_type === 'tour' && ( $b->status === 'confirmed' || $b->status === 'completed' ) ) : ?>
               <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=pdf&id='.$booking_id); ?>"
                  class="button" style="width:100%;text-align:center;display:block;margin-bottom:10px;box-sizing:border-box;" target="_blank">
                 📄 <?php echo esc_html( $this->tt( 'Ver voucher PDF', 'View PDF voucher' ) ); ?>

@@ -299,6 +299,7 @@ class Installer {
             content_i18n  LONGTEXT,
             price_mxn     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             digital_file_url VARCHAR(500) DEFAULT NULL,
+            image_id      INT UNSIGNED DEFAULT NULL,
             active        TINYINT(1) NOT NULL DEFAULT 1,
             sort_order    TINYINT UNSIGNED NOT NULL DEFAULT 0,
             PRIMARY KEY (id),
@@ -1487,6 +1488,17 @@ class Installer {
         $item_type_col = $wpdb->get_row( "SHOW COLUMNS FROM {$wpdb->prefix}amir_bookings LIKE 'item_type'" );
         if ( $item_type_col && strpos( $item_type_col->Type, "'product'" ) === false ) {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN item_type ENUM('tour','room','product') NOT NULL DEFAULT 'tour'" );
+        }
+
+        // 1.38.0 (v5.10.2, pedido del cliente 2026-08-26) — foto opcional
+        // por extra global (amir_addons) — pensada sobre todo para
+        // [flow_product], donde una página de venta sin ninguna foto del
+        // producto vende peor. Se guarda el attachment ID (mismo criterio
+        // que el resto del plugin, ej. itinerary_stops) y se resuelve la
+        // URL recién al leer (GlobalAddonsPage::render()/DiscoveryController).
+        $addon_cols_v3 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_addons" );
+        if ( ! in_array( 'image_id', $addon_cols_v3, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN image_id INT UNSIGNED DEFAULT NULL AFTER digital_file_url" );
         }
 
         self::create_tables();

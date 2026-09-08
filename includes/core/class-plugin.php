@@ -71,6 +71,10 @@ final class Plugin {
             ( new \AmirBooking\Api\BookingController() )->register_routes();
             ( new \AmirBooking\Api\PricesController() )->register_routes();
             ( new \AmirBooking\Api\NotificationsController() )->register_routes();
+            // Formularios de Contacto/Grupos del frontend headless (pedido
+            // 2026-09-08) — reusa el SMTP ya configurado de este WordPress
+            // vía wp_mail(), universal a las 3 ediciones.
+            ( new \AmirBooking\Api\ContactController() )->register_routes();
 
             // Pro y superior (Pro Max hereda todo lo de Pro, decisión del
             // cliente 2026-08-03 — nunca === 'pro' estricto): lista de

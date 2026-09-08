@@ -129,7 +129,7 @@ class DiscoveryController {
 
 		global $wpdb;
 		$rows = $wpdb->get_results(
-			"SELECT id, pricing_type, name_es, name_en, content_i18n, price_mxn
+			"SELECT id, pricing_type, name_es, name_en, content_i18n, price_mxn, image_id
 			 FROM {$wpdb->prefix}amir_addons
 			 WHERE applies_to = 'global' AND active = 1
 			 ORDER BY sort_order ASC, id ASC"
@@ -140,6 +140,10 @@ class DiscoveryController {
 			'name'         => \AmirBooking\Core\Languages::tour_field( $a, 'name', $lang ),
 			'price_mxn'    => (float) $a->price_mxn,
 			'pricing_type' => $a->pricing_type,
+			// Foto opcional (pedido del cliente 2026-08-26) — pensada sobre
+			// todo para [flow_product], una página de venta sin foto del
+			// producto vende peor. 'medium' alcanza para tarjeta/miniatura.
+			'image_url'    => $a->image_id ? ( wp_get_attachment_image_url( (int) $a->image_id, 'medium' ) ?: null ) : null,
 		], $rows );
 
 		return new \WP_REST_Response( $results, 200 );
