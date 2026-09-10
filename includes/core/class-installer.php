@@ -539,6 +539,29 @@ class Installer {
             KEY status (status)
         ) $charset;" );
 
+        // ── amir_partner_payouts ──────────────────────────────────────────
+        // Ledger de comisiones a partners/RRPP — mismo patrón exacto que
+        // amir_provider_payouts de arriba, hueco real encontrado analizando
+        // split payments de MercadoPago (PROMPT-MERCADOPAGO-SPLIT.md § 6):
+        // amir_partners ya calcula la comisión (PartnerTracker::calculate_commission())
+        // pero hasta acá no quedaba registrada en ningún lado — se liquidaba
+        // 100% fuera del sistema, sin ningún rastro de qué se le debe a cada
+        // partner. Puramente contable en esta fase, sin integración de pago.
+        dbDelta( "CREATE TABLE {$wpdb->prefix}amir_partner_payouts (
+            id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            partner_id   INT UNSIGNED NOT NULL,
+            booking_id   INT UNSIGNED DEFAULT NULL,
+            amount_mxn   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            status       ENUM('pending','paid') NOT NULL DEFAULT 'pending',
+            note         TEXT,
+            created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            paid_at      DATETIME DEFAULT NULL,
+            PRIMARY KEY (id),
+            KEY partner_id (partner_id),
+            KEY booking_id (booking_id),
+            KEY status (status)
+        ) $charset;" );
+
         // ── amir_notifications ────────────────────────────────────────────
         dbDelta( "CREATE TABLE {$wpdb->prefix}amir_notifications (
             id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1501,6 +1524,12 @@ class Installer {
         if ( ! in_array( 'image_id', $addon_cols_v3, true ) ) {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN image_id INT UNSIGNED DEFAULT NULL AFTER digital_file_url" );
         }
+
+        // 1.39.0 (v5.10.6, análisis de split payments de MercadoPago,
+        // PROMPT-MERCADOPAGO-SPLIT.md § 6) — tabla nueva amir_partner_payouts,
+        // dbDelta la crea sola vía create_tables() más abajo, no hace falta
+        // ALTER TABLE acá (solo aplica a columnas nuevas en tablas ya
+        // existentes).
 
         self::create_tables();
         self::create_verify_page();

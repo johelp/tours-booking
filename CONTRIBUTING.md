@@ -2107,6 +2107,63 @@ Dos rondas seguidas a partir de un driver de negocio nuevo, no documentado hasta
 
 `AMIR_VERSION` → `5.10.5`, sin cambios de esquema (`amir_public_site_url` es una opción nueva en `wp_options`, sumada a la lista de exportación de `Installer`, no una columna). **Sin probar en vivo todavía** — el frontend headless de Caliafarm sigue en construcción del lado del cliente/su desarrolladora.
 
+### 16.100 v5.10.6 — ledger de comisiones de partners (`amir_partner_payouts`), fase 1 del análisis de split payments de MercadoPago
+
+Pedido del cliente (2026-09-09): evaluar split payments de MercadoPago
+(https://www.mercadopago.com.ar/developers/es/docs/split-payments/split-1-1/overview)
+para automatizar comisiones de proveedores externos y de partners/RRPP en
+Argentina/LatAm. Investigación completa (requisitos reales de MP verificados
+contra su documentación pública, encaje con `amir_providers`/`amir_partners`,
+plan de fases) documentada en [`PROMPT-MERCADOPAGO-SPLIT.md`](PROMPT-MERCADOPAGO-SPLIT.md)
+— **el split de MP en sí (fase 2) sigue sin construirse**, depende de una
+aprobación externa de MercadoPago como marketplace que no está confirmada.
+El cliente aclaró explícitamente (2026-09-10) que el split es **una opción
+de liquidación por proveedor, no un reemplazo obligatorio** — un proveedor
+sin cuenta de MP conectada sigue el flujo manual de siempre.
+
+**Lo que sí se construyó esta ronda (fase 1, cero riesgo, sin tocar el
+circuito de pago)**: el análisis encontró que `amir_partners` ya calcula la
+comisión de cada partner (`PartnerTracker::calculate_commission()`,
+`commission_type`/`commission_value`) pero **nunca quedaba registrada en
+ningún lado** — a diferencia del marketplace de proveedores
+(`amir_provider_payouts`, § 11), no existía ningún ledger de partners, ni
+siquiera manual. Se liquidaba 100% fuera del sistema, sin ningún rastro de
+qué se le debe a cada uno.
+
+- **Schema**: `amir_partner_payouts` (`AMIR_DB_VERSION` → `1.39.0`) — copia
+  exacta de `amir_provider_payouts` (`partner_id`, `booking_id`,
+  `amount_mxn`, `status` `pending`/`paid`, `note`, `paid_at`). Tabla
+  completamente nueva, `dbDelta` la crea sola vía `create_tables()` (no
+  hace falta `ALTER TABLE` en `maybe_update()`, ese mecanismo es solo para
+  columnas nuevas en tablas ya existentes).
+- **Generación automática de la fila**: nuevo listener de
+  `amir_booking_confirmed` en `class-plugin.php`, mismo patrón exacto que
+  el listener de `amir_provider_booking_approved` ya existente — si la
+  reserva confirmada tiene `partner_id`, calcula la comisión reusando
+  `PartnerTracker::calculate_commission()` tal cual (cero lógica de cálculo
+  duplicada) e inserta la fila `pending`. Con guard defensivo contra
+  duplicados (`amir_booking_confirmed` no tiene la misma garantía atómica
+  que el hook de proveedores, que depende de un `UPDATE` condicionado a un
+  status previo específico) — chequea que no exista ya una fila para ese
+  `booking_id` antes de insertar. **Alcance de esta ronda: solo tours** —
+  `amir_partners`/`get_partner_urls()` solo arma links de tour hoy, así que
+  no hace falta enganchar `flow_room_booking_confirmed`/
+  `flow_product_order_confirmed` todavía.
+- **Pantalla admin nueva**: `class-partner-payouts-page.php`
+  (`PartnerPayoutsPage`), copia adaptada de `ProviderPayoutsPage` — listado
+  filtrable por partner/estado, total pendiente, botón "Marcar pagado".
+  Universal a las 3 ediciones (mismo gate `$partners_on` que la pantalla de
+  Partners existente, que tampoco es exclusiva de Pro/Pro Max — ver el
+  ítem pendiente de matriz de features por edición en `CLAUDE.md`).
+  Registrada en `class-admin-menu.php` junto a **TourFlow → 🔗 Partners**
+  como **💸 Liquidación de partners**.
+
+`AMIR_VERSION` → `5.10.6`. `php -l` limpio en los 4 archivos tocados/nuevos,
+105 tests en verde (sin tests nuevos — la lógica reusa `PartnerTracker`
+tal cual, ya cubierto). **Sin probar en vivo todavía** — no pasó por un
+WordPress real. Fases 2 (split de MP) y 3 (payout automático de partners)
+quedan documentadas en `PROMPT-MERCADOPAGO-SPLIT.md`, sin construir.
+
 ## 17. Independencia total de WordPress — análisis pedido por el cliente (2026-07-31), solo para documentar, no construir
 
 El cliente pidió evaluar qué haría falta para **eliminar la dependencia de WordPress por completo** (no solo el frontend público, que ya tiene su propio spec en [SPEC-HEADLESS.md](SPEC-HEADLESS.md) — acá el alcance es el producto entero, incluido el panel de operación). **Pedido explícito: solo análisis, nada para construir todavía.**

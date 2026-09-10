@@ -311,6 +311,7 @@ class AdminMenu {
         }
         if ( $partners_on ) {
             $submenus[] = [ 'amir-partners', __( '🔗 Partners', 'amir-booking' ), [ $this, 'page_partners' ] ];
+            $submenus[] = [ 'amir-partner-payouts', __( '💸 Liquidación de partners', 'amir-booking' ), [ $this, 'page_partner_payouts' ] ];
         }
         if ( $marketplace_on ) {
             $submenus[] = [ 'amir-providers',         __( '🤝 Proveedores', 'amir-booking' ), [ $this, 'page_providers'        ] ];
@@ -369,6 +370,9 @@ class AdminMenu {
     }
     public function page_partners(): void {
         ( new \AmirBooking\Admin\PartnersPage() )->render();
+    }
+    public function page_partner_payouts(): void {
+        ( new \AmirBooking\Admin\PartnerPayoutsPage() )->render();
     }
     public function page_wishlist(): void {
         ( new \AmirBooking\Admin\WishlistPage() )->render();

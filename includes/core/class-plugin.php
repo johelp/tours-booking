@@ -298,6 +298,62 @@ final class Plugin {
             );
         }, 10, 1 );
 
+        // ── Partners/RRPP: ledger de comisión ──────────────────────────────
+        // Hueco real encontrado analizando split payments de MercadoPago
+        // (PROMPT-MERCADOPAGO-SPLIT.md § 6, 2026-09-10) — amir_partners ya
+        // calcula la comisión (PartnerTracker::calculate_commission(), en
+        // uso hoy solo para mostrarla en pantalla) pero hasta acá no quedaba
+        // registrada en ningún lado al confirmarse una venta: se liquidaba
+        // 100% fuera de sistema. Mismo patrón que el listener de proveedores
+        // de arriba, pero enganchado a amir_booking_confirmed (una reserva
+        // de partner no pasa por aprobación de proveedor, así que no hay un
+        // hook de "aprobada" propio — se liquida apenas se confirma el pago).
+        // Solo tours por ahora (amir_partners/get_partner_urls() solo arma
+        // links de tour hoy) — si se suma tracking de partner a habitaciones
+        // o productos sueltos, sumar flow_room_booking_confirmed/
+        // flow_product_order_confirmed acá también.
+        add_action( 'amir_booking_confirmed', function ( int $booking_id ) {
+            global $wpdb;
+            $booking = $wpdb->get_row( $wpdb->prepare(
+                "SELECT partner_id, total_mxn FROM {$wpdb->prefix}amir_bookings WHERE id = %d", $booking_id
+            ) );
+            if ( ! $booking || ! $booking->partner_id ) {
+                return;
+            }
+
+            // Defensivo: amir_booking_confirmed no tiene la misma garantía
+            // atómica que amir_provider_booking_approved (UPDATE condicionado
+            // a un status previo específico) — evita una fila duplicada si
+            // el hook llegara a dispararse dos veces para la misma reserva.
+            $already = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}amir_partner_payouts WHERE booking_id = %d", $booking_id
+            ) );
+            if ( $already ) {
+                return;
+            }
+
+            $commission = \AmirBooking\Partners\PartnerTracker::calculate_commission(
+                (int) $booking->partner_id,
+                (float) $booking->total_mxn
+            );
+
+            if ( $commission <= 0 ) {
+                return;
+            }
+
+            $wpdb->insert(
+                "{$wpdb->prefix}amir_partner_payouts",
+                [
+                    'partner_id' => (int) $booking->partner_id,
+                    'booking_id' => $booking_id,
+                    'amount_mxn' => $commission,
+                    'status'     => 'pending',
+                    'created_at' => current_time( 'mysql' ),
+                ],
+                [ '%d', '%d', '%f', '%s', '%s' ]
+            );
+        }, 10, 1 );
+
         // ── Actualización de DB cuando la versión del esquema cambia ──────
         if ( get_option( 'amir_db_version', '0' ) !== AMIR_DB_VERSION ) {
             Installer::maybe_update();
