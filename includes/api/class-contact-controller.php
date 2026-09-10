@@ -41,6 +41,29 @@ class ContactController {
 		return [ 'Reply-To: ' . $name . ' <' . $email . '>' ];
 	}
 
+	/**
+	 * Deja un registro en amir_notifications (mismo feed/badge que ya usa
+	 * el Dashboard) para cada consulta válida — pedido del cliente
+	 * 2026-09-09: si el mail rebota o se pierde, hoy no queda ningún
+	 * rastro en el admin. Se inserta SIEMPRE que el envío se intentó
+	 * (haya salido bien o no wp_mail()), independiente de lo que se le
+	 * responde al cliente — ver contact()/groups_inquiry() más abajo.
+	 */
+	private function log_inquiry( string $type, string $title, string $message, array $data ): void {
+		global $wpdb;
+		$wpdb->insert(
+			"{$wpdb->prefix}amir_notifications",
+			[
+				'type'    => $type,
+				'title'   => $title,
+				'message' => $message,
+				'data'    => wp_json_encode( $data ),
+				'is_read' => 0,
+			],
+			[ '%s', '%s', '%s', '%s', '%d' ]
+		);
+	}
+
 	public function contact( \WP_REST_Request $request ): \WP_REST_Response {
 		if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'contact_' . \AmirBooking\Core\RateLimiter::client_ip(), 10, 600 ) ) {
 			return new \WP_REST_Response( [ 'error' => 'Too many attempts. Please try again in a few minutes.' ], 429 );
@@ -67,6 +90,14 @@ class ContactController {
 		);
 
 		$sent = wp_mail( $to, $subject, $body, $this->reply_to( $name, $email ) );
+
+		$this->log_inquiry(
+			'contact_inquiry',
+			'New contact message',
+			sprintf( '%s (%s): %s', $name, $email, mb_substr( $message, 0, 140 ) ),
+			[ 'name' => $name, 'email' => $email, 'phone' => $phone, 'message' => $message, 'email_sent' => $sent ]
+		);
+
 		if ( ! $sent ) {
 			error_log( 'Caliafarm contact form: wp_mail() failed to send to ' . $to );
 			return new \WP_REST_Response( [ 'error' => 'send_failed' ], 502 );
@@ -104,6 +135,23 @@ class ContactController {
 		);
 
 		$sent = wp_mail( $to, $subject, $body, $this->reply_to( $name, $email ) );
+
+		$this->log_inquiry(
+			'groups_inquiry',
+			'New private group inquiry',
+			sprintf( '%s — %s people, preferred %s', $name, $group_size, $preferred_date ),
+			[
+				'name'             => $name,
+				'email'            => $email,
+				'phone'            => $phone,
+				'group_size'       => $group_size,
+				'preferred_date'   => $preferred_date,
+				'alternative_date' => $alternative_date,
+				'notes'            => $notes,
+				'email_sent'       => $sent,
+			]
+		);
+
 		if ( ! $sent ) {
 			error_log( 'Caliafarm groups inquiry: wp_mail() failed to send to ' . $to );
 			return new \WP_REST_Response( [ 'error' => 'send_failed' ], 502 );

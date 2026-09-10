@@ -627,7 +627,7 @@ abstract class BaseEmail {
     protected function verify_url(): string {
         $page_id = (int) get_option( 'amir_verify_page_id', 0 );
         $base    = $page_id ? get_permalink( $page_id ) : false;
-        $base    = $base ?: ( get_site_url() . '/verificar-reserva/' );
+        $base    = $base ?: ( \AmirBooking\Core\FrontendUrl::base() . '/verificar-reserva/' );
 
         return add_query_arg(
             [ 'ref' => $this->booking->booking_ref, 'token' => $this->booking->access_token ?? '' ],
@@ -1371,7 +1371,7 @@ class ProviderNoticeEmail extends BaseEmail {
     private function provider_action_url( string $do ): string {
         $page_id = (int) get_option( 'amir_provider_page_id', 0 );
         $base    = $page_id ? get_permalink( $page_id ) : false;
-        $base    = $base ?: ( get_site_url() . '/proveedor-reserva/' );
+        $base    = $base ?: ( \AmirBooking\Core\FrontendUrl::base() . '/proveedor-reserva/' );
 
         return add_query_arg(
             [
@@ -1533,7 +1533,7 @@ class DateRequestRejectedEmail extends BaseEmail {
         }
 
         $footer = '<p style="text-align:center;font-size:13px;margin-top:12px;">'
-            . '<a href="' . esc_url( get_site_url() . ( $this->lang === \AmirBooking\Core\Languages::default_lang() ? '/tours/' : "/{$this->lang}/" ) ) . '" style="color:#5a7068;">' . esc_html( $this->lang === 'es' ? 'Ver otros tours' : 'Browse other tours' ) . '</a>'
+            . '<a href="' . esc_url( \AmirBooking\Core\FrontendUrl::base() . ( $this->lang === \AmirBooking\Core\Languages::default_lang() ? '/tours/' : "/{$this->lang}/" ) ) . '" style="color:#5a7068;">' . esc_html( $this->lang === 'es' ? 'Ver otros tours' : 'Browse other tours' ) . '</a>'
             . '</p>';
 
         return $intro . $ref_box . $custom_note . $footer;

@@ -844,6 +844,7 @@ class Installer {
             'amir_mp_access_token_test', 'amir_mp_access_token_live', 'amir_mp_webhook_secret',
             'amir_review_delay_days', 'amir_admin_email',
             'amir_delete_data_on_uninstall', 'amir_verify_page_id', 'amir_provider_page_id',
+            'amir_public_site_url',
             'amir_provider_reminder_hours', 'amir_provider_response_hours',
             'amir_brand_logo_id', 'amir_brand_logo_url', 'amir_brand_color',
             'amir_company_name', 'amir_company_tagline_es', 'amir_company_tagline_en',

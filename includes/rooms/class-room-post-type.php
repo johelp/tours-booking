@@ -439,10 +439,12 @@ class RoomPostType {
 		$db_id = (int) get_post_meta( $post_id, '_flow_room_db_id', true );
 
 		$gallery_ids  = json_decode( get_post_meta( $post_id, '_flow_gallery_ids', true ) ?: '[]', true );
-		$gallery_urls = array_filter( array_map( fn( $id ) => wp_get_attachment_url( $id ), $gallery_ids ) );
+		// 'large' (tope ~1024px por default de WP) en vez del original subido —
+		// mismo fix aplicado en class-tour-post-type.php, ver comentario ahí.
+		$gallery_urls = array_filter( array_map( fn( $id ) => wp_get_attachment_image_url( $id, 'large' ) ?: wp_get_attachment_url( $id ), $gallery_ids ) );
 
 		$thumb_id  = get_post_thumbnail_id( $post_id );
-		$thumb_url = $thumb_id ? wp_get_attachment_url( $thumb_id ) : '';
+		$thumb_url = $thumb_id ? ( wp_get_attachment_image_url( $thumb_id, 'large' ) ?: wp_get_attachment_url( $thumb_id ) ) : '';
 		if ( $thumb_url ) {
 			array_unshift( $gallery_urls, $thumb_url );
 		}

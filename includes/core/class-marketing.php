@@ -25,11 +25,23 @@ class Marketing {
         add_action( 'wp_footer', [ __CLASS__, 'print_consent_banner' ] );
     }
 
-    /** Expone los IDs que el frontend necesita para el evento de conversión de Google Ads (send_to). */
+    /**
+     * Expone los IDs que un frontend cliente-side necesita para cargar sus
+     * propios pixeles/tags. Hasta acá solo traía los dos campos que el
+     * widget embebido en WordPress usaba para el evento de conversión de
+     * Google Ads (send_to) — metaPixelId/ga4Id nunca se expusieron porque
+     * print_base_scripts() (wp_head, más abajo) los inyecta server-side
+     * directo en la página de WordPress, un camino que no existe para un
+     * frontend headless en otro dominio (caliafarm-web, 2026-09-09). Mismo
+     * criterio que stripePk: son valores pensados para vivir en un <script>
+     * público de cualquier sitio que use estos pixeles, no son secretos.
+     */
     public static function widget_config(): array {
         return [
             'gadsConversionId'    => get_option( 'amir_gads_conversion_id', '' ),
             'gadsConversionLabel' => get_option( 'amir_gads_conversion_label', '' ),
+            'metaPixelId'         => get_option( 'amir_meta_pixel_id', '' ),
+            'ga4Id'               => get_option( 'amir_ga4_id', '' ),
         ];
     }
 

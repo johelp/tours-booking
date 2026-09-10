@@ -321,7 +321,7 @@ class VoucherGenerator {
             : 'https://maps.google.com/?q=' . rawurlencode( get_option( 'amir_company_name', 'TourFlow' ) );
 
         $wa    = get_option('amir_wa_phone','');
-        $site  = get_site_url();
+        $site  = FrontendUrl::base();
 
         ob_start();
         ?>
@@ -538,7 +538,7 @@ class VoucherGenerator {
                 return $url;
             }
         }
-        return get_site_url() . '/verificar-reserva/';
+        return FrontendUrl::base() . '/verificar-reserva/';
     }
 
     /**
@@ -669,7 +669,7 @@ class VoucherGenerator {
             : 'https://maps.google.com/?q=' . rawurlencode( get_option( 'amir_company_name', 'TourFlow' ) );
 
         $wa   = get_option( 'amir_wa_phone', '' );
-        $site = get_site_url();
+        $site = FrontendUrl::base();
 
         $logo_url_opt = get_option( 'amir_brand_logo_url', '' );
         if ( $logo_url_opt ) {

@@ -272,7 +272,7 @@ final class CartVoucherGenerator extends \AmirBooking\Core\VoucherGenerator {
 		// ningún dato de la empresa ni forma de contactar — pedido explícito
 		// del cliente, "confuso, desalineado y carece de imagen de marca").
 		$wa   = get_option( 'amir_wa_phone', '' );
-		$site = get_site_url();
+		$site = \AmirBooking\Core\FrontendUrl::base();
 		$html .= '<table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid ' . $green . ';padding-top:8px;margin-top:4px;">'
 			. '<tr>'
 			. '<td valign="middle"><b style="font-size:9pt;">' . esc_html( $company ) . '</b><br/>'

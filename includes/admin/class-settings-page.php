@@ -401,32 +401,45 @@ class SettingsPage {
           </div>
           <?php endif; ?>
 
-          <!-- CORS: frontend headless externo -->
+          <!-- CORS + URL pública: frontend headless externo -->
           <div class="ab-settings-section">
-            <h3>🌐 CORS (<?php echo esc_html( $this->tt( 'frontend externo', 'external frontend' ) ); ?>)</h3>
+            <h3>🌐 <?php echo esc_html( $this->tt( 'Frontend externo', 'External frontend' ) ); ?></h3>
             <p class="ab-hint" style="margin:0 0 14px;">
               <?php echo wp_kses_post( $this->tt(
-                'Si un frontend propio (ej. una app React en otro dominio, no WordPress) va a consumir la API pública del plugin para armar su propio flujo de reserva y cobro, su dominio tiene que estar cargado acá — si no, el navegador bloquea las llamadas que crean/cotizan/pagan una reserva. Solo afecta a las rutas <code>/wp-json/amir/v1/*</code>, nunca a <code>wp-admin</code>.',
-                "If your own frontend (e.g. a React app on another domain, not WordPress) is going to consume the plugin's public API to build its own booking/payment flow, its domain needs to be loaded here — otherwise the browser blocks the calls that create/quote/pay a booking. Only affects the <code>/wp-json/amir/v1/*</code> routes, never <code>wp-admin</code>."
+                'Si un frontend propio (ej. una app React en otro dominio, no WordPress) va a consumir la API pública del plugin para armar su propio flujo de reserva y cobro, cargá su dominio en los dos campos de abajo.',
+                "If your own frontend (e.g. a React app on another domain, not WordPress) is going to consume the plugin's public API to build its own booking/payment flow, load its domain into the two fields below."
               ) ); ?>
             </p>
+            <div class="ab-field">
+              <label><?php echo esc_html( $this->tt( 'URL pública del sitio', 'Public site URL' ) ); ?></label>
+              <input type="text" name="amir_public_site_url" value="<?php echo esc_attr( get_option( 'amir_public_site_url', '' ) ); ?>"
+                     placeholder="https://caliafarm.com" />
+              <p class="ab-hint"><?php echo wp_kses_post( $this->tt(
+                'A dónde deben apuntar los links que reciben tus clientes por email o en el voucher PDF (verificar una reserva, pagar el saldo, "ver otros tours") — el dominio de tu frontend, NO el de este WordPress. Si lo dejás vacío, esos links van al dominio de este mismo WordPress, que en una instalación headless casi seguro no es donde tus clientes deben aterrizar.',
+                'Where the links your customers get by email or in the PDF voucher should point (verify a booking, pay the balance, "browse other tours") — your frontend\'s domain, NOT this WordPress\'s. Left empty, those links go to this same WordPress\'s domain, which in a headless setup is almost certainly not where your customers should land.'
+              ) ); ?></p>
+            </div>
             <div class="ab-field">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-weight:400;">
                 <input type="checkbox" name="amir_cors_enabled" value="1"
                        <?php checked( get_option( 'amir_cors_enabled', '1' ), '1' ); ?>
                        style="accent-color:#1D9E75;width:auto;" />
-                <?php echo esc_html( $this->tt( 'Habilitar CORS para los dominios de abajo', 'Enable CORS for the domains below' ) ); ?>
+                <?php echo esc_html( $this->tt( 'Habilitar CORS (restringir la API a los dominios de abajo)', 'Enable CORS (restrict the API to the domains below)' ) ); ?>
               </label>
+              <p class="ab-hint"><?php echo wp_kses_post( $this->tt(
+                'Con esto activado, solo los dominios cargados abajo pueden llamar a la API pública (<code>/wp-json/amir/v1/*</code>) desde el navegador del cliente — cualquier otro origen queda bloqueado. Nunca afecta a <code>wp-admin</code>.',
+                'With this on, only the domains listed below can call the public API (<code>/wp-json/amir/v1/*</code>) from the customer\'s browser — every other origin is blocked. Never affects <code>wp-admin</code>.'
+              ) ); ?></p>
             </div>
             <div class="ab-field">
               <label><?php echo esc_html( $this->tt( 'Dominios permitidos (uno por línea)', 'Allowed domains (one per line)' ) ); ?></label>
               <textarea name="amir_cors_allowed_origins" rows="3"
-                        placeholder="https://mi-app.vercel.app"><?php
+                        placeholder="https://caliafarm.com"><?php
                 echo esc_textarea( implode( "\n", \AmirBooking\Core\Cors::allowed_origins() ) );
               ?></textarea>
               <p class="ab-hint"><?php echo wp_kses_post( $this->tt(
-                'Dominio exacto, con <code>https://</code> y sin barra final ni ruta — un subdominio distinto (ej. <code>staging.</code> vs <code>www.</code>) cuenta como otro origen y necesita su propia línea.',
-                'Exact domain, with <code>https://</code> and no trailing slash or path — a different subdomain (e.g. <code>staging.</code> vs <code>www.</code>) counts as another origin and needs its own line.'
+                'Dominio exacto, con <code>https://</code> y sin barra final ni ruta — un subdominio distinto (ej. <code>staging.</code> vs <code>www.</code>) cuenta como otro origen y necesita su propia línea. Normalmente es el mismo dominio que cargaste arriba como "URL pública del sitio".',
+                'Exact domain, with <code>https://</code> and no trailing slash or path — a different subdomain (e.g. <code>staging.</code> vs <code>www.</code>) counts as another origin and needs its own line. Usually the same domain you loaded above as "Public site URL".'
               ) ); ?></p>
             </div>
           </div>
@@ -767,6 +780,13 @@ class SettingsPage {
         // Módulos — checkbox ausente en $_POST cuando está destildado
         foreach ( [ 'amir_module_marketplace', 'amir_module_wishlist', 'amir_module_partners' ] as $module_opt ) {
             update_option( $module_opt, isset( $_POST[ $module_opt ] ) ? '1' : '0' );
+        }
+
+        // URL pública del frontend — usada en links de emails/vouchers en vez de get_site_url().
+        if ( isset( $_POST['amir_public_site_url'] ) ) {
+            $public_url = trim( (string) $_POST['amir_public_site_url'] );
+            $public_url = $public_url !== '' ? rtrim( esc_url_raw( $public_url ), '/' ) : '';
+            update_option( 'amir_public_site_url', $public_url );
         }
 
         // CORS — checkbox ausente cuando está destildado; orígenes: uno por línea/coma, validados como URL exacta.
