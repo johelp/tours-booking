@@ -67,7 +67,7 @@ class PartnerTracker {
         return strtoupper( bin2hex( random_bytes( 8 ) ) ); // 16 chars hex
     }
 
-    public static function create_partner( array $data ): int|\WP_Error {
+    public static function create_partner( array $data ) {
         global $wpdb;
 
         $token = self::generate_token();
@@ -150,30 +150,40 @@ class PartnerTracker {
             return $qr_url_base . $filename;
         }
 
-        // Intentar con php-qrcode si está disponible
-        $lib_path = AMIR_PLUGIN_DIR . 'vendor/phpqrcode/qrlib.php';
-        if ( file_exists( $lib_path ) ) {
-            require_once $lib_path;
-            \QRcode::png( $partner_url, $filepath, QR_ECLEVEL_M, 6, 2 );
-            if ( file_exists( $filepath ) && filesize( $filepath ) > 100 ) {
-                return $qr_url_base . $filename;
+        // 1. endroid/qr-code (instalado vía Composer — igual que en VoucherGenerator)
+        if ( class_exists( '\Endroid\QrCode\QrCode' ) ) {
+            try {
+                $qr     = \Endroid\QrCode\QrCode::create( $partner_url )
+                    ->setSize( 300 )
+                    ->setMargin( 10 );
+                $writer = new \Endroid\QrCode\Writer\PngWriter();
+                $result = $writer->write( $qr );
+                $result->saveToFile( $filepath );
+                if ( file_exists( $filepath ) && filesize( $filepath ) > 100 ) {
+                    return $qr_url_base . $filename;
+                }
+            } catch ( \Throwable $e ) {
+                error_log( 'Amir partner QR endroid error: ' . $e->getMessage() );
             }
         }
 
-        // Descargar desde Google Charts y guardar localmente
-        $google_url = 'https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl=' . rawurlencode( $partner_url ) . '&choe=UTF-8';
-        $response   = wp_remote_get( $google_url, [ 'timeout' => 15 ] );
+        // 2. api.qrserver.com — gratuito, sin dependencias, sin deprecaciones
+        $api_url  = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data='
+                  . rawurlencode( $partner_url ) . '&format=png&margin=10';
+        $response = wp_remote_get( $api_url, array( 'timeout' => 15 ) );
 
         if ( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === 200 ) {
             $body = wp_remote_retrieve_body( $response );
             if ( strlen( $body ) > 100 ) {
                 file_put_contents( $filepath, $body );
-                return $qr_url_base . $filename;
+                if ( file_exists( $filepath ) && filesize( $filepath ) > 100 ) {
+                    return $qr_url_base . $filename;
+                }
             }
         }
 
-        // Último fallback: URL externa directa (el img se muestra pero download no funcionará)
-        return $google_url;
+        // Sin imagen disponible — devolver cadena vacía para que la UI lo maneje
+        return '';
     }
 
     /**

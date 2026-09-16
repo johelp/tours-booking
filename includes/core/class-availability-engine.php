@@ -17,8 +17,10 @@ defined( 'ABSPATH' ) || exit;
 class AvailabilityEngine {
 
     // Caché en memoria para la misma request (evita queries repetidas)
-    private array $rules_cache   = [];
-    private array $bookings_cache = [];
+    private array $rules_cache      = [];
+    private array $bookings_cache   = [];
+    private array $group_count_cache = [];
+    private array $tour_cache        = [];
 
     // ── API pública ───────────────────────────────────────────────────────
 
@@ -31,10 +33,21 @@ class AvailabilityEngine {
             return AvailabilityResult::unavailable( 'Tour no encontrado', 0 );
         }
 
-        // 1. Evaluar reglas de disponibilidad
-        $rule_result = $this->evaluate_rules( $tour_id, $date );
-        if ( ! $rule_result ) {
-            return AvailabilityResult::unavailable( 'Fecha no disponible', 0 );
+        // Tour de fecha fija (evento único, 2026-08-06): la ÚNICA fecha
+        // válida es tour.fixed_date — nunca confiar solo en que el widget
+        // salteó el calendario, esto es lo que de verdad lo hace cumplir.
+        // Las reglas de amir_availability_rules se ignoran mientras esto
+        // esté cargado (ver meta_box_main(), "las reglas se ignoran").
+        if ( $tour->fixed_date ) {
+            if ( $date !== $tour->fixed_date ) {
+                return AvailabilityResult::unavailable( 'Fecha no disponible', 0 );
+            }
+        } else {
+            // 1. Evaluar reglas de disponibilidad
+            $rule_result = $this->evaluate_rules( $tour_id, $date );
+            if ( ! $rule_result ) {
+                return AvailabilityResult::unavailable( 'Fecha no disponible', 0 );
+            }
         }
 
         // 2. No reservar en el pasado
@@ -85,6 +98,19 @@ class AvailabilityEngine {
 
         $days_in_month = (int) date( 't', mktime( 0, 0, 0, $month, 1, $year ) );
 
+        // Precarga en 1 sola query agregada los cupos ocupados de todo el mes
+        // (en vez de 1 query por día×horario dentro del loop de abajo — hasta
+        // ~90 queries por vista de mes antes de este cambio). Ver
+        // CONTRIBUTING.md, auditoría de rendimiento previa a v5.7.14.
+        if ( ! empty( $schedules ) ) {
+            $this->preload_month_bookings(
+                $tour_id,
+                array_map( fn( $s ) => (int) $s->id, $schedules ),
+                sprintf( '%04d-%02d-01', $year, $month ),
+                sprintf( '%04d-%02d-%02d', $year, $month, $days_in_month )
+            );
+        }
+
         for ( $day = 1; $day <= $days_in_month; $day++ ) {
             $date = sprintf( '%04d-%02d-%02d', $year, $month, $day );
 
@@ -94,8 +120,9 @@ class AvailabilityEngine {
                 continue;
             }
 
-            // Evaluar reglas
-            if ( ! $this->evaluate_rules( $tour_id, $date ) ) {
+            // Evaluar reglas (o el único día válido, si el tour es de fecha fija)
+            $rule_ok = $tour->fixed_date ? ( $date === $tour->fixed_date ) : $this->evaluate_rules( $tour_id, $date );
+            if ( ! $rule_ok ) {
                 $result[ $date ] = [ 'available' => false, 'slots' => 0, 'reason' => 'blocked' ];
                 continue;
             }
@@ -147,7 +174,14 @@ class AvailabilityEngine {
      *  2. Primera regla que aplica (fecha dentro del rango Y día de semana coincide) = resultado
      *  3. Si ninguna aplica = comportamiento por defecto (true)
      */
-    private function evaluate_rules( int $tour_id, string $date ): bool {
+    /**
+     * Pública (no solo private) a propósito: AvailabilityPage la reusa tal
+     * cual para la vista previa de calendario (mejora de UX pedida por el
+     * cliente, CONTRIBUTING.md § 16.91) — así el admin ve EXACTAMENTE lo
+     * que este motor real decidiría, sin duplicar la lógica de evaluación
+     * de reglas en la pantalla de admin (riesgo de que ambas diverjan).
+     */
+    public function evaluate_rules( int $tour_id, string $date ): bool {
         $rules   = $this->get_rules( $tour_id );
         $weekday = (int) date( 'w', strtotime( $date ) ); // 0=dom, 6=sáb
 
@@ -221,15 +255,26 @@ class AvailabilityEngine {
     // ── Queries con caché ────────────────────────────────────────────────
 
     private function get_tour( int $tour_id ): ?object {
+        // check() la reconsultaba en cada llamada sin caché — dentro de
+        // get_month_availability() eso son hasta ~60 queries idénticas por
+        // vista de mes (1 por día×horario). El tour no cambia durante la
+        // misma request, así que cachear acá es seguro.
+        if ( array_key_exists( $tour_id, $this->tour_cache ) ) {
+            return $this->tour_cache[ $tour_id ];
+        }
+
         global $wpdb;
-        return $wpdb->get_row(
+        $tour = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, price_model, max_capacity, min_passengers, status
+                "SELECT id, price_model, max_capacity, min_passengers, status, fixed_date
                  FROM {$wpdb->prefix}amir_tours
                  WHERE id = %d AND status = 'active'",
                 $tour_id
             )
         );
+
+        $this->tour_cache[ $tour_id ] = $tour;
+        return $tour;
     }
 
     private function get_rules( int $tour_id ): array {
@@ -293,8 +338,13 @@ class AvailabilityEngine {
     }
 
     private function get_confirmed_bookings_count( int $tour_id, int $schedule_id, string $date ): int {
+        $cache_key = "{$tour_id}_{$schedule_id}_{$date}";
+        if ( isset( $this->group_count_cache[ $cache_key ] ) ) {
+            return $this->group_count_cache[ $cache_key ];
+        }
+
         global $wpdb;
-        return (int) $wpdb->get_var(
+        $result = (int) $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COUNT(*)
                  FROM {$wpdb->prefix}amir_bookings
@@ -307,6 +357,52 @@ class AvailabilityEngine {
                 $date
             )
         );
+
+        $this->group_count_cache[ $cache_key ] = $result;
+        return $result;
+    }
+
+    /**
+     * Precarga bookings_cache/group_count_cache de TODO un mes en 1 sola
+     * query agregada (GROUP BY schedule_id+tour_date), para que
+     * get_booked_pax()/get_confirmed_bookings_count() no repitan una query
+     * por cada día×horario dentro de get_month_availability(). Inicializa
+     * explícitamente cada combinación en 0 primero — la mayoría de los
+     * días de un mes no tienen ninguna reserva, y sin este paso esas
+     * combinaciones nunca entrarían al caché (0 filas en el agregado).
+     */
+    private function preload_month_bookings( int $tour_id, array $schedule_ids, string $date_from, string $date_until ): void {
+        global $wpdb;
+
+        $cursor = strtotime( $date_from );
+        $end    = strtotime( $date_until );
+        while ( $cursor <= $end ) {
+            $date = date( 'Y-m-d', $cursor );
+            foreach ( $schedule_ids as $sid ) {
+                $key = "{$tour_id}_{$sid}_{$date}";
+                $this->bookings_cache[ $key ]    ??= 0;
+                $this->group_count_cache[ $key ] ??= 0;
+            }
+            $cursor = strtotime( '+1 day', $cursor );
+        }
+
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT schedule_id, tour_date,
+                    SUM(adults + children + babies) AS pax,
+                    COUNT(*) AS cnt
+             FROM {$wpdb->prefix}amir_bookings
+             WHERE tour_id  = %d
+               AND tour_date BETWEEN %s AND %s
+               AND status IN ('pending','confirmed')
+             GROUP BY schedule_id, tour_date",
+            $tour_id, $date_from, $date_until
+        ) );
+
+        foreach ( $rows as $row ) {
+            $key = "{$tour_id}_{$row->schedule_id}_{$row->tour_date}";
+            $this->bookings_cache[ $key ]    = (int) $row->pax;
+            $this->group_count_cache[ $key ] = (int) $row->cnt;
+        }
     }
 }
 

@@ -55,20 +55,53 @@ class BookingController {
             'permission_callback' => '__return_true',
         ] );
 
+        // Solicitar una fecha distinta a la fija de un tour (amir_tours.fixed_date)
+        // — ver BookingManager::create_date_request(). Sin gate de edición:
+        // fecha fija es del widget clásico, disponible en cualquier edición.
+        register_rest_route( self::NAMESPACE, '/tours/(?P<id>\d+)/request-date', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [ $this, 'request_date' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'id'             => [ 'required' => true, 'type' => 'integer' ],
+                'customer_name'  => [ 'required' => true, 'type' => 'string'  ],
+                'customer_email' => [ 'required' => true, 'type' => 'string', 'format' => 'email' ],
+                'date'           => [ 'required' => true, 'type' => 'string'  ],
+            ],
+        ] );
+
         register_rest_route( self::NAMESPACE, '/bookings/stripe-webhook', [
             'methods'             => \WP_REST_Server::CREATABLE,
             'callback'            => [ $this, 'stripe_webhook' ],
             'permission_callback' => '__return_true',
         ] );
 
-        // Descarga del voucher PDF por referencia de reserva (requiere email del cliente)
+        register_rest_route( self::NAMESPACE, '/bookings/mercadopago-webhook', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [ $this, 'mercadopago_webhook' ],
+            'permission_callback' => '__return_true',
+        ] );
+
+        // Polling desde StepPaymentMP mientras el cliente paga en la pestaña
+        // de Mercado Pago — primero mira si el webhook ya confirmó, y si no
+        // consulta activamente la API de MP como respaldo (útil en sandbox,
+        // donde a veces el webhook no está configurado).
+        register_rest_route( self::NAMESPACE, '/bookings/(?P<id>\d+)/confirm-mp', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [ $this, 'confirm_mp' ],
+            'permission_callback' => '__return_true',
+        ] );
+
+        // Descarga del voucher PDF por referencia de reserva
+        // (requiere el access_token del link, o el email del cliente)
         register_rest_route( self::NAMESPACE, '/bookings/(?P<ref>[A-Z0-9\-]+)/pdf', [
             'methods'             => \WP_REST_Server::READABLE,
             'callback'            => [ $this, 'download_pdf' ],
             'permission_callback' => '__return_true',
             'args'                => [
                 'ref'   => [ 'required' => true,  'type' => 'string' ],
-                'email' => [ 'required' => true,  'type' => 'string', 'format' => 'email' ],
+                'token' => [ 'required' => false, 'type' => 'string' ],
+                'email' => [ 'required' => false, 'type' => 'string', 'format' => 'email' ],
             ],
         ] );
 
@@ -81,6 +114,16 @@ class BookingController {
                 'id'                => [ 'required' => true, 'type' => 'integer' ],
                 'payment_intent_id' => [ 'required' => true, 'type' => 'string'  ],
             ],
+        ] );
+
+        // Iniciar (o reiniciar) el cobro de una reserva ya cargada sin pagar
+        // (wishlist -> awaiting_payment, o un link de pago reenviado) — el
+        // cliente recién arranca a pagar en este momento, así que acá es
+        // donde arranca el cronómetro real de expiración de 'pending'.
+        register_rest_route( self::NAMESPACE, '/bookings/(?P<ref>[A-Z0-9\-]+)/init-payment', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [ $this, 'init_payment' ],
+            'permission_callback' => '__return_true',
         ] );
 
         // Cambio de estado manual desde el admin
@@ -98,6 +141,10 @@ class BookingController {
     // ── POST /bookings ────────────────────────────────────────────────────
 
     public function create_booking( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'create_booking_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $manager = new \AmirBooking\Core\BookingManager();
 
         $result = $manager->create_pending( [
@@ -113,6 +160,10 @@ class BookingController {
             'lang'             => $request->get_param( 'lang' ) ?? 'es',
             'partner_token'    => $request->get_param( 'partner_token' ) ?? '',
             'special_requests' => $request->get_param( 'special_requests' ) ?? '',
+            'coupon_code'      => $request->get_param( 'coupon_code' ) ?? '',
+            'addons'           => $this->sanitize_addons_param( $request->get_param( 'addons' ) ),
+            'policy_accepted'  => (bool) $request->get_param( 'policy_accepted' ),
+            'terms_accepted'   => (bool) $request->get_param( 'terms_accepted' ),
             'source'           => 'direct',
         ] );
 
@@ -123,39 +174,93 @@ class BookingController {
             );
         }
 
-        // Crear Stripe PaymentIntent
-        $pi = $this->create_stripe_payment_intent( $result );
-        if ( is_wp_error( $pi ) ) {
-            // Limpiar la reserva pending si Stripe falla
+        // Tour de proveedor en modo "cobro diferido" (§ 11.0 CONTRIBUTING.md)
+        // — la reserva quedó esperando aprobación sin cobrar nada, no hay
+        // pago que iniciar todavía. El widget muestra "solicitud enviada" en
+        // vez de pasar al paso de pago.
+        if ( ! $result->requires_payment ) {
+            return new \WP_REST_Response( [
+                'success'          => true,
+                'booking_ref'      => $result->booking_ref,
+                'booking_id'       => $result->booking_id,
+                'total_mxn'        => $result->total_mxn,
+                'requires_payment' => false,
+                // Antes hardcodeado a 'pending_provider_approval' — no era
+                // cierto para tours "solo a pedido" (en verdad
+                // 'date_requested') ni para el caso nuevo de cupón 100%
+                // (ver BookingManager::create_pending()), donde la reserva
+                // ya quedó 'confirmed' de una. El frontend usa este campo
+                // para decidir qué pantalla mostrar.
+                'status'           => $result->status,
+            ], 201 );
+        }
+
+        // Iniciar el cobro con la pasarela activa. Envuelto en try/catch:
+        // un error inesperado acá (credenciales mal cargadas, respuesta rara
+        // de la API de la pasarela, etc.) no debe tirar la reserva ya creada
+        // a una pantalla blanca de WordPress — mejor un 500 con JSON legible
+        // y logueado en Amir Booking → Log de pagos.
+        $gateway = \AmirBooking\Payments\PaymentGatewayFactory::default_gateway();
+        try {
+            $payment = $gateway->create_payment( $result );
+        } catch ( \Throwable $e ) {
             $this->cleanup_failed_booking( $result->booking_id );
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                $result->booking_id, $gateway->id(), 'creation_failed', $e->getMessage()
+            );
+            error_log( sprintf( 'Amir Booking: excepción al crear el cobro (%s) — %s', $gateway->id(), $e->getMessage() ) );
             return new \WP_REST_Response(
                 [ 'success' => false, 'error' => 'Error al inicializar el pago. Intenta de nuevo.' ],
                 500
             );
         }
 
-        // Guardar el payment_intent en la reserva
+        if ( ! $payment->success ) {
+            // Limpiar la reserva pending si la pasarela falla
+            $this->cleanup_failed_booking( $result->booking_id );
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                $result->booking_id, $gateway->id(), 'creation_failed', $payment->error
+            );
+            return new \WP_REST_Response(
+                [ 'success' => false, 'error' => 'Error al inicializar el pago. Intenta de nuevo.' ],
+                500
+            );
+        }
+
+        // Guardar la referencia de pago en la reserva
         global $wpdb;
         $wpdb->update(
             "{$wpdb->prefix}amir_bookings",
-            [ 'stripe_payment_intent' => $pi['id'] ],
+            [
+                'stripe_payment_intent' => $payment->reference, // compatibilidad hacia atrás
+                'payment_gateway'       => $gateway->id(),
+                'gateway_reference'     => $payment->reference,
+            ],
             [ 'id' => $result->booking_id ],
-            [ '%s' ],
+            [ '%s', '%s', '%s' ],
             [ '%d' ]
         );
 
-        return new \WP_REST_Response( [
-            'success'        => true,
-            'booking_ref'    => $result->booking_ref,
-            'booking_id'     => $result->booking_id,
-            'total_mxn'      => $result->total_mxn,
-            'client_secret'  => $pi['client_secret'],  // Para Stripe.js en el frontend
-        ], 201 );
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            $result->booking_id, $gateway->id(), 'created', '', [ 'reference' => $payment->reference ]
+        );
+
+        return new \WP_REST_Response( array_merge( [
+            'success'     => true,
+            'booking_ref' => $result->booking_ref,
+            'booking_id'  => $result->booking_id,
+            'total_mxn'   => $result->total_mxn,
+            'gateway'     => $gateway->id(),
+        ], $payment->client_payload ), 201 ); // client_secret (Stripe) u otro campo según la pasarela
     }
 
     // ── GET /bookings/{ref} ───────────────────────────────────────────────
 
     public function get_booking( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'get_booking_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $ref     = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
         $manager = new \AmirBooking\Core\BookingManager();
         $booking = $manager->get_booking_by_ref( $ref );
@@ -164,7 +269,156 @@ class BookingController {
             return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
         }
 
+        // El booking_ref es secuencial (AMIR-2026-00001, -00002…) y por lo
+        // tanto adivinable — no alcanza como credencial. Se exige el
+        // access_token del link de email/QR, o el email del cliente.
+        $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
+        $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Se requiere el token del link o el email de la reserva.' ], 403 );
+        }
+
         return rest_ensure_response( $this->format_booking_public( $booking ) );
+    }
+
+    // ── POST /bookings/{ref}/init-payment ─────────────────────────────────
+    // Reserva ya cargada (lista de interés convertida, o "cargar reserva +
+    // link de pago" desde el admin) sin cobrar todavía. El cliente hace clic
+    // en el link del email, llega acá, y RECIÉN ACÁ se genera el cobro real
+    // con la pasarela — misma forma de respuesta que POST /bookings, para
+    // que el frontend reutilice el mismo paso de pago (Stripe/Mercado Pago).
+
+    public function init_payment( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'init_payment_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
+        $ref     = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
+        $manager = new \AmirBooking\Core\BookingManager();
+        $booking = $manager->get_booking_by_ref( $ref );
+
+        if ( ! $booking ) {
+            return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
+        }
+
+        $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
+        $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Datos incorrectos' ], 403 );
+        }
+
+        // Depósito parcial ("Depósito parcial por tour") — una reserva YA
+        // confirmada, con depósito cobrado y saldo pendiente, también puede
+        // pasar por acá vía el link de "saldo restante" (distinto del link
+        // normal de pago inicial, pero mismo endpoint — evita duplicar toda
+        // la lógica de creación de PaymentIntent de más abajo).
+        $is_balance_payment = $booking->status === 'confirmed'
+            && ( $booking->item_type ?? 'tour' ) === 'tour'
+            && (int) ( $booking->deposit_pct ?? 0 ) > 0
+            && empty( $booking->balance_paid_at );
+
+        if ( ! $is_balance_payment && ! in_array( $booking->status, [ 'awaiting_payment', 'pending' ], true ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Esta reserva no está esperando pago.' ], 422 );
+        }
+
+        // OJO: `payment_gateway` en la fila tiene DEFAULT 'stripe' a nivel de
+        // columna (class-installer.php) — para una reserva que todavía NUNCA
+        // tuvo un intento de cobro real (manual con "awaiting_payment", o
+        // wishlist convertida), ese valor es el default de la tabla, no una
+        // elección real de pasarela. Confiar en él ahí haría que el link de
+        // pago siempre intente Stripe aunque el sitio tenga Mercado Pago como
+        // pasarela activa (bug real: "Error al inicializar el pago" al pagar
+        // una reserva manual en una instalación sin Stripe configurado).
+        // `gateway_reference` solo se llena cuando ya hubo un intento de
+        // cobro de verdad — recién ahí tiene sentido reusar la misma pasarela.
+        $gateway = ! empty( $booking->gateway_reference )
+            ? ( \AmirBooking\Payments\PaymentGatewayFactory::for_booking( $booking )
+                ?? \AmirBooking\Payments\PaymentGatewayFactory::default_gateway() )
+            : \AmirBooking\Payments\PaymentGatewayFactory::default_gateway();
+
+        // Monto a cobrar: el saldo restante si es pago de saldo de depósito,
+        // el total completo en cualquier otro caso (comportamiento de
+        // siempre) — total_mxn de la fila NUNCA se toca, esto solo arma el
+        // objeto que se le pasa a la pasarela para ESTE cobro puntual.
+        $charge_now = (float) $booking->total_mxn;
+        if ( $is_balance_payment ) {
+            $deposit_charged = round( (float) $booking->total_mxn * (int) $booking->deposit_pct / 100, 2 );
+            $charge_now       = round( (float) $booking->total_mxn - $deposit_charged, 2 );
+        }
+        $booking_result = new \AmirBooking\Core\BookingResult(
+            true, (int) $booking->id, $booking->booking_ref, $charge_now
+        );
+        try {
+            $payment = $gateway->create_payment( $booking_result );
+        } catch ( \Throwable $e ) {
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                (int) $booking->id, $gateway->id(), 'creation_failed', $e->getMessage()
+            );
+            error_log( sprintf( 'Amir Booking: excepción al crear el cobro (%s) — %s', $gateway->id(), $e->getMessage() ) );
+            return new \WP_REST_Response(
+                [ 'success' => false, 'error' => 'Error al inicializar el pago. Intenta de nuevo.' ],
+                500
+            );
+        }
+
+        if ( ! $payment->success ) {
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                (int) $booking->id, $gateway->id(), 'creation_failed', $payment->error
+            );
+            return new \WP_REST_Response(
+                [ 'success' => false, 'error' => 'Error al inicializar el pago. Intenta de nuevo.' ],
+                500
+            );
+        }
+
+        global $wpdb;
+        if ( $is_balance_payment ) {
+            // NUNCA pisar `status`/`created_at` acá — la reserva ya está
+            // `confirmed` de verdad (el tour/cupo ya está reservado), esto es
+            // solo el cobro del saldo. Pisar `created_at` además rearmaría
+            // el cronómetro de expiración de 'pending' sobre una reserva que
+            // ni siquiera está en ese estado.
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings",
+                [
+                    'stripe_payment_intent' => $payment->reference,
+                    'gateway_reference'     => $payment->reference,
+                ],
+                [ 'id' => $booking->id ],
+                [ '%s', '%s' ],
+                [ '%d' ]
+            );
+        } else {
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings",
+                [
+                    'status'                => 'pending',
+                    'stripe_payment_intent' => $payment->reference,
+                    'payment_gateway'       => $gateway->id(),
+                    'gateway_reference'     => $payment->reference,
+                    // El cronómetro de expiración de 'pending' se cuenta desde
+                    // created_at — si no se reinicia acá, una reserva de wishlist
+                    // vieja quedaría "ya expirada" apenas pasa a pending.
+                    'created_at'            => current_time( 'mysql' ),
+                ],
+                [ 'id' => $booking->id ],
+                [ '%s', '%s', '%s', '%s', '%s' ],
+                [ '%d' ]
+            );
+        }
+
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            (int) $booking->id, $gateway->id(), 'created', '', [ 'reference' => $payment->reference ]
+        );
+
+        return new \WP_REST_Response( array_merge( [
+            'success'         => true,
+            'booking_ref'     => $booking->booking_ref,
+            'booking_id'      => (int) $booking->id,
+            'total_mxn'       => $charge_now,
+            'balance_payment' => $is_balance_payment,
+            'gateway'         => $gateway->id(),
+        ], $payment->client_payload ), 200 );
     }
 
     // ── POST /bookings/{ref}/request-cancel ───────────────────────────────
@@ -172,6 +426,10 @@ class BookingController {
     // El admin aprueba manualmente desde el panel
 
     public function request_cancellation( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'req_cancel_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $ref     = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
         $manager = new \AmirBooking\Core\BookingManager();
         $booking = $manager->get_booking_by_ref( $ref );
@@ -180,8 +438,9 @@ class BookingController {
             return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
         }
 
+        $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
         $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        if ( strtolower($email) !== strtolower($booking->customer_email) ) {
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
             return new \WP_REST_Response( [ 'error' => 'Datos incorrectos' ], 403 );
         }
 
@@ -211,7 +470,7 @@ class BookingController {
         if ($admin_email) {
             wp_mail(
                 $admin_email,
-                '[Amir Booking] Solicitud de cancelación — ' . $booking->booking_ref,
+                '[TourFlow] Solicitud de cancelación — ' . $booking->booking_ref,
                 sprintf(
                     "%s (%s) solicita cancelar la reserva %s del %s.\n\nRevisar: %s",
                     $booking->customer_name, $booking->customer_email,
@@ -227,10 +486,76 @@ class BookingController {
         ] );
     }
 
+    // ── POST /tours/{id}/request-date ────────────────────────────────────
+    // Solicitar una fecha distinta a la fija de un tour de fecha fija.
+    // Ver BookingManager::create_date_request().
+
+    public function request_date( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'req_date_' . \AmirBooking\Core\RateLimiter::client_ip(), 10, 600 ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
+        $tour_id = (int) $request->get_param( 'id' );
+
+        global $wpdb;
+        $tour = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id, name_es, name_en, fixed_date FROM {$wpdb->prefix}amir_tours WHERE id = %d AND status = 'active'",
+            $tour_id
+        ) );
+
+        if ( ! $tour ) {
+            return new \WP_REST_Response( [ 'error' => 'Tour no encontrado' ], 404 );
+        }
+        if ( empty( $tour->fixed_date ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Este tour no tiene fecha fija — reserva directamente desde el calendario.' ], 422 );
+        }
+
+        $lang = \AmirBooking\Core\Languages::is_active( (string) $request->get_param( 'lang' ) )
+            ? $request->get_param( 'lang' )
+            : \AmirBooking\Core\Languages::default_lang();
+
+        $manager = new \AmirBooking\Core\BookingManager();
+        $result  = $manager->create_date_request( [
+            'tour_id'          => $tour_id,
+            'schedule_id'      => (int) ( $request->get_param( 'schedule_id' ) ?? 0 ),
+            'date'             => $request->get_param( 'date' ),
+            'adults'           => $request->get_param( 'adults' ) ?? 1,
+            'children'         => $request->get_param( 'children' ) ?? 0,
+            'babies'           => $request->get_param( 'babies' ) ?? 0,
+            'customer_name'    => $request->get_param( 'customer_name' ),
+            'customer_email'   => $request->get_param( 'customer_email' ),
+            'customer_phone'   => $request->get_param( 'customer_phone' ) ?? '',
+            'special_requests' => $request->get_param( 'special_requests' ) ?? '',
+            'lang'             => $lang,
+        ] );
+
+        if ( ! $result->success ) {
+            return new \WP_REST_Response( [ 'error' => $result->error ], 422 );
+        }
+
+        // La notificación interna + el email al admin y al cliente ya los
+        // dispara create_date_request() vía el hook amir_booking_date_requested
+        // (BookingManager, mismo camino que "solo a pedido") — antes acá se
+        // armaba a mano solo el registro interno, duplicado con el del hook
+        // y sin mandar ningún email. Ver CONTRIBUTING.md § 16.56.
+
+        return rest_ensure_response( [
+            'success'     => true,
+            'booking_ref' => $result->booking_ref,
+            'message'     => $lang === 'en'
+                ? 'Your request was received — we\'ll email you a payment link if we can confirm that date.'
+                : 'Tu solicitud fue recibida — si podemos confirmar esa fecha, te mandamos el link de pago por email.',
+        ] );
+    }
+
     // ── GET /bookings/by-payment/{pi_id} ─────────────────────────────────
     // Usado por el widget post-pago para obtener el booking_ref
 
     public function get_booking_by_payment( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'by_payment_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $pi_id = sanitize_text_field( $request->get_param('pi_id') );
 
         global $wpdb;
@@ -254,6 +579,10 @@ class BookingController {
     // ── POST /bookings/{ref}/cancel ───────────────────────────────────────
 
     public function cancel_booking( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'cancel_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $ref     = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
         $manager = new \AmirBooking\Core\BookingManager();
         $booking = $manager->get_booking_by_ref( $ref );
@@ -262,9 +591,10 @@ class BookingController {
             return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
         }
 
-        // Verificar que el email coincide (seguridad básica para cancelación pública)
+        // Autorizar por access_token (link de email/QR) o por email del cliente
+        $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
         $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        if ( strtolower( $email ) !== strtolower( $booking->customer_email ) ) {
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
             return new \WP_REST_Response( [ 'error' => 'Datos incorrectos' ], 403 );
         }
 
@@ -284,15 +614,26 @@ class BookingController {
     // ── POST /bookings/quote ──────────────────────────────────────────────
 
     public function get_quote( \WP_REST_Request $request ): \WP_REST_Response {
+        // Límite más alto que el default: el widget recotiza en vivo cada vez
+        // que cambia gente/fecha/cupón/extras durante el checkout normal —
+        // esto solo tiene que frenar el abuso (probar cupones a fuerza bruta),
+        // no el uso interactivo legítimo.
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'get_quote_' . \AmirBooking\Core\RateLimiter::client_ip(), 60, 300 ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         $pricing = new \AmirBooking\Core\PricingEngine();
 
         $quote = $pricing->quote(
-            tour_id:     (int) $request->get_param( 'tour_id' ),
-            schedule_id: (int) $request->get_param( 'schedule_id' ),
-            date:        $request->get_param( 'date' ),
-            adults:      (int) $request->get_param( 'adults' ),
-            children:    (int) ( $request->get_param( 'children' ) ?? 0 ),
-            babies:      (int) ( $request->get_param( 'babies' ) ?? 0 ),
+            (int) $request->get_param( 'tour_id' ),
+            (int) $request->get_param( 'schedule_id' ),
+            $request->get_param( 'date' ),
+            (int) $request->get_param( 'adults' ),
+            (int) ( $request->get_param( 'children' ) ?? 0 ),
+            (int) ( $request->get_param( 'babies' ) ?? 0 ),
+            sanitize_text_field( $request->get_param( 'coupon_code' ) ?? '' ),
+            $this->sanitize_addons_param( $request->get_param( 'addons' ) ),
+            sanitize_text_field( $request->get_param( 'lang' ) ?? 'es' )
         );
 
         if ( ! $quote->is_valid() ) {
@@ -309,6 +650,12 @@ class BookingController {
     public function download_pdf( \WP_REST_Request $request ): void {
         global $wpdb;
 
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'pdf_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            status_header( 429 );
+            echo 'Demasiados intentos. Intenta de nuevo en unos minutos.';
+            exit;
+        }
+
         $ref = strtoupper( sanitize_text_field( $request->get_param( 'ref' ) ) );
 
         $booking = $wpdb->get_row( $wpdb->prepare(
@@ -322,9 +669,11 @@ class BookingController {
             exit;
         }
 
-        // Verificar email para proteger datos personales del cliente (PII)
-        $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        if ( empty( $email ) || strtolower( $email ) !== strtolower( $booking->customer_email ) ) {
+        // Autorizar por access_token (link de email/QR) o por email del cliente
+        $token   = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
+        $email   = sanitize_email( $request->get_param( 'email' ) ?? '' );
+        $manager = new \AmirBooking\Core\BookingManager();
+        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
             status_header( 403 );
             echo 'Acceso no autorizado.';
             exit;
@@ -365,6 +714,10 @@ class BookingController {
     // Verifica el PaymentIntent directamente con Stripe y confirma la reserva.
 
     public function confirm_payment( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'confirm_payment_' . \AmirBooking\Core\RateLimiter::client_ip() ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
         global $wpdb;
 
         $booking_id = (int) $request->get_param( 'id' );
@@ -392,44 +745,89 @@ class BookingController {
             ], 200 );
         }
 
-        // Verificar el PaymentIntent directamente con Stripe
-        $mode    = get_option( 'amir_stripe_mode', 'test' );
-        $sk      = get_option( "amir_stripe_sk_{$mode}", '' );
+        // El payment_intent_id debe ser el que se generó para ESTA reserva.
+        // Sin este chequeo, un payment_intent legítimo y exitoso de OTRA
+        // reserva (barata) podría reutilizarse para confirmar cualquier
+        // reserva ajena sin pagarla — fetch_payment_status() solo confirma
+        // que el pago existe y tuvo éxito, no de quién es. Fail-closed: si
+        // la reserva todavía no tiene una referencia de pago guardada, no
+        // hay forma de verificar que corresponde a esta reserva — no se
+        // confirma (el webhook es la ruta autoritativa en ese caso).
+        $known_reference = $booking->gateway_reference ?: $booking->stripe_payment_intent;
+        if ( empty( $known_reference ) || ! hash_equals( $known_reference, $pi_id ) ) {
+            // Registrado explícito: puede ser un bug del cliente (reintento
+            // con datos viejos) o un intento real de confirmar una reserva
+            // ajena con el payment_intent de otra — cualquiera de los dos
+            // vale la pena poder auditar después (pedido del cliente
+            // 2026-08-09: "el pago debe ser auditado minuciosamente").
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                $booking_id, $booking->payment_gateway ?: 'stripe', 'confirm_check_reference_mismatch', $pi_id
+            );
+            return new \WP_REST_Response( [ 'error' => 'payment_intent_id no corresponde a esta reserva' ], 403 );
+        }
 
-        if ( $sk ) {
-            $response = wp_remote_get( "https://api.stripe.com/v1/payment_intents/{$pi_id}", [
-                'headers' => [ 'Authorization' => 'Bearer ' . $sk ],
-                'timeout' => 10,
-            ] );
+        // Verificar el pago directamente contra la pasarela — nunca
+        // confiar en que el cliente diga "ya pagué".
+        $gateway = \AmirBooking\Payments\PaymentGatewayFactory::for_booking( $booking );
 
-            if ( ! is_wp_error( $response ) ) {
-                $pi_data = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $gateway && $gateway->is_configured() ) {
+            $status = $gateway->fetch_payment_status( $pi_id );
 
-                if ( ( $pi_data['status'] ?? '' ) !== 'succeeded' ) {
-                    return new \WP_REST_Response( [ 'error' => 'Pago no completado' ], 402 );
-                }
-
-                $charge_id = $pi_data['latest_charge'] ?? '';
-            } else {
-                // No se puede verificar — no confirmar; el webhook es la ruta autoritativa
+            if ( $status === null ) {
+                // No se puede verificar — no confirmar; el webhook es la ruta
+                // autoritativa. Registrado explícito: sin esto, un intento
+                // real del cliente (que sí pagó, Stripe se lo confirmó a él)
+                // no dejaba ningún rastro acá si la verificación fallaba —
+                // el operador no tenía forma de saber que esto pasó sin
+                // mirar el log crudo del servidor.
+                \AmirBooking\Payments\PaymentEventLogger::log(
+                    $booking_id, $gateway->id(), 'confirm_check_unverifiable', $pi_id
+                );
                 return new \WP_REST_Response( [
                     'error' => 'No se pudo verificar el pago. La confirmación llegará por email en breve.',
                 ], 503 );
             }
+
+            if ( $status->status !== \AmirBooking\Payments\PaymentStatusResult::SUCCEEDED ) {
+                \AmirBooking\Payments\PaymentEventLogger::log( $booking_id, $gateway->id(), 'confirm_check_not_succeeded', $status->status );
+                return new \WP_REST_Response( [ 'error' => 'Pago no completado' ], 402 );
+            }
+
+            $charge_id = $status->charge_reference;
         } else {
-            // Sin SK configurada — modo desarrollo, aceptar
+            // Sin credenciales configuradas: nunca confirmar el pago sin
+            // verificarlo contra la pasarela. Un olvido de configuración en
+            // producción no debe convertirse en "cualquiera confirma
+            // cualquier reserva llamando este endpoint con datos inventados".
+            // Solo se permite omitir la verificación con un override
+            // explícito para desarrollo local, nunca por ausencia de config.
+            $dev_override = defined( 'WP_DEBUG' ) && WP_DEBUG
+                         && defined( 'AMIR_ALLOW_UNVERIFIED_PAYMENTS' ) && AMIR_ALLOW_UNVERIFIED_PAYMENTS;
+
+            if ( ! $dev_override ) {
+                \AmirBooking\Payments\PaymentEventLogger::log(
+                    $booking_id, $booking->payment_gateway ?: 'stripe', 'confirm_check_gateway_unconfigured', $pi_id
+                );
+                return new \WP_REST_Response( [
+                    'error' => 'La pasarela de pago no está configurada. No se puede confirmar el pago.',
+                ], 503 );
+            }
+
             $charge_id = $pi_id;
         }
 
         // Confirmar la reserva
         $manager = new \AmirBooking\Core\BookingManager();
         $manager->confirm( $booking_id, $charge_id );
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            $booking_id, $gateway ? $gateway->id() : ( $booking->payment_gateway ?: 'stripe' ), 'succeeded', '', [ 'charge_reference' => $charge_id ]
+        );
 
-        // Actualizar el payment_intent_id si no estaba guardado
+        // Actualizar la referencia de pago si no estaba guardada
         if ( empty( $booking->stripe_payment_intent ) ) {
             $wpdb->update(
                 "{$wpdb->prefix}amir_bookings",
-                [ 'stripe_payment_intent' => $pi_id ],
+                [ 'stripe_payment_intent' => $pi_id, 'gateway_reference' => $pi_id, 'gateway_charge_id' => $charge_id ],
                 [ 'id' => $booking_id ]
             );
         }
@@ -473,7 +871,7 @@ class BookingController {
         // Si se confirma manualmente, usar el flujo completo (PDF + email)
         if ( $new_status === 'confirmed' && $booking->status === 'pending' ) {
             $manager = new \AmirBooking\Core\BookingManager();
-            $manager->confirm( $booking_id, $booking->stripe_charge_id ?? '' );
+            $manager->confirm( $booking_id, $booking->gateway_charge_id ?: ( $booking->stripe_charge_id ?? '' ) );
         } else {
             $wpdb->update(
                 "{$wpdb->prefix}amir_bookings",
@@ -488,139 +886,134 @@ class BookingController {
     }
 
     public function stripe_webhook( \WP_REST_Request $request ): \WP_REST_Response {
-        $payload    = $request->get_body();
-        $sig_header = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
-        $secret     = get_option( 'amir_stripe_webhook_secret', '' );
+        return $this->handle_gateway_webhook( new \AmirBooking\Payments\StripeGateway(), $request );
+    }
 
-        // Verificar firma del webhook
-        if ( ! $this->verify_stripe_signature( $payload, $sig_header, $secret ) ) {
+    public function mercadopago_webhook( \WP_REST_Request $request ): \WP_REST_Response {
+        return $this->handle_gateway_webhook( new \AmirBooking\Payments\MercadoPagoGateway(), $request );
+    }
+
+    // ── POST /bookings/{id}/confirm-mp ────────────────────────────────────
+
+    public function confirm_mp( \WP_REST_Request $request ): \WP_REST_Response {
+        if ( \AmirBooking\Core\RateLimiter::too_many_attempts( 'confirm_mp_' . \AmirBooking\Core\RateLimiter::client_ip(), 40, 300 ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Demasiados intentos. Intenta de nuevo en unos minutos.' ], 429 );
+        }
+
+        $booking_id = (int) $request->get_param( 'id' );
+        $email      = sanitize_email( (string) $request->get_param( 'email' ) );
+        $manager    = new \AmirBooking\Core\BookingManager();
+        $booking    = $manager->get_booking( $booking_id );
+
+        // El id es secuencial y adivinable — exigir el email del cliente
+        // (ya lo tiene el widget en este paso) para no permitir enumerar
+        // booking_ref/estado de reservas ajenas iterando ids al azar.
+        if ( ! $booking || ! $manager->authorize_public_access( $booking, '', $email ) ) {
+            return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
+        }
+
+        if ( $booking->status === 'confirmed' ) {
+            return rest_ensure_response( [ 'confirmed' => true, 'booking_ref' => $booking->booking_ref ] );
+        }
+
+        if ( $booking->status !== 'pending' ) {
+            return rest_ensure_response( [ 'confirmed' => false ] );
+        }
+
+        // El webhook todavía no llegó (o no está configurado, típico en
+        // sandbox) — consultar directo contra la API de MP como respaldo.
+        $gateway = \AmirBooking\Payments\PaymentGatewayFactory::for_booking( $booking );
+        if ( $gateway && $gateway->is_configured() ) {
+            $status = $gateway->fetch_payment_status( $booking->booking_ref );
+            if ( $status && $status->status === \AmirBooking\Payments\PaymentStatusResult::SUCCEEDED ) {
+                $manager->confirm( $booking_id, $status->charge_reference );
+                return rest_ensure_response( [ 'confirmed' => true, 'booking_ref' => $booking->booking_ref ] );
+            }
+        }
+
+        return rest_ensure_response( [ 'confirmed' => false ] );
+    }
+
+    /**
+     * Maneja el webhook de cualquier pasarela que implemente
+     * PaymentGatewayInterface. Cada pasarela tiene su propia ruta REST
+     * (ver register_routes()) pero comparten esta lógica: verificar firma,
+     * traducir a PaymentEvent, y actuar según el tipo — el controlador no
+     * conoce el formato específico de Stripe ni de Mercado Pago.
+     */
+    private function handle_gateway_webhook( \AmirBooking\Payments\PaymentGatewayInterface $gateway, \WP_REST_Request $request ): \WP_REST_Response {
+        $payload = $request->get_body();
+
+        // Se lee directo de $_SERVER (no de $request->get_headers()) para no
+        // depender de cómo WP_REST_Request normaliza los nombres de header.
+        $headers = [
+            'stripe-signature' => $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '',
+            'x-signature'      => $_SERVER['HTTP_X_SIGNATURE']      ?? '', // Mercado Pago
+            'x-request-id'     => $_SERVER['HTTP_X_REQUEST_ID']     ?? '', // Mercado Pago
+        ];
+
+        if ( ! $gateway->verify_webhook_signature( $payload, $headers ) ) {
             return new \WP_REST_Response( [ 'error' => 'Invalid signature' ], 400 );
         }
 
-        $event = json_decode( $payload, true );
+        $event = $gateway->parse_webhook_event( $payload );
+        if ( ! $event ) {
+            return new \WP_REST_Response( [ 'received' => true ], 200 ); // tipo de evento que no nos interesa
+        }
 
-        switch ( $event['type'] ?? '' ) {
+        global $wpdb;
+        $booking = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}amir_bookings WHERE gateway_reference = %s OR stripe_payment_intent = %s",
+            $event->gateway_reference, $event->gateway_reference
+        ) );
 
-            case 'payment_intent.succeeded':
-                $this->handle_payment_succeeded( $event['data']['object'] );
+        if ( ! $booking ) {
+            return new \WP_REST_Response( [ 'received' => true ], 200 );
+        }
+
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            (int) $booking->id, $gateway->id(), 'webhook_' . $event->type, $event->reason, $event->raw
+        );
+
+        switch ( $event->type ) {
+            case \AmirBooking\Payments\PaymentEvent::SUCCEEDED:
+                if ( $booking->status === 'pending' ) {
+                    ( new \AmirBooking\Core\BookingManager() )->confirm( (int) $booking->id, $event->charge_reference );
+                }
                 break;
 
-            case 'payment_intent.payment_failed':
-                $this->handle_payment_failed( $event['data']['object'] );
+            case \AmirBooking\Payments\PaymentEvent::FAILED:
+                if ( $booking->status === 'pending' ) {
+                    $wpdb->update(
+                        "{$wpdb->prefix}amir_bookings",
+                        [ 'status' => 'cancelled_client', 'internal_notes' => 'Pago fallido: ' . $event->reason ],
+                        [ 'id' => $booking->id ],
+                        [ '%s', '%s' ],
+                        [ '%d' ]
+                    );
+                }
                 break;
 
-            case 'charge.refunded':
-                // El reembolso ya fue procesado, solo log
-                do_action( 'amir_stripe_refund_completed', $event['data']['object'] );
+            case \AmirBooking\Payments\PaymentEvent::REFUNDED:
+                // Bug real de nombre encontrado 2026-08-18: este handler es
+                // compartido por Stripe Y Mercado Pago (ver
+                // stripe_webhook()/mercadopago_webhook() más abajo, los dos
+                // llaman a handle_gateway_webhook()) pero el hook se llamaba
+                // "amir_stripe_refund_completed" sin importar de cuál vino —
+                // nombre engañoso para cualquier plugin satélite que quisiera
+                // escucharlo. Hook nuevo, gateway-agnóstico, con el id de la
+                // pasarela real como parámetro — el viejo se sigue disparando
+                // también por compatibilidad (nadie lo escuchaba adentro del
+                // plugin, pero un satélite externo ya instalado podría).
+                do_action( 'amir_gateway_refund_completed', $gateway->id(), $event->raw, (int) $booking->id );
+                do_action( 'amir_stripe_refund_completed', $event->raw );
                 break;
         }
 
         return new \WP_REST_Response( [ 'received' => true ], 200 );
     }
 
-    // ── Handlers Stripe ───────────────────────────────────────────────────
-
-    private function handle_payment_succeeded( array $pi ): void {
-        global $wpdb;
-
-        $booking = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}amir_bookings
-                 WHERE stripe_payment_intent = %s AND status = 'pending'",
-                $pi['id']
-            )
-        );
-
-        if ( ! $booking ) {
-            return;
-        }
-
-        $charge_id = $pi['latest_charge'] ?? '';
-        $manager   = new \AmirBooking\Core\BookingManager();
-        $manager->confirm( (int) $booking->id, $charge_id );
-    }
-
-    private function handle_payment_failed( array $pi ): void {
-        global $wpdb;
-
-        $wpdb->update(
-            "{$wpdb->prefix}amir_bookings",
-            [ 'status' => 'cancelled_client', 'internal_notes' => 'Pago fallido en Stripe' ],
-            [ 'stripe_payment_intent' => $pi['id'], 'status' => 'pending' ],
-            [ '%s', '%s' ],
-            [ '%s', '%s' ]
-        );
-    }
-
-    // ── Stripe PaymentIntent ──────────────────────────────────────────────
-
-    private function create_stripe_payment_intent( \AmirBooking\Core\BookingResult $booking_result ): array|\WP_Error {
-        $mode   = get_option( 'amir_stripe_mode', 'test' );
-        $sk_key = get_option( "amir_stripe_sk_{$mode}", '' );
-
-        if ( empty( $sk_key ) ) {
-            return new \WP_Error( 'no_stripe_key', 'Stripe no configurado' );
-        }
-
-        $amount_cents = (int) round( $booking_result->total_mxn * 100 );
-
-        $response = wp_remote_post( 'https://api.stripe.com/v1/payment_intents', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $sk_key,
-                'Content-Type'  => 'application/x-www-form-urlencoded',
-            ],
-            'body' => [
-                'amount'   => $amount_cents,
-                'currency' => 'mxn',
-                'metadata' => [
-                    'booking_ref' => $booking_result->booking_ref,
-                    'booking_id'  => $booking_result->booking_id,
-                ],
-                'automatic_payment_methods' => [ 'enabled' => 'true' ],
-            ],
-            'timeout' => 30,
-        ] );
-
-        if ( is_wp_error( $response ) ) {
-            return $response;
-        }
-
-        $body = json_decode( wp_remote_retrieve_body( $response ), true );
-
-        if ( isset( $body['error'] ) ) {
-            return new \WP_Error( 'stripe_error', $body['error']['message'] );
-        }
-
-        return $body;
-    }
-
     // ── Helpers ───────────────────────────────────────────────────────────
-
-    private function verify_stripe_signature( string $payload, string $sig_header, string $secret ): bool {
-        if ( empty( $secret ) || empty( $sig_header ) ) {
-            return false;
-        }
-
-        // Parsear t= y v1= del header
-        $parts = [];
-        foreach ( explode( ',', $sig_header ) as $pair ) {
-            [ $k, $v ] = explode( '=', $pair, 2 );
-            $parts[ $k ] = $v;
-        }
-
-        $timestamp = (int) ( $parts['t'] ?? 0 );
-        $signature = $parts['v1'] ?? '';
-
-        // Rechazar si el timestamp supera 300 s (previene replay attacks)
-        if ( $timestamp === 0 || abs( time() - $timestamp ) > 300 ) {
-            return false;
-        }
-
-        $signed_payload = "{$timestamp}.{$payload}";
-        $expected       = hash_hmac( 'sha256', $signed_payload, $secret );
-
-        return hash_equals( $expected, $signature );
-    }
 
     private function format_booking_public( object $booking ): array {
         return [
@@ -632,13 +1025,35 @@ class BookingController {
             'children'      => (int) $booking->children,
             'babies'        => (int) $booking->babies,
             'total_mxn'     => (float) $booking->total_mxn,
-            'qr_code_path'  => $booking->qr_code_path,
         ];
     }
 
     private function cleanup_failed_booking( int $booking_id ): void {
         global $wpdb;
         $wpdb->delete( "{$wpdb->prefix}amir_bookings", [ 'id' => $booking_id ], [ '%d' ] );
+    }
+
+    /**
+     * Normaliza el parámetro `addons` (array de {id, qty} que manda el
+     * cliente) a algo seguro para pasarle a PricingEngine::quote() — nunca
+     * confía en precio/nombre del request, solo en id+qty; PricingEngine
+     * revalida todo contra amir_addons antes de cobrar un centavo.
+     */
+    private function sanitize_addons_param( $raw ): array {
+        if ( ! is_array( $raw ) ) {
+            return [];
+        }
+        $out = [];
+        foreach ( $raw as $item ) {
+            if ( ! is_array( $item ) || empty( $item['id'] ) ) {
+                continue;
+            }
+            $out[] = [
+                'id'  => (int) $item['id'],
+                'qty' => max( 0, (int) ( $item['qty'] ?? 0 ) ),
+            ];
+        }
+        return $out;
     }
 
     private function create_args(): array {
@@ -652,9 +1067,13 @@ class BookingController {
             'customer_name'    => [ 'required' => true,  'type' => 'string',  'minLength' => 2 ],
             'customer_email'   => [ 'required' => true,  'type' => 'string',  'format' => 'email' ],
             'customer_phone'   => [ 'required' => false, 'type' => 'string' ],
-            'lang'             => [ 'required' => false, 'type' => 'string',  'enum' => [ 'es', 'en' ] ],
+            'lang'             => [ 'required' => false, 'type' => 'string',  'enum' => \AmirBooking\Core\Languages::active() ],
             'partner_token'    => [ 'required' => false, 'type' => 'string' ],
             'special_requests' => [ 'required' => false, 'type' => 'string' ],
+            'coupon_code'      => [ 'required' => false, 'type' => 'string' ],
+            'policy_accepted'  => [ 'required' => false, 'type' => 'boolean' ],
+            'terms_accepted'   => [ 'required' => false, 'type' => 'boolean' ],
+            'addons'           => [ 'required' => false, 'type' => 'array' ],
         ];
     }
 }

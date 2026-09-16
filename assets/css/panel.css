@@ -1,0 +1,584 @@
+/* ── Panel de gestión de TourFlow (sin wp-admin) ──────────────────────────── */
+/* Reskin de marca sobre EXACTAMENTE los mismos componentes que ya usa el     */
+/* admin de wp-admin (admin.css + el CSS de core que carga wp_print_styles() */
+/* en ManagerPanel::render_shell() — .wrap/.button/.notice vienen de ahí).   */
+/* Acá solo se resuelve layout (sidebar) y la piel visual propia del panel   */
+/* — nunca se redefinen .ab-* de cero, serían dos fuentes de verdad.        */
+
+* { box-sizing: border-box; }
+
+/* `.button`/`.button-primary` son de WordPress core (common.css) — el azul
+   por defecto de WP (`#2271b1`) queda pegado y raro al lado de todo lo
+   demás en color de marca (ej. "+ Nuevo partner" en PartnersPage, "Agregar
+   regla" en AvailabilityPage). Reskineados acá, no en cada pantalla admin
+   reusada — mismo criterio que el resto de este archivo. */
+.tfp-body .button-primary {
+  background: var(--ab-teal, #1D9E75) !important;
+  border-color: var(--ab-teal-dark, #0F6E56) !important;
+  color: #fff !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+.tfp-body .button-primary:hover,
+.tfp-body .button-primary:focus {
+  background: var(--ab-teal-dark, #0F6E56) !important;
+  border-color: var(--ab-teal-dark, #0F6E56) !important;
+  color: #fff !important;
+}
+.tfp-body .button:not(.button-primary) {
+  color: var(--ab-teal-dark, #0F6E56) !important;
+  border-color: var(--ab-border-input, #c3d9d0) !important;
+}
+.tfp-body .button:not(.button-primary):hover {
+  color: var(--ab-teal, #1D9E75) !important;
+  border-color: var(--ab-teal, #1D9E75) !important;
+}
+.tfp-body a { color: var(--ab-teal-dark, #0F6E56); }
+
+/* Foco visible en cualquier control interactivo — las pantallas admin
+   reusadas nunca necesitaron esto (wp-admin ya tiene su propio anillo de
+   foco), pero acá reemplazamos ese chrome, así que hay que reponerlo.
+   Accesibilidad real, no cosmética: sin esto, navegar el panel a teclado no
+   muestra dónde estás parado. */
+.tfp-body a:focus-visible,
+.tfp-body button:focus-visible,
+.tfp-body input:focus-visible,
+.tfp-body select:focus-visible,
+.tfp-body textarea:focus-visible,
+.tfp-body .button:focus-visible {
+  outline: 2px solid var(--ab-teal, #1D9E75);
+  outline-offset: 2px;
+}
+
+.tfp-body input:focus,
+.tfp-body select:focus,
+.tfp-body textarea:focus {
+  border-color: var(--ab-teal, #1D9E75) !important;
+}
+
+html, body.tfp-body {
+  margin: 0;
+  padding: 0;
+  background: #f4f8f6;
+  color: var(--ab-text, #1a2e24);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body.tfp-body {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Topbar / drawer mobile ────────────────────────────────────────────── */
+/* Ocultos en desktop a propósito — >900px el sidebar de siempre alcanza.
+   El checkbox+<label for> de acá abajo es el mecanismo real (sin JS) que
+   abre/cierra el drawer en mobile, ver el bloque @media más abajo. */
+
+.tfp-nav-toggle { position: absolute; opacity: 0; pointer-events: none; }
+
+.tfp-topbar { display: none; }
+.tfp-nav-overlay { display: none; }
+
+/* ── Sidebar ───────────────────────────────────────────────────────────── */
+
+.tfp-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: #fff;
+  border-right: 1px solid var(--ab-border, #e1f5ee);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.tfp-sidebar-brand {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ab-teal, #1D9E75);
+  padding: 0 20px 18px;
+  border-bottom: 1px solid var(--ab-border, #e1f5ee);
+  margin-bottom: 14px;
+  word-break: break-word;
+}
+
+.tfp-sidebar-links {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.tfp-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 20px;
+  color: var(--ab-text, #1a2e24);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-left: 3px solid transparent;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+
+.tfp-nav-link:hover {
+  background: var(--ab-teal-light, #f0faf6);
+}
+
+.tfp-nav-link.is-active {
+  background: var(--ab-teal-light, #f0faf6);
+  border-left-color: var(--ab-teal, #1D9E75);
+  color: var(--ab-teal-dark, #0F6E56);
+}
+
+.tfp-nav-logout {
+  margin-top: auto;
+  color: var(--ab-muted, #5a7068);
+  border-top: 1px solid var(--ab-border, #e1f5ee);
+}
+
+/* ── Contenido principal ───────────────────────────────────────────────── */
+
+.tfp-main {
+  flex: 1;
+  padding: 28px 32px;
+  max-width: 1200px;
+}
+
+.tfp-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.tfp-title-row h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ab-text, #1a2e24);
+  margin: 0;
+}
+
+.tfp-version {
+  font-size: 11px;
+  color: var(--ab-muted, #5a7068);
+  background: #f3f4f6;
+  border-radius: 20px;
+  padding: 3px 10px;
+}
+
+.tfp-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.tfp-stat {
+  background: #fff;
+  border: 1px solid var(--ab-border, #e1f5ee);
+  border-radius: var(--ab-radius, 10px);
+  padding: 16px 18px;
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+
+.tfp-stat:hover {
+  box-shadow: 0 4px 14px rgba(0,0,0,.05);
+  transform: translateY(-1px);
+}
+
+/* ── Accesos rápidos (Dashboard) ──────────────────────────────────────── */
+/* Pedido implícito del cliente ("óptimo, práctico" para la operación
+   diaria) — la acción más común desde la pantalla de entrada del panel a un
+   solo clic, reusando URLs que ya existen (Tours/Reservas ya soportan
+   ?action=new) en vez de duplicar formularios acá. */
+
+.tfp-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.tfp-quick-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid var(--ab-border, #e1f5ee);
+  border-radius: var(--ab-radius, 10px);
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ab-teal-dark, #0F6E56);
+  text-decoration: none;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.tfp-quick-action:hover {
+  border-color: var(--ab-teal, #1D9E75);
+  box-shadow: 0 4px 14px rgba(0,0,0,.06);
+  transform: translateY(-1px);
+  color: var(--ab-teal-dark, #0F6E56);
+}
+
+.tfp-quick-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.tfp-stat span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ab-muted, #5a7068);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 4px;
+}
+
+.tfp-stat strong {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--ab-text, #1a2e24);
+}
+
+.tfp-card {
+  background: #fff;
+  border: 1px solid var(--ab-border, #e1f5ee);
+  border-radius: var(--ab-radius, 10px);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.tfp-card h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ab-teal-dark, #0F6E56);
+  margin: 0 0 12px;
+}
+
+.tfp-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ab-teal-dark, #0F6E56);
+  margin-bottom: 8px;
+}
+
+.tfp-ok   { color: var(--ab-teal-dark, #0F6E56); font-size: 13px; margin: 0; }
+.tfp-warn { color: var(--ab-warning, #92400e); font-size: 13px; margin: 0; }
+
+.tfp-google-card { background: #fffdf7; }
+
+/* ── Panel rápido (QuickSection, 2026-09-15) ──────────────────────────────
+   Tarjetas en vez de tabla, a propósito — pedido explícito del cliente
+   "100% óptimo en móviles" para la sección pensada justo para el celular.
+   Una sola columna en cualquier ancho, sin media query: nada que colapsar
+   ni scrollear de costado. */
+
+.tfp-quick-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tfp-quick-days .button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tfp-quick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tfp-quick-item {
+  background: #fff;
+  border: 1px solid var(--ab-border, #e1f5ee);
+  border-radius: var(--ab-radius, 10px);
+  padding: 14px 16px;
+}
+
+.tfp-quick-item-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.tfp-quick-item-date strong { font-size: 15px; color: var(--ab-text, #1a2e24); }
+.tfp-quick-item-date span   { font-size: 12.5px; color: #5a7068; margin-left: 6px; }
+
+.tfp-quick-item-activity {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ab-text, #1a2e24);
+  line-height: 1.35;
+}
+
+.tfp-quick-item-ref {
+  font-size: 12px;
+  color: #5a7068;
+  margin-bottom: 8px;
+}
+
+.tfp-quick-item-people {
+  font-size: 13.5px;
+  color: #3d3d3a;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.tfp-quick-item-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* El botón de cobro ocupa todo el ancho disponible en la fila inferior de
+   la tarjeta — en una pantalla angosta eso ya es "ancho completo" sin
+   necesitar una regla aparte; en desktop simplemente empuja el botón a la
+   derecha del badge de saldo (justify-content:space-between del padre). */
+.tfp-quick-item-bottom form {
+  margin: 0;
+  flex: 1 1 160px;
+}
+
+.tfp-quick-btn {
+  width: 100%;
+  min-height: 40px;
+  text-align: center;
+}
+
+/* ── Login ─────────────────────────────────────────────────────────────── */
+
+body.tfp-body--login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.tfp-login-wrap {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.tfp-login-card {
+  background: #fff;
+  border: 1px solid var(--ab-border, #e1f5ee);
+  border-radius: var(--ab-radius, 10px);
+  padding: 32px 30px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.06);
+}
+
+.tfp-login-brand {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ab-teal, #1D9E75);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 6px;
+}
+
+.tfp-login-card h1 {
+  font-size: 19px;
+  margin: 0 0 18px;
+  color: var(--ab-text, #1a2e24);
+}
+
+.tfp-login-card label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ab-text, #1a2e24);
+  margin-bottom: 14px;
+}
+
+.tfp-login-card input {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  border: 1px solid var(--ab-border-input, #c3d9d0);
+  border-radius: var(--ab-radius-sm, 6px);
+  padding: 9px 10px;
+  font-size: 14px;
+}
+
+.tfp-error {
+  background: var(--ab-danger-bg, #fef2f2);
+  color: var(--ab-danger, #e24b4a);
+  border: 1px solid var(--ab-danger-border, #fecaca);
+  border-radius: var(--ab-radius-sm, 6px);
+  padding: 8px 12px;
+  font-size: 13px;
+  margin: 0 0 14px;
+}
+
+.tfp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--ab-radius-sm, 6px);
+  padding: 10px 18px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  width: 100%;
+}
+
+.tfp-btn--primary {
+  background: var(--ab-teal, #1D9E75);
+  color: #fff;
+}
+
+.tfp-btn--primary:hover {
+  background: var(--ab-teal-dark, #0F6E56);
+  color: #fff;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+/* Pedido explícito del cliente: 100% usable en celular, no solo el sidebar
+   del panel. El problema real: las pantallas admin reusadas (Reservas,
+   Partners, Disponibilidad, Disponibilidad de habitaciones) tienen su
+   layout de 2 columnas / tablas anchas / filas de botones como estilos
+   INLINE en su propio PHP (`style="display:grid;grid-template-columns:1fr
+   320px"`, `style="display:flex;gap:8px"`) — no hay una clase común que
+   tocar ahí sin reescribir esas pantallas. Se resuelve acá con selectores
+   de atributo sobre ese mismo `style` (siempre el mismo patrón textual en
+   los ~6 archivos que lo usan) en vez de duplicar layout por pantalla. */
+
+/* min-width:0 en TODO — un hijo de grid/flex por default no puede
+   encogerse más chico que su contenido (min-width:auto implícito), así que
+   una tabla ancha adentro de una columna de grid empuja a toda la página a
+   scrollear de costado en vez de scrollear ELLA sola. Es la causa real más
+   común de "el panel se corta en el celular" con este tipo de HTML reusado
+   (no una sola pantalla, son ~6 archivos con el mismo patrón). */
+.tfp-card, .tfp-main > * { min-width: 0; }
+.tfp-main table { display: block; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.tfp-main input, .tfp-main select, .tfp-main textarea { max-width: 100%; }
+
+@media (max-width: 640px) {
+  /* Cualquier grid de 2 columnas (detalle de reserva/partner, formularios
+     de disponibilidad con "reglas | nueva regla" lado a lado) pasa a una
+     sola columna — más alto, pero nada se corta ni obliga a scrollear
+     de costado. */
+  .tfp-main [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+  .tfp-main [style*="grid-template-columns"] > * { min-width: 0; }
+  /* Filas de botones/acciones en flex (ej. "Aprobar"/"Rechazar" lado a
+     lado en Reservas) — se envuelven en vez de achicarse hasta ilegibles. */
+  .tfp-main [style*="display:flex"] {
+    flex-wrap: wrap !important;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Drawer real (off-canvas) en vez del nav con scroll horizontal de
+     v5.11.1 — usable, pero no se sentía terminado para un panel de gestión
+     de verdad. El sidebar pasa a posición fija fuera de pantalla y entra
+     deslizando cuando se tilda el checkbox oculto (`#tfp-nav-toggle`,
+     activado por el botón hamburguesa de la topbar) — sin una línea de JS,
+     mismo espíritu que el resto del panel (cero build step nuevo). */
+  body.tfp-body { flex-direction: column; }
+
+  .tfp-topbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 54px;
+    padding: 0 16px;
+    background: #fff;
+    border-bottom: 1px solid var(--ab-border, #e1f5ee);
+    position: sticky;
+    top: 0;
+    z-index: 900;
+  }
+
+  .tfp-hamburger {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    width: 22px;
+    height: 18px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .tfp-hamburger span {
+    display: block;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--ab-teal-dark, #0F6E56);
+  }
+
+  .tfp-topbar-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--ab-text, #1a2e24);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tfp-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 260px;
+    max-width: 82vw;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    z-index: 1000;
+    box-shadow: 4px 0 24px rgba(0,0,0,.12);
+  }
+
+  .tfp-nav-overlay {
+    display: block; /* la regla base la oculta para desktop, ver arriba */
+    position: fixed;
+    inset: 0;
+    background: rgba(10,20,16,.4);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+
+  .tfp-nav-toggle:checked ~ .tfp-sidebar { transform: translateX(0); }
+  .tfp-nav-toggle:checked ~ .tfp-nav-overlay { opacity: 1; pointer-events: auto; }
+
+  .tfp-main { padding: 16px; }
+  .tfp-quick-actions { grid-template-columns: 1fr 1fr; }
+  .tfp-stats { grid-template-columns: 1fr 1fr; }
+  .tfp-title-row { flex-wrap: wrap; gap: 10px; }
+  /* Postbox del editor de Tours/Habitaciones — mismo criterio, algunas
+     metaboxes (Precios y horarios, Galería) arman su propia grilla interna
+     inline. */
+  .postbox [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .tfp-quick-actions { grid-template-columns: 1fr 1fr; }
+  .tfp-quick-action { padding: 12px; font-size: 12.5px; }
+}

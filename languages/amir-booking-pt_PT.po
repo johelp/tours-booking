@@ -1,0 +1,578 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: TourFlow (Amir Booking) 1.7.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-25 00:00+0000\n"
+"PO-Revision-Date: 2026-07-25 00:00+0000\n"
+"Last-Translator: TourFlow\n"
+"Language-Team: Português\n"
+"Language: pt_PT\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Domain: amir-booking\n"
+msgid "3–6 días antes: %s"
+msgstr "3–6 dias antes: %s"
+
+msgid "3–6 días antes: reembolso del 50%"
+msgstr "3–6 dias antes: reembolso de 50%"
+
+msgid "7+ días antes: %s"
+msgstr "7+ dias antes: %s"
+
+msgid "7+ días antes: reembolso completo"
+msgstr "7+ dias antes: reembolso completo"
+
+msgid "Abril"
+msgstr "Abril"
+
+msgid "Agosto"
+msgstr "Agosto"
+
+msgid "Agregar al calendario"
+msgstr "Adicionar ao calendário"
+
+msgid "Cancelaciones por clima o mínimo de pasajeros: reembolso completo."
+msgstr "Cancelamentos por clima ou número mínimo de passageiros: reembolso completo."
+
+msgid "Cancelación de reserva — %s"
+msgstr "Cancelamento da reserva — %s"
+
+msgid "Cancelación solicitada"
+msgstr "Cancelamento solicitado"
+
+msgid "Cancelada"
+msgstr "Cancelada"
+
+msgid "Cancelada (clima)"
+msgstr "Cancelada (clima)"
+
+msgid "Cancelada (cupo)"
+msgstr "Cancelada (vagas)"
+
+msgid "Completada"
+msgstr "Concluída"
+
+msgid "Confirmada"
+msgstr "Confirmada"
+
+msgid "Consulta tu reserva"
+msgstr "Consulte sua reserva"
+
+msgid "De acuerdo con nuestra política, no aplica reembolso para cancelaciones dentro de los 2 días previos al tour."
+msgstr "De acordo com nossa política, não há reembolso para cancelamentos dentro de 2 dias antes do passeio."
+
+msgid "Demasiados intentos. Intenta de nuevo en unos minutos."
+msgstr "Muitas tentativas. Tente novamente em alguns minutos."
+
+msgid "Descargar mi voucher PDF"
+msgstr "Baixar meu voucher PDF"
+
+msgid "Detalle del tour"
+msgstr "Detalhes do passeio"
+
+msgid "Diciembre"
+msgstr "Dezembro"
+
+msgid "Email con el que reservaste"
+msgstr "Email usado na reserva"
+
+msgid "Enero"
+msgstr "Janeiro"
+
+msgid "Escanea para verificar"
+msgstr "Escaneie para verificar"
+
+msgid "Ese email no coincide con esta reserva."
+msgstr "Esse email não corresponde a esta reserva."
+
+msgid "Experiencias en Bacalar · Quintana Roo, México"
+msgstr "Experiências em Bacalar · Quintana Roo, México"
+
+msgid "Febrero"
+msgstr "Fevereiro"
+
+msgid "Fecha"
+msgstr "Data"
+
+msgid "Hola <strong>%1$s</strong>,<br>Nos pediste que te avisáramos cuando <strong>%2$s</strong> abriera — y ya está disponible. Tu lugar para el %3$s está reservado — completá el pago para confirmarlo."
+msgstr "Olá <strong>%1$s</strong>,<br>Você nos pediu para avisar quando <strong>%2$s</strong> abrisse — e acabou de abrir. Sua vaga para o dia %3$s está reservada — conclua o pagamento para confirmá-la."
+
+msgid "Hola <strong>%s</strong>,<br>Esperamos que hayas tenido una experiencia increíble con nosotros en <em>%s</em>."
+msgstr "Olá <strong>%s</strong>,<br>Esperamos que você tenha vivido uma experiência incrível conosco em <em>%s</em>."
+
+msgid "Hola <strong>%s</strong>,<br>Lamentamos informarte que tu reserva <strong>%s</strong> ha sido cancelada. Se ha procesado un <strong>reembolso completo</strong> que aparecerá en tu cuenta en 3–5 días hábiles."
+msgstr "Olá <strong>%s</strong>,<br>Lamentamos informar que sua reserva <strong>%s</strong> foi cancelada. Um <strong>reembolso completo</strong> foi processado e aparecerá em sua conta em 3–5 dias úteis."
+
+msgid "Hola <strong>%s</strong>,<br>Todo está listo para tu aventura en Bacalar. Aquí están los detalles de tu reserva:"
+msgstr "Olá <strong>%s</strong>,<br>Tudo está pronto para sua aventura em Bacalar. Aqui estão os detalhes da sua reserva:"
+
+msgid "Hola <strong>%s</strong>,<br>Tu reserva <strong>%s</strong> ha sido cancelada. %s"
+msgstr "Olá <strong>%s</strong>,<br>Sua reserva <strong>%s</strong> foi cancelada. %s"
+
+msgid "Hola <strong>%s</strong>,<br>Un recordatorio de tu reserva para mañana:"
+msgstr "Olá <strong>%s</strong>,<br>Um lembrete da sua reserva para amanhã:"
+
+msgid "Hora de salida"
+msgstr "Horário de saída"
+
+msgid "Imprimir / Guardar PDF"
+msgstr "Imprimir / Salvar PDF"
+
+msgid "Ingresa tu referencia de reserva y el email con el que reservaste."
+msgstr "Digite sua referência de reserva e o email usado na reserva."
+
+msgid "Julio"
+msgstr "Julho"
+
+msgid "Junio"
+msgstr "Junho"
+
+msgid "Lista de interés"
+msgstr "Lista de interesse"
+
+msgid "Lista para pagar"
+msgstr "Pronto para pagar"
+
+msgid "Marzo"
+msgstr "Março"
+
+msgid "Mayo"
+msgstr "Maio"
+
+msgid "Menos de 3 días: %s"
+msgstr "Menos de 3 dias: %s"
+
+msgid "Menos de 3 días: sin reembolso"
+msgstr "Menos de 3 dias: sem reembolso"
+
+msgid "Nombre"
+msgstr "Nome"
+
+msgid "Nota del operador:"
+msgstr "Nota do operador:"
+
+msgid "Noviembre"
+msgstr "Novembro"
+
+msgid "Número de reserva"
+msgstr "Número da reserva"
+
+msgid "Octubre"
+msgstr "Outubro"
+
+msgid "Pagar ahora"
+msgstr "Pagar agora"
+
+msgid "Para guardar como PDF, haz clic en"
+msgstr "Para salvar como PDF, clique em"
+
+msgid "Pasajero"
+msgstr "Passageiro"
+
+msgid "Pasajeros"
+msgstr "Passageiros"
+
+msgid "Pendiente de pago"
+msgstr "Pendente de pagamento"
+
+msgid "Personas"
+msgstr "Pessoas"
+
+msgid "Política de cancelación"
+msgstr "Política de cancelamento"
+
+msgid "Política de cancelación:"
+msgstr "Política de cancelamento:"
+
+msgid "Por clima o mínimo de pasajeros: reembolso completo."
+msgstr "Por clima ou número mínimo de passageiros: reembolso completo."
+
+msgid "Punto de encuentro"
+msgstr "Ponto de encontro"
+
+msgid "RESERVA CONFIRMADA"
+msgstr "RESERVA CONFIRMADA"
+
+msgid "Recomendaciones"
+msgstr "Recomendações"
+
+msgid "Recuerda llevar"
+msgstr "Lembre-se de levar"
+
+msgid "Referencia"
+msgstr "Referência"
+
+msgid "Referencia (ej. %s)"
+msgstr "Referência (ex. %s)"
+
+msgid "Reprogramada"
+msgstr "Reagendada"
+
+msgid "Reserva cancelada"
+msgstr "Reserva cancelada"
+
+msgid "Reserva no encontrada"
+msgstr "Reserva não encontrada"
+
+msgid "Reserva verificada"
+msgstr "Reserva verificada"
+
+msgid "Reservado el"
+msgstr "Reservado em"
+
+msgid "Reseña en Google"
+msgstr "Avaliação no Google"
+
+msgid "Reseña en TripAdvisor"
+msgstr "Avaliação no TripAdvisor"
+
+msgid "Salida"
+msgstr "Saída"
+
+msgid "Se ha procesado un reembolso completo que aparecerá en tu cuenta en 3–5 días hábiles."
+msgstr "Um reembolso completo foi processado e aparecerá em sua conta em 3–5 dias úteis."
+
+msgid "Se ha procesado un reembolso del 50%% por %s."
+msgstr "Foi processado um reembolso de 50%% no valor de %s."
+
+msgid "Septiembre"
+msgstr "Setembro"
+
+msgid "Total"
+msgstr "Total"
+
+msgid "Total pagado"
+msgstr "Total pago"
+
+msgid "Tour"
+msgstr "Tour"
+
+msgid "Tour cancelado por condiciones climáticas ⛈"
+msgstr "Passeio cancelado por condições climáticas ⛈"
+
+msgid "Tour cancelado — mínimo de pasajeros no alcanzado"
+msgstr "Passeio cancelado — número mínimo de passageiros não atingido"
+
+msgid "Tu opinión nos ayuda a seguir mejorando y a que más viajeros descubran la magia de Bacalar. Si tienes un minuto, nos encantaría que compartieras tu experiencia:"
+msgstr "Sua opinião nos ajuda a melhorar e permite que mais viajantes descubram a magia de Bacalar. Se tiver um minuto, adoraríamos que você compartilhasse sua experiência:"
+
+msgid "Ver en Google Maps"
+msgstr "Ver no Google Maps"
+
+msgid "Ver en mapa"
+msgstr "Ver no mapa"
+
+msgid "Ver estado de mi reserva"
+msgstr "Ver status da minha reserva"
+
+msgid "Ver mi reserva"
+msgstr "Ver minha reserva"
+
+msgid "adultos"
+msgstr "adultos"
+
+msgid "bebés"
+msgstr "bebês"
+
+msgid "niños"
+msgstr "crianças"
+
+msgid "reembolso completo"
+msgstr "reembolso completo"
+
+msgid "reembolso del 50%"
+msgstr "reembolso de 50%"
+
+msgid "sin reembolso"
+msgstr "sem reembolso"
+
+msgid "y selecciona \"Guardar como PDF\""
+msgstr "e selecione \"Salvar como PDF\""
+
+msgid "¡Buenas noticias! 🎉"
+msgstr "Boas notícias! 🎉"
+
+msgid "¡Gracias por elegirnos! Esperamos verte de nuevo pronto. 🐊"
+msgstr "Obrigado por nos escolher! Esperamos te ver novamente em breve. 🐊"
+
+msgid "¡Tu aventura es mañana! ⛵"
+msgstr "Sua aventura é amanhã! ⛵"
+
+msgid "¡Tu reserva está confirmada! 🎉"
+msgstr "Sua reserva está confirmada! 🎉"
+
+msgid "¿Disfrutaste tu aventura en Bacalar? 🌊"
+msgstr "Você aproveitou sua aventura em Bacalar? 🌊"
+
+msgid "¿Dudas? Escríbenos cuando quieras."
+msgstr "Dúvidas? Escreva para nós quando quiser."
+
+msgid "¿Necesitas ayuda? Escríbenos por WhatsApp"
+msgstr "Precisa de ajuda? Fale conosco pelo WhatsApp"
+
+msgid "⏰ ¡Tu tour es mañana! — %s"
+msgstr "⏰ Seu passeio é amanhã! — %s"
+
+msgid "✅ Tu reserva está confirmada — %s"
+msgstr "✅ Sua reserva está confirmada — %s"
+
+msgid "⭐ ¿Cómo fue tu experiencia? — Amir Adventours"
+msgstr "⭐ Como foi sua experiência? — Amir Adventours"
+
+msgid "🎉 ¡%s ya está disponible — completá tu pago"
+msgstr "🎉 %s já está disponível — conclua seu pagamento"
+
+msgid "+52 983 000 0000"
+msgstr "+52 983 000 0000"
+
+msgid "0–3 años"
+msgstr "0–3 anos"
+
+msgid "13+ años"
+msgstr "13+ anos"
+
+msgid "4–12 años"
+msgstr "4–12 anos"
+
+msgid "Adultos"
+msgstr "Adultos"
+
+msgid "Alergias, movilidad reducida, celebración especial…"
+msgstr "Alergias, mobilidade reduzida, celebração especial…"
+
+msgid "Anterior"
+msgstr "Anterior"
+
+msgid "Aplicar"
+msgstr "Aplicar"
+
+msgid "Atrás"
+msgstr "Voltar"
+
+msgid "Bebés"
+msgstr "Bebês"
+
+msgid "Cargando…"
+msgstr "Carregando…"
+
+msgid "Compartir por WhatsApp"
+msgstr "Compartilhar no WhatsApp"
+
+msgid "Confirmar y pagar"
+msgstr "Confirmar e pagar"
+
+msgid "Continuar"
+msgstr "Continuar"
+
+msgid "Correo electrónico"
+msgstr "Email"
+
+msgid "Cupón aplicado"
+msgstr "Cupom aplicado"
+
+msgid "Código de cupón"
+msgstr "Código do cupom"
+
+msgid "Descargar voucher PDF"
+msgstr "Baixar voucher PDF"
+
+msgid "Disponible"
+msgstr "Disponível"
+
+msgid "Duración"
+msgstr "Duração"
+
+msgid "Edad mínima"
+msgstr "Idade mínima"
+
+msgid "Elige tu fecha"
+msgstr "Escolha sua data"
+
+msgid "English"
+msgstr "Inglês"
+
+msgid "Error al procesar el pago. Por favor intenta de nuevo."
+msgstr "Erro ao processar o pagamento. Tente novamente."
+
+msgid "Español"
+msgstr "Espanhol"
+
+msgid "Este campo es obligatorio"
+msgstr "Este campo é obrigatório"
+
+msgid "Fecha del tour"
+msgstr "Data do passeio"
+
+msgid "Fecha pasada"
+msgstr "Data passada"
+
+msgid "Gratis"
+msgstr "Grátis"
+
+msgid "He leído y acepto la política de cancelación"
+msgstr "Li e aceito a política de cancelamento"
+
+msgid "Idioma para tu email de confirmación"
+msgstr "Idioma para seu email de confirmação"
+
+msgid "Idioma preferido"
+msgstr "Idioma preferido"
+
+msgid "Idiomas"
+msgstr "Idiomas"
+
+msgid "Incluye"
+msgstr "Inclui"
+
+msgid "Ingresa un correo válido"
+msgstr "Digite um email válido"
+
+msgid "Máximo {n} personas"
+msgstr "Máximo de {n} pessoas"
+
+msgid "Niños"
+msgstr "Crianças"
+
+msgid "No disponible"
+msgstr "Não disponível"
+
+msgid "No hay cupos disponibles para esta fecha"
+msgstr "Não há vagas disponíveis para esta data"
+
+msgid "No incluye"
+msgstr "Não inclui"
+
+msgid "Nombre completo"
+msgstr "Nome completo"
+
+msgid "Ocurrió un error. Por favor intenta de nuevo."
+msgstr "Ocorreu um erro. Tente novamente."
+
+msgid "Pago"
+msgstr "Pagamento"
+
+msgid "Pago seguro con Stripe"
+msgstr "Pagamento seguro com Stripe"
+
+msgid "Personas del grupo"
+msgstr "Pessoas do grupo"
+
+msgid "Procesando…"
+msgstr "Processando…"
+
+msgid "Resumen"
+msgstr "Resumo"
+
+msgid "Se excede el máximo de {n} personas"
+msgstr "Excede o máximo de {n} pessoas"
+
+msgid "Selecciona horario"
+msgstr "Selecione o horário"
+
+msgid "Selecciona una fecha en el calendario"
+msgstr "Selecione uma data no calendário"
+
+msgid "Siguiente"
+msgstr "Próximo"
+
+msgid "Sin cupos"
+msgstr "Sem vagas"
+
+msgid "Sin salidas disponibles para esta fecha."
+msgstr "Nenhuma saída disponível para esta data."
+
+msgid "Solicitudes especiales (opcional)"
+msgstr "Solicitações especiais (opcional)"
+
+msgid "Subtotal"
+msgstr "Subtotal"
+
+msgid "Tarjeta, Apple Pay, Google Pay"
+msgstr "Cartão, Apple Pay, Google Pay"
+
+msgid "Te enviamos todos los detalles a tu correo."
+msgstr "Enviamos todos os detalhes para o seu email."
+
+msgid "Total personas"
+msgstr "Total de pessoas"
+
+msgid "Tu nombre y apellido"
+msgstr "Seu nome completo"
+
+msgid "Tus datos"
+msgstr "Seus dados"
+
+msgid "WhatsApp / Teléfono"
+msgstr "WhatsApp / Telefone"
+
+msgid "años"
+msgstr "anos"
+
+msgid "min"
+msgstr "min"
+
+msgid "por persona"
+msgstr "por pessoa"
+
+msgid "tu@correo.com"
+msgstr "voce@email.com"
+
+msgid "{n} lugares disponibles"
+msgstr "{n} vagas disponíveis"
+
+msgid "¡Reservado!"
+msgstr "Reservado!"
+
+msgid "¡Tu reserva está confirmada!"
+msgstr "Sua reserva está confirmada!"
+
+msgid "¿Tienes un cupón de descuento?"
+msgstr "Você tem um cupom de desconto?"
+
+msgid "≈ USD {amount} (referencia)"
+msgstr "≈ USD {amount} (referência)"
+
+msgid "▸ 3–6 días antes: reembolso del 50 %"
+msgstr "▸ 3–6 dias antes: reembolso de 50%"
+
+msgid "✓ 7+ días antes: reembolso completo"
+msgstr "✓ 7+ dias antes: reembolso completo"
+
+msgid "✕ Menos de 3 días: sin reembolso"
+msgstr "✕ Menos de 3 dias: sem reembolso"
+
+msgid "Extras"
+msgstr "Extras"
+
+msgid "Incluir"
+msgstr "Incluir"
+
+msgid "¿Querés sumar algún servicio extra?"
+msgstr "Quer adicionar algum serviço extra?"
+
+msgid "Servicios extra"
+msgstr "Serviços extras"
+
+msgid "Completá el pago de tu reserva — %s"
+msgstr "Conclua o pagamento da sua reserva — %s"
+
+msgid "Hola <strong>%1$s</strong>,<br>Tu reserva <strong>%2$s</strong> fue reprogramada. Estos son los nuevos detalles:"
+msgstr "Olá <strong>%1$s</strong>,<br>Sua reserva <strong>%2$s</strong> foi reagendada. Aqui estão os novos detalhes:"
+
+msgid "Hola <strong>%1$s</strong>,<br>Ya armamos tu reserva para <strong>%2$s</strong> el %3$s — solo falta completar el pago para confirmarla."
+msgstr "Olá <strong>%1$s</strong>,<br>Já preparamos sua reserva para <strong>%2$s</strong> em %3$s — falta apenas concluir o pagamento para confirmá-la."
+
+msgid "Tu reserva cambió de fecha"
+msgstr "Sua reserva mudou de data"
+
+msgid "Tu reserva está lista 🎉"
+msgstr "Sua reserva está pronta 🎉"
+
+msgid "¿La nueva fecha no te sirve? Escribinos y lo resolvemos."
+msgstr "A nova data não é conveniente? Escreva para nós e resolvemos."
+
+msgid "🔄 Tu reserva fue reprogramada — %s"
+msgstr "🔄 Sua reserva foi reagendada — %s"
+

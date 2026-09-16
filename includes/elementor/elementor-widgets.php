@@ -131,8 +131,9 @@ class BookingButtonWidget extends \Elementor\Widget_Base {
         }
 
         $lang = $settings['lang'] === 'auto'
-            ? ( function_exists('pll_current_language') ? pll_current_language('slug') : 'es' )
+            ? \AmirBooking\Core\Shortcodes::detect_lang()
             : $settings['lang'];
+        $lang = \AmirBooking\Core\Languages::is_active( (string) $lang ) ? $lang : \AmirBooking\Core\Languages::default_lang();
 
         $btn_text = esc_html( $settings['button_text'] ?: __('Reservar ahora','amir-booking') );
         $mode     = $settings['display_mode'];
@@ -195,6 +196,64 @@ class TourCardWidget extends \Elementor\Widget_Base {
         $this->add_control( 'show_min_age',  [ 'label'=>__('Mostrar edad mín.','amir-booking'), 'type'=>\Elementor\Controls_Manager::SWITCHER, 'default'=>'yes' ] );
         $this->add_control( 'cta_text',      [ 'label'=>__('Texto del CTA','amir-booking'),     'type'=>\Elementor\Controls_Manager::TEXT, 'default'=>'Reservar' ] );
         $this->end_controls_section();
+
+        // ── Estilo ────────────────────────────────────────────────────────
+        $this->start_controls_section( 'style', [
+            'label' => __( 'Estilo de la tarjeta', 'amir-booking' ),
+            'tab'   => \Elementor\Controls_Manager::TAB_STYLE,
+        ] );
+
+        $this->add_control( 'card_bg_color', [
+            'label'     => __( 'Color de fondo', 'amir-booking' ),
+            'type'      => \Elementor\Controls_Manager::COLOR,
+            'default'   => '#ffffff',
+            'selectors' => [ '{{WRAPPER}} .amir-tour-card' => 'background-color: {{VALUE}};' ],
+        ] );
+
+        $this->add_control( 'card_title_color', [
+            'label'     => __( 'Color del título', 'amir-booking' ),
+            'type'      => \Elementor\Controls_Manager::COLOR,
+            'default'   => '#1a2e24',
+            'selectors' => [ '{{WRAPPER}} .amir-tour-card__title' => 'color: {{VALUE}};' ],
+        ] );
+
+        $this->add_control( 'card_accent_color', [
+            'label'     => __( 'Color de acento (precio y CTA)', 'amir-booking' ),
+            'type'      => \Elementor\Controls_Manager::COLOR,
+            'default'   => '#1D9E75',
+            'selectors' => [
+                '{{WRAPPER}} .amir-tour-card__price-value' => 'color: {{VALUE}};',
+                '{{WRAPPER}} .amir-tour-card__cta'         => 'background-color: {{VALUE}}; border-color: {{VALUE}};',
+            ],
+        ] );
+
+        $this->add_control( 'card_radius', [
+            'label'     => __( 'Radio de borde', 'amir-booking' ),
+            'type'      => \Elementor\Controls_Manager::SLIDER,
+            'range'     => [ 'px' => [ 'min' => 0, 'max' => 50 ] ],
+            'default'   => [ 'unit' => 'px', 'size' => 16 ],
+            'selectors' => [ '{{WRAPPER}} .amir-tour-card' => 'border-radius: {{SIZE}}{{UNIT}}; overflow: hidden;' ],
+        ] );
+
+        $this->add_control( 'card_image_ratio', [
+            'label'   => __( 'Proporción de la imagen', 'amir-booking' ),
+            'type'    => \Elementor\Controls_Manager::SELECT,
+            'default' => '4/3',
+            'options' => [
+                '4/3'  => '4:3',
+                '16/9' => '16:9',
+                '1/1'  => __( 'Cuadrada', 'amir-booking' ) . ' (1:1)',
+                '3/4'  => __( 'Vertical', 'amir-booking' ) . ' (3:4)',
+            ],
+            'selectors' => [ '{{WRAPPER}} .amir-tour-card__img' => 'aspect-ratio: {{VALUE}}; object-fit: cover; width: 100%; display: block;' ],
+        ] );
+
+        $this->add_group_control( \Elementor\Group_Control_Box_Shadow::get_type(), [
+            'name'     => 'card_shadow',
+            'selector' => '{{WRAPPER}} .amir-tour-card',
+        ] );
+
+        $this->end_controls_section();
     }
 
     protected function render(): void {
@@ -237,7 +296,7 @@ class TourCardWidget extends \Elementor\Widget_Base {
               <div class="amir-tour-card__price">
                 <span class="amir-tour-card__price-from">Desde</span>
                 <span class="amir-tour-card__price-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
-                <span class="amir-tour-card__price-currency">MXN</span>
+                <span class="amir-tour-card__price-currency"><?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></span>
               </div>
             <?php endif; ?>
             <a href="<?php echo esc_url($link); ?>" class="amir-tour-card__cta">
@@ -258,12 +317,65 @@ trait TourTagBase {
     protected function register_controls(): void {
         // Los tags leen del post actual — sin configuración adicional
     }
+
+    /**
+     * Fila completa de amir_tours para el post actual, cacheada por post_id
+     * para no repetir la query si varios Dynamic Tags renderizan en el mismo
+     * request (común: varios tags del mismo tour en una tarjeta de Loop Grid).
+     */
+    protected function get_tour_row(): ?object {
+        static $cache = [];
+        $post_id = get_the_ID();
+        if ( array_key_exists( $post_id, $cache ) ) {
+            return $cache[ $post_id ];
+        }
+
+        $db_id = (int) get_post_meta( $post_id, '_amir_tour_db_id', true );
+        if ( ! $db_id ) {
+            return $cache[ $post_id ] = null;
+        }
+
+        global $wpdb;
+        $row = $wpdb->get_row( $wpdb->prepare(
+            "SELECT name_es, name_en, description_es, description_en,
+                    what_to_expect_es, what_to_expect_en,
+                    meeting_point_es, meeting_point_en,
+                    includes_es, includes_en, excludes_es, excludes_en,
+                    itinerary_es, itinerary_en, content_i18n
+             FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+            $db_id
+        ) );
+
+        return $cache[ $post_id ] = $row;
+    }
+
+    /**
+     * Bug real corregido 2026-07-30: antes solo miraba Polylang y caía a
+     * español si no estaba activo, ignorando WPML y el locale del sitio de
+     * WordPress. Reusa Shortcodes::detect_lang() (Polylang → WPML → locale
+     * de WP, ya validado contra los idiomas activos del plugin).
+     */
+    protected function current_lang(): string {
+        return \AmirBooking\Core\Shortcodes::detect_lang();
+    }
+
+    /**
+     * Helper para los tags de listas (incluye/no incluye) — content_i18n
+     * guarda arrays, pero las columnas es/en guardan JSON string.
+     */
+    protected function field_as_list( $value ): array {
+        if ( is_array( $value ) ) {
+            return $value;
+        }
+        $decoded = json_decode( (string) $value, true );
+        return is_array( $decoded ) ? $decoded : [];
+    }
 }
 
 class DynamicTagPriceFrom extends \Elementor\Core\DynamicTags\Tag {
     use TourTagBase;
     public function get_name()  { return 'amir-price-from'; }
-    public function get_title() { return __( 'Tour: Precio desde (MXN)', 'amir-booking' ); }
+    public function get_title() { return __( 'Tour: Precio desde', 'amir-booking' ) . ' (' . \AmirBooking\Core\Currency::code() . ')'; }
 
     public function render(): void {
         $db_id = (int) get_post_meta( get_the_ID(), '_amir_tour_db_id', true );
@@ -272,7 +384,7 @@ class DynamicTagPriceFrom extends \Elementor\Core\DynamicTags\Tag {
         $price = (float) $wpdb->get_var( $wpdb->prepare(
             "SELECT MIN(price_mxn) FROM {$wpdb->prefix}amir_prices WHERE tour_id=%d AND price_mxn>0", $db_id
         ) );
-        echo $price > 0 ? '$' . number_format($price,0,'.',',') . ' MXN' : '';
+        echo $price > 0 ? esc_html( \AmirBooking\Core\Currency::format( $price, 0 ) ) : '';
     }
 }
 
@@ -317,5 +429,94 @@ class DynamicTagGallery extends \Elementor\Core\DynamicTags\Tag {
 
     public function render(): void {
         echo esc_url( get_the_post_thumbnail_url( get_the_ID(), 'large' ) );
+    }
+}
+
+// ── Dynamic Tags multi-idioma (usan Languages::tour_field(), a diferencia
+// de los de arriba que son numéricos/fijos y no necesitan traducción) ────────
+
+class DynamicTagName extends \Elementor\Core\DynamicTags\Tag {
+    use TourTagBase;
+    public function get_name()  { return 'amir-name'; }
+    public function get_title() { return __( 'Tour: Nombre (idioma actual)', 'amir-booking' ); }
+
+    public function render(): void {
+        $tour = $this->get_tour_row();
+        if ( ! $tour ) return;
+        echo esc_html( \AmirBooking\Core\Languages::tour_field( $tour, 'name', $this->current_lang() ) );
+    }
+}
+
+class DynamicTagDescription extends \Elementor\Core\DynamicTags\Tag {
+    use TourTagBase;
+    public function get_name()  { return 'amir-description'; }
+    public function get_title() { return __( 'Tour: Descripción', 'amir-booking' ); }
+
+    public function render(): void {
+        $tour = $this->get_tour_row();
+        if ( ! $tour ) return;
+        echo wp_kses_post( \AmirBooking\Core\Languages::tour_field( $tour, 'description', $this->current_lang() ) );
+    }
+}
+
+class DynamicTagWhatToExpect extends \Elementor\Core\DynamicTags\Tag {
+    use TourTagBase;
+    public function get_name()  { return 'amir-what-to-expect'; }
+    public function get_title() { return __( 'Tour: Qué esperar', 'amir-booking' ); }
+
+    public function render(): void {
+        $tour = $this->get_tour_row();
+        if ( ! $tour ) return;
+        echo wp_kses_post( \AmirBooking\Core\Languages::tour_field( $tour, 'what_to_expect', $this->current_lang() ) );
+    }
+}
+
+class DynamicTagMeetingPoint extends \Elementor\Core\DynamicTags\Tag {
+    use TourTagBase;
+    public function get_name()  { return 'amir-meeting-point'; }
+    public function get_title() { return __( 'Tour: Punto de encuentro', 'amir-booking' ); }
+
+    public function render(): void {
+        $tour = $this->get_tour_row();
+        if ( ! $tour ) return;
+        echo esc_html( \AmirBooking\Core\Languages::tour_field( $tour, 'meeting_point', $this->current_lang() ) );
+    }
+}
+
+class DynamicTagIncludes extends \Elementor\Core\DynamicTags\Tag {
+    use TourTagBase;
+    public function get_name()  { return 'amir-includes'; }
+    public function get_title() { return __( 'Tour: Incluye', 'amir-booking' ); }
+
+    public function render(): void {
+        $tour = $this->get_tour_row();
+        if ( ! $tour ) return;
+        $items = $this->field_as_list( \AmirBooking\Core\Languages::tour_field( $tour, 'includes', $this->current_lang() ) );
+        echo esc_html( implode( ' · ', $items ) );
+    }
+}
+
+class DynamicTagExcludes extends \Elementor\Core\DynamicTags\Tag {
+    use TourTagBase;
+    public function get_name()  { return 'amir-excludes'; }
+    public function get_title() { return __( 'Tour: No incluye', 'amir-booking' ); }
+
+    public function render(): void {
+        $tour = $this->get_tour_row();
+        if ( ! $tour ) return;
+        $items = $this->field_as_list( \AmirBooking\Core\Languages::tour_field( $tour, 'excludes', $this->current_lang() ) );
+        echo esc_html( implode( ' · ', $items ) );
+    }
+}
+
+class DynamicTagItinerary extends \Elementor\Core\DynamicTags\Tag {
+    use TourTagBase;
+    public function get_name()  { return 'amir-itinerary'; }
+    public function get_title() { return __( 'Tour: Itinerario', 'amir-booking' ); }
+
+    public function render(): void {
+        $tour = $this->get_tour_row();
+        if ( ! $tour ) return;
+        echo wp_kses_post( \AmirBooking\Core\Languages::tour_field( $tour, 'itinerary', $this->current_lang() ) );
     }
 }

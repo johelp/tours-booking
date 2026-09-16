@@ -7,7 +7,9 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$lang  = function_exists('pll_current_language') ? pll_current_language('slug') : 'es';
+// Mismo fix que templates/parts/tour-data.php: antes solo miraba Polylang
+// y caía a español si no estaba activo, ignorando WPML/locale del sitio.
+$lang  = \AmirBooking\Core\Shortcodes::detect_lang();
 $is_en = $lang === 'en';
 
 // Capturar token de partner de la URL
@@ -17,12 +19,20 @@ get_header();
 ?>
 
 <div class="amir-archive-tours">
+  <?php
+  // Sin marca/eslogan configurados en Personalización, texto genérico —
+  // antes esto decía "Experiencias en Bacalar" fijo, mismo bug de fondo
+  // que ya se corrigió en emails/voucher (§ 16.34 CONTRIBUTING.md): cualquier
+  // instalación que no fuera Amir Adventours mostraba la ubicación de otro
+  // operador. Esta plantilla es la que el plugin sugiere copiar al tema.
+  $archive_title    = get_option( 'amir_company_name', '' );
+  $archive_tagline  = get_option( $is_en ? 'amir_company_tagline_en' : 'amir_company_tagline_es', '' );
+  ?>
   <div class="amir-archive-tours__header">
-    <h1><?php echo $is_en ? 'Experiences in Bacalar' : 'Experiencias en Bacalar'; ?></h1>
-    <p><?php echo $is_en
-      ? 'Discover the magic of the Lagoon of 7 Colors with our unique tours.'
-      : 'Descubre la magia de la Laguna de los 7 Colores con nuestros tours únicos.'; ?>
-    </p>
+    <h1><?php echo esc_html( $archive_title !== '' ? $archive_title : ( $is_en ? 'Our Tours' : 'Nuestros Tours' ) ); ?></h1>
+    <?php if ( $archive_tagline !== '' ) : ?>
+      <p><?php echo esc_html( $archive_tagline ); ?></p>
+    <?php endif; ?>
   </div>
 
   <?php wp_enqueue_style('amir-tour-cards'); ?>
@@ -45,7 +55,12 @@ get_header();
         $name_en    = get_post_meta($pid,'_amir_name_en',true);
         $duration   = (int) get_post_meta($pid,'_amir_duration_minutes',true);
         $min_age    = (int) get_post_meta($pid,'_amir_min_age',true);
-        $title      = $is_en ? ($name_en ?: get_the_title()) : get_the_title();
+        // Nombre multi-idioma: es/en desde post meta de siempre, 3+ desde content_i18n.
+        $title      = \AmirBooking\Core\Languages::tour_field( (object) [
+            'name_es'      => get_the_title(),
+            'name_en'      => $name_en,
+            'content_i18n' => get_post_meta( $pid, '_amir_content_i18n', true ) ?: '{}',
+        ], 'name', $lang ) ?: get_the_title();
         $cover      = get_the_post_thumbnail_url($pid,'large');
         $link       = $ref ? add_query_arg('ref',$ref,get_permalink()) : get_permalink();
         $dur_fmt    = $duration >= 60 ? round($duration/60,1).'h' : $duration.'min';
@@ -65,9 +80,20 @@ get_header();
                 <img src="<?php echo esc_url($cover); ?>" alt="<?php echo esc_attr($title); ?>"
                      class="amir-tour-card__img" loading="lazy" />
               </a>
+            <?php else : ?>
+              <a href="<?php echo esc_url($link); ?>" style="display:block">
+                <div style="width:100%;aspect-ratio:16/9;background:linear-gradient(135deg,#c8eedf,#9FE1CB);display:flex;align-items:center;justify-content:center;font-size:36px;">⛵</div>
+              </a>
             <?php endif; ?>
             <?php if ($duration) : ?>
               <span class="amir-tour-card__duration-badge">⏱ <?php echo esc_html($dur_fmt); ?></span>
+            <?php endif; ?>
+            <?php if ($price_from > 0) : ?>
+              <div class="amir-tour-card__price-badge">
+                <span class="amir-tour-card__price-badge-label"><?php echo $is_en?'From':'Desde'; ?></span>
+                <span class="amir-tour-card__price-badge-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
+                <span class="amir-tour-card__price-badge-cur"> <?php echo esc_html( \AmirBooking\Core\Currency::code() ); ?></span>
+              </div>
             <?php endif; ?>
           </div>
 
@@ -89,14 +115,6 @@ get_header();
               <?php endif; ?>
             </div>
 
-            <?php if ($price_from > 0) : ?>
-            <div class="amir-tour-card__price">
-              <span class="amir-tour-card__price-from"><?php echo $is_en?'From':'Desde'; ?></span>
-              <span class="amir-tour-card__price-value">$<?php echo number_format($price_from,0,'.',','); ?></span>
-              <span class="amir-tour-card__price-currency">MXN</span>
-            </div>
-            <?php endif; ?>
-
             <a href="<?php echo esc_url($link); ?>" class="amir-tour-card__cta">
               <?php echo $is_en ? 'Book now' : 'Reservar ahora'; ?>
             </a>
@@ -106,11 +124,16 @@ get_header();
   </div>
 </div>
 
+<?php $brand_color = esc_attr( get_option( 'amir_brand_color', '#1D9E75' ) ); ?>
 <style>
 .amir-archive-tours { max-width:1200px; margin:0 auto; padding:40px 20px 60px; }
 .amir-archive-tours__header { text-align:center; margin-bottom:40px; }
 .amir-archive-tours__header h1 { font-size:clamp(26px,4vw,38px); font-weight:800; color:#1a2e24; margin-bottom:10px; }
 .amir-archive-tours__header p  { font-size:16px; color:#5a7068; max-width:560px; margin:0 auto; }
+.amir-tour-card__cta { background:<?php echo $brand_color; ?>; }
+.amir-tour-card__cta:hover { background:<?php echo $brand_color; ?>; filter:brightness(.88); }
+.amir-tour-card__price-badge { background:<?php echo $brand_color; ?>cc; }
+.amir-tour-card__title a:hover { color:<?php echo $brand_color; ?>; }
 </style>
 
 <?php get_footer(); ?>

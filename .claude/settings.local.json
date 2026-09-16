@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(grep -r \"eval\\\\|system\\\\|exec\\\\|passthru\\\\|shell_exec\" /c/Users/Rentalmotion Sierra/Downloads/amir-booking-v1.0.14/amir-booking/includes --include=*.php)",
-      "Bash(xargs wc:*)",
-      "Bash(composer install:*)"
-    ]
-  }
-}
