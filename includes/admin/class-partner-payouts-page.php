@@ -16,7 +16,16 @@ defined( 'ABSPATH' ) || exit;
 class PartnerPayoutsPage {
 
     /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private string $lang_override = '';
+
+    public function set_lang( string $lang ): void {
+        $this->lang_override = $lang;
+    }
+
     private function lang(): string {
+        if ( $this->lang_override !== '' ) {
+            return $this->lang_override;
+        }
         return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
     }
 
@@ -129,7 +138,7 @@ class PartnerPayoutsPage {
               <td class="ab-td"><strong><?php echo esc_html( \AmirBooking\Core\Currency::format( (float) $pp->amount_mxn ) ); ?></strong></td>
               <td class="ab-td">
                 <?php if ( $pp->status === 'paid' ) : ?>
-                  <span style="color:#1D9E75;font-weight:700;font-size:12px;">✓ <?php echo esc_html( $this->tt( 'Pagado', 'Paid' ) ); ?> <?php echo $pp->paid_at ? esc_html( '(' . date( 'd/m/Y', strtotime( $pp->paid_at ) ) . ')' ) : ''; ?></span>
+                  <span style="color:var(--ab-teal, #1D9E75);font-weight:700;font-size:12px;">✓ <?php echo esc_html( $this->tt( 'Pagado', 'Paid' ) ); ?> <?php echo $pp->paid_at ? esc_html( '(' . date( 'd/m/Y', strtotime( $pp->paid_at ) ) . ')' ) : ''; ?></span>
                 <?php else : ?>
                   <span style="color:#BA7517;font-weight:700;font-size:12px;"><?php echo esc_html( $this->tt( 'Pendiente', 'Pending' ) ); ?></span>
                 <?php endif; ?>

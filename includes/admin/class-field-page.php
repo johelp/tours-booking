@@ -18,12 +18,41 @@ class FieldPage {
 
     /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
     private function lang(): string {
+        if ( $this->lang_override !== '' ) {
+            return $this->lang_override;
+        }
         return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
     }
 
     /** Traducción es/en para esta pantalla — ver lang(). */
     private function tt( string $es, string $en ): string {
         return $this->lang() === 'en' ? $en : $es;
+    }
+
+    /** Idioma del sitio en vez del perfil, cuando el panel de gestión lo pide — ver set_lang() en BookingsPage/etc. */
+    private string $lang_override = '';
+
+    public function set_lang( string $lang ): void {
+        $this->lang_override = $lang;
+    }
+
+    /**
+     * Mismo patrón que BookingsPage/CalendarPage — ver esas clases para el
+     * porqué (panel de gestión sin wp-admin). El único caso especial acá
+     * es ajax_scan_lookup(): corre como un request AJAX completamente
+     * aparte del render() que mostró el botón de escanear, así que no
+     * puede leer esta property — recibe la base por POST (`panel_base`),
+     * validada contra este mismo sitio antes de usarla, ver ese método.
+     */
+    private string $base_url = '';
+
+    private function base_url(): string {
+        return $this->base_url !== '' ? $this->base_url : admin_url( 'admin.php?page=amir-field' );
+    }
+
+    /** El link "Panel completo" del header — al dashboard del panel si estamos en él, o al Dashboard de wp-admin si no. */
+    private function full_panel_url(): string {
+        return $this->base_url !== '' ? \TourFlow\Panel\ManagerPanel::url( 'dashboard' ) : admin_url( 'admin.php?page=amir-booking' );
     }
 
     public function register(): void {
@@ -54,6 +83,17 @@ class FieldPage {
         $token   = sanitize_text_field( $_POST['token'] ?? '' );
         $manager = new \AmirBooking\Core\BookingManager();
 
+        // Este método corre como un request AJAX aparte — no hay ningún
+        // render() previo que le haya cargado $this->base_url, así que la
+        // vista de escaneo (render_scan()) manda su propia base por POST.
+        // Se valida contra el propio sitio antes de usarla (nunca confiar
+        // en una URL de redirect que llega del cliente sin chequear) — si
+        // no es una de las nuestras, cae al link de wp-admin de siempre.
+        $panel_base = esc_url_raw( wp_unslash( $_POST['panel_base'] ?? '' ) );
+        if ( $panel_base !== '' && strpos( $panel_base, home_url() ) !== 0 ) {
+            $panel_base = '';
+        }
+
         if ( $cart ) {
             global $wpdb;
             $primary = $wpdb->get_row( $wpdb->prepare(
@@ -61,19 +101,27 @@ class FieldPage {
                 $cart
             ) );
             if ( $primary && $manager->authorize_public_access( $primary, $token ) ) {
-                wp_send_json_success( [ 'redirect' => admin_url( 'admin.php?page=amir-field&view=cart&cart_group_id=' . rawurlencode( $cart ) ) ] );
+                $redirect = $panel_base !== ''
+                    ? add_query_arg( [ 'view' => 'cart', 'cart_group_id' => $cart ], $panel_base )
+                    : admin_url( 'admin.php?page=amir-field&view=cart&cart_group_id=' . rawurlencode( $cart ) );
+                wp_send_json_success( [ 'redirect' => $redirect ] );
             }
             wp_send_json_error( [ 'text' => $this->tt( 'Voucher inválido — el código QR no corresponde a ningún carrito, o el link venció.', 'Invalid voucher — the QR code does not match any cart, or the link expired.' ) ] );
         }
 
         $booking = $ref ? $manager->get_booking_by_ref( $ref ) : null;
         if ( $booking && $manager->authorize_public_access( $booking, $token ) ) {
-            wp_send_json_success( [ 'redirect' => admin_url( 'admin.php?page=amir-field&view=detail&id=' . $booking->id ) ] );
+            $redirect = $panel_base !== ''
+                ? add_query_arg( [ 'view' => 'detail', 'id' => $booking->id ], $panel_base )
+                : admin_url( 'admin.php?page=amir-field&view=detail&id=' . $booking->id );
+            wp_send_json_success( [ 'redirect' => $redirect ] );
         }
         wp_send_json_error( [ 'text' => $this->tt( 'Voucher inválido — el código QR no corresponde a ninguna reserva, o el link venció.', 'Invalid voucher — the QR code does not match any booking, or the link expired.' ) ] );
     }
 
-    public function render(): void {
+    public function render( string $base_url = '' ): void {
+        $this->base_url = $base_url;
+
         if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
             wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
         }
@@ -90,32 +138,32 @@ class FieldPage {
         .amir-field-title { font-size: 19px; font-weight: 700; color: #1a2e24; flex: 1; }
         .amir-field-search { display: flex; gap: 8px; margin-bottom: 12px; }
         .amir-field-search input { flex: 1; border: 1px solid #c3d9d0; border-radius: 10px; padding: 12px 14px; font-size: 16px; }
-        .amir-field-search button { border: none; background: #1D9E75; color: #fff; border-radius: 10px; padding: 0 18px; font-size: 14px; font-weight: 600; }
+        .amir-field-search button { border: none; background: var(--ab-teal, #1D9E75); color: #fff; border-radius: 10px; padding: 0 18px; font-size: 14px; font-weight: 600; }
         .amir-field-tabs { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; }
-        .amir-field-tabs a { flex-shrink: 0; padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; text-decoration: none; background: #f0faf6; color: #1D9E75; }
-        .amir-field-tabs a.is-active { background: #1D9E75; color: #fff; }
+        .amir-field-tabs a { flex-shrink: 0; padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; text-decoration: none; background: var(--ab-teal-light, #f0faf6); color: var(--ab-teal, #1D9E75); }
+        .amir-field-tabs a.is-active { background: var(--ab-teal, #1D9E75); color: #fff; }
         .amir-field-card { display: block; background: #fff; border: 1px solid #e1f5ee; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; text-decoration: none; color: inherit; }
         .amir-field-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
         .amir-field-name { font-size: 15px; font-weight: 700; color: #1a2e24; }
         .amir-field-tour { font-size: 13px; color: #5a7068; }
         .amir-field-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 12px; white-space: nowrap; }
-        .amir-field-date { font-size: 13px; color: #1D9E75; font-weight: 700; margin-top: 4px; }
+        .amir-field-date { font-size: 13px; color: var(--ab-teal, #1D9E75); font-weight: 700; margin-top: 4px; }
         .amir-field-contact-row { display: flex; gap: 8px; margin-top: 10px; }
         .amir-field-contact-row a { flex: 1; text-align: center; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; min-height: 44px; display: flex; align-items: center; justify-content: center; }
         .amir-field-call { background: #eef4ff; color: #1a6fa8; }
-        .amir-field-wa { background: #e7f9ee; color: #1D9E75; }
+        .amir-field-wa { background: #e7f9ee; color: var(--ab-teal, #1D9E75); }
         .amir-field-empty { text-align: center; color: #5a7068; padding: 40px 20px; font-size: 14px; }
-        .amir-field-fab { position: fixed; bottom: 24px; right: 24px; width: 58px; height: 58px; border-radius: 50%; background: #1D9E75; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; text-decoration: none; box-shadow: 0 4px 14px rgba(0,0,0,.25); z-index: 50; }
+        .amir-field-fab { position: fixed; bottom: 24px; right: 24px; width: 58px; height: 58px; border-radius: 50%; background: var(--ab-teal, #1D9E75); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; text-decoration: none; box-shadow: 0 4px 14px rgba(0,0,0,.25); z-index: 50; }
         .amir-field-detail-row { padding: 10px 0; border-bottom: 1px solid #f5f5f5; font-size: 14px; }
         .amir-field-detail-row span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: #5a7068; margin-bottom: 2px; }
         .amir-field-section { background: #fff; border: 1px solid #e1f5ee; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
-        .amir-field-section h3 { margin: 0 0 10px; font-size: 13px; color: #1D9E75; text-transform: uppercase; letter-spacing: .3px; }
+        .amir-field-section h3 { margin: 0 0 10px; font-size: 13px; color: var(--ab-teal, #1D9E75); text-transform: uppercase; letter-spacing: .3px; }
         .amir-field-input { width: 100%; border: 1px solid #c3d9d0; border-radius: 8px; padding: 12px 14px; font-size: 16px; box-sizing: border-box; margin-bottom: 10px; }
         .amir-field-label { display: block; font-size: 12px; font-weight: 700; color: #1a2e24; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .3px; }
         .amir-field-btn { display: block; width: 100%; border: none; border-radius: 10px; padding: 14px; font-size: 15px; font-weight: 700; text-align: center; min-height: 48px; }
-        .amir-field-btn-primary { background: #1D9E75; color: #fff; }
+        .amir-field-btn-primary { background: var(--ab-teal, #1D9E75); color: #fff; }
         .amir-field-btn-danger { background: #fef2f2; color: #e24b4a; margin-top: 8px; }
-        .amir-field-msg { background: #f0faf6; border: 1px solid #cdeee0; color: #146c50; border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-bottom: 14px; }
+        .amir-field-msg { background: var(--ab-teal-light, #f0faf6); border: 1px solid #cdeee0; color: #146c50; border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-bottom: 14px; }
         .amir-field-err { background: #fef2f2; border: 1px solid #fecaca; color: #a3282c; border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-bottom: 14px; }
         </style>
 
@@ -123,9 +171,9 @@ class FieldPage {
           <div class="amir-field-header">
             <?php if ( $view === 'list' ) : ?>
               <span class="amir-field-title">📱 <?php echo esc_html( $this->tt( 'Modo campo', 'Field mode' ) ); ?></span>
-              <a href="<?php echo esc_url( admin_url( 'admin.php?page=amir-booking' ) ); ?>"><?php echo esc_html( $this->tt( 'Panel completo →', 'Full panel →' ) ); ?></a>
+              <a href="<?php echo esc_url( $this->full_panel_url() ); ?>"><?php echo esc_html( $this->tt( 'Panel completo →', 'Full panel →' ) ); ?></a>
             <?php else : ?>
-              <a href="<?php echo esc_url( admin_url( 'admin.php?page=amir-field' ) ); ?>">← <?php echo esc_html( $this->tt( 'Volver', 'Back' ) ); ?></a>
+              <a href="<?php echo esc_url( $this->base_url() ); ?>">← <?php echo esc_html( $this->tt( 'Volver', 'Back' ) ); ?></a>
               <span class="amir-field-title"><?php echo esc_html( [ 'new' => $this->tt('Nueva reserva','New booking'), 'scan' => $this->tt('Escanear voucher','Scan voucher') ][ $view ] ?? $this->tt('Reserva','Booking') ); ?></span>
             <?php endif; ?>
           </div>
@@ -186,9 +234,9 @@ class FieldPage {
 
         <?php if ( ! $q ) : ?>
         <div class="amir-field-tabs">
-          <a href="<?php echo esc_url( admin_url('admin.php?page=amir-field&filter=today') ); ?>" class="<?php echo $filter==='today' ? 'is-active' : ''; ?>"><?php echo esc_html( $this->tt( 'Hoy', 'Today' ) ); ?></a>
-          <a href="<?php echo esc_url( admin_url('admin.php?page=amir-field&filter=upcoming') ); ?>" class="<?php echo $filter==='upcoming' ? 'is-active' : ''; ?>"><?php echo esc_html( $this->tt( 'Próximas', 'Upcoming' ) ); ?></a>
-          <a href="<?php echo esc_url( admin_url('admin.php?page=amir-field&filter=all') ); ?>" class="<?php echo $filter==='all' ? 'is-active' : ''; ?>"><?php echo esc_html( $this->tt( 'Todas', 'All' ) ); ?></a>
+          <a href="<?php echo esc_url( $this->base_url().'&filter=today' ); ?>" class="<?php echo $filter==='today' ? 'is-active' : ''; ?>"><?php echo esc_html( $this->tt( 'Hoy', 'Today' ) ); ?></a>
+          <a href="<?php echo esc_url( $this->base_url().'&filter=upcoming' ); ?>" class="<?php echo $filter==='upcoming' ? 'is-active' : ''; ?>"><?php echo esc_html( $this->tt( 'Próximas', 'Upcoming' ) ); ?></a>
+          <a href="<?php echo esc_url( $this->base_url().'&filter=all' ); ?>" class="<?php echo $filter==='all' ? 'is-active' : ''; ?>"><?php echo esc_html( $this->tt( 'Todas', 'All' ) ); ?></a>
         </div>
         <?php endif; ?>
 
@@ -199,7 +247,7 @@ class FieldPage {
         <?php else : foreach ( $bookings as $b ) :
             $pax = (int) $b->adults + (int) $b->children + (int) $b->babies;
         ?>
-          <a class="amir-field-card" href="<?php echo esc_url( admin_url( 'admin.php?page=amir-field&view=detail&id=' . $b->id ) ); ?>">
+          <a class="amir-field-card" href="<?php echo esc_url( $this->base_url().'&view=detail&id='.$b->id ); ?>">
             <div class="amir-field-card-top">
               <div>
                 <div class="amir-field-name"><?php echo esc_html( $b->customer_name ); ?></div>
@@ -211,8 +259,8 @@ class FieldPage {
           </a>
         <?php endforeach; endif; ?>
 
-        <a class="amir-field-fab" href="<?php echo esc_url( admin_url( 'admin.php?page=amir-field&view=scan' ) ); ?>" style="right:96px;background:#1a2e24;" title="<?php echo esc_attr( $this->tt( 'Escanear voucher', 'Scan voucher' ) ); ?>">📷</a>
-        <a class="amir-field-fab" href="<?php echo esc_url( admin_url( 'admin.php?page=amir-field&view=new' ) ); ?>">+</a>
+        <a class="amir-field-fab" href="<?php echo esc_url( $this->base_url().'&view=scan' ); ?>" style="right:96px;background:#1a2e24;" title="<?php echo esc_attr( $this->tt( 'Escanear voucher', 'Scan voucher' ) ); ?>">📷</a>
+        <a class="amir-field-fab" href="<?php echo esc_url( $this->base_url().'&view=new' ); ?>">+</a>
         <?php
     }
 
@@ -227,6 +275,7 @@ class FieldPage {
      */
     private function render_scan(): void {
         ?>
+        <script>window.amirFieldPanelBase = <?php echo wp_json_encode( $this->base_url ); ?>;</script>
         <div id="amir-scan-unsupported" class="amir-field-err" style="display:none;">
           <?php echo esc_html( $this->tt( 'Tu navegador no soporta escaneo de QR (BarcodeDetector). Usá el buscador de la lista en su lugar.', "Your browser doesn't support QR scanning (BarcodeDetector). Use the list search instead." ) ); ?>
         </div>
@@ -298,6 +347,7 @@ class FieldPage {
             body.set('ref', ref || '');
             body.set('cart', cart || '');
             body.set('token', token);
+            body.set('panel_base', window.amirFieldPanelBase || '');
 
             fetch(ajaxurl, { method: 'POST', body: body })
               .then(function(r){ return r.json(); })
@@ -601,7 +651,7 @@ class FieldPage {
                   ? mysql2date( 'd/m/Y', $b->tour_date ) . ' → ' . mysql2date( 'd/m/Y', $b->check_out_date )
                   : mysql2date( 'd/m/Y', $b->tour_date );
           ?>
-            <a class="amir-field-card" href="<?php echo esc_url( admin_url( 'admin.php?page=amir-field&view=detail&id=' . $b->id ) ); ?>">
+            <a class="amir-field-card" href="<?php echo esc_url( $this->base_url().'&view=detail&id='.$b->id ); ?>">
               <div class="amir-field-card-top">
                 <div>
                   <div class="amir-field-name"><?php echo $icon; ?> <?php echo esc_html( $name ); ?></div>
@@ -730,7 +780,7 @@ class FieldPage {
         if ( $action === 'create' ) {
             $result = $manager->create_manual( $_POST );
             if ( $result->success ) {
-                wp_redirect( admin_url( 'admin.php?page=amir-field&view=detail&id=' . $result->booking_id ) );
+                wp_redirect( $this->base_url().'&view=detail&id='.$result->booking_id );
                 exit;
             }
             return [ 'ok' => false, 'text' => $result->error ];
@@ -751,7 +801,7 @@ class FieldPage {
                     $cart
                 ) );
                 if ( $primary && $manager->authorize_public_access( $primary, $token ) ) {
-                    wp_redirect( admin_url( 'admin.php?page=amir-field&view=cart&cart_group_id=' . rawurlencode( $cart ) ) );
+                    wp_redirect( $this->base_url().'&view=cart&cart_group_id='.rawurlencode( $cart ) );
                     exit;
                 }
                 return [ 'ok' => false, 'text' => $this->tt( 'Voucher inválido — el código QR no corresponde a ningún carrito, o el link venció.', 'Invalid voucher — the QR code does not match any cart, or the link expired.' ) ];
@@ -762,7 +812,7 @@ class FieldPage {
             // Mismo token fuerte que usa el cliente para "ver mi reserva" —
             // corroborar el voucher es justo lo que hace esta autorización.
             if ( $booking && $manager->authorize_public_access( $booking, $token ) ) {
-                wp_redirect( admin_url( 'admin.php?page=amir-field&view=detail&id=' . $booking->id ) );
+                wp_redirect( $this->base_url().'&view=detail&id='.$booking->id );
                 exit;
             }
             return [ 'ok' => false, 'text' => $this->tt( 'Voucher inválido — el código QR no corresponde a ninguna reserva, o el link venció.', 'Invalid voucher — the QR code does not match any booking, or the link expired.' ) ];
@@ -874,7 +924,7 @@ class FieldPage {
     private function status_style( string $status ): string {
         $map = [
             'pending'                => 'background:#fffbeb;color:#92400e;',
-            'confirmed'              => 'background:#f0faf6;color:#146c50;',
+            'confirmed'              => 'background:var(--ab-teal-light, #f0faf6);color:#146c50;',
             'awaiting_payment'       => 'background:#eef4ff;color:#1a6fa8;',
             'cancellation_requested' => 'background:#fef2f2;color:#a3282c;',
         ];

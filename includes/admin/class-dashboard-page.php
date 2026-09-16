@@ -11,6 +11,27 @@ defined( 'ABSPATH' ) || exit;
  */
 class DashboardPage {
 
+    /**
+     * Base de la URL de "ver reserva" usada por render_day_tours()/
+     * render_day_rooms() — por defecto la de wp-admin de siempre. El panel
+     * de gestión sin wp-admin (`TourFlow\Panel\ManagerPanel`) la pisa para
+     * que estos dos métodos (reusados tal cual desde CalendarPage Y desde
+     * el panel) linkeen dentro del panel en vez de mandar de vuelta a
+     * wp-admin. No afecta a render() (el dashboard completo de wp-admin
+     * en sí, con sus propios links a otras pantallas) — eso no se reusa
+     * desde el panel todavía, ver PROMPT-PANEL-GESTOR.md.
+     */
+    private string $bookings_base_url = '';
+
+    public function set_bookings_base_url( string $url ): void {
+        $this->bookings_base_url = $url;
+    }
+
+    private function booking_url( int $booking_id ): string {
+        $base = $this->bookings_base_url !== '' ? $this->bookings_base_url : admin_url( 'admin.php?page=amir-bookings-list' );
+        return $base . '&action=view&id=' . $booking_id;
+    }
+
     public function render(): void {
         if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
             wp_die( esc_html__( 'No tienes permisos suficientes para acceder a esta página.', 'amir-booking' ) );
@@ -36,7 +57,7 @@ class DashboardPage {
         .ab-admin-wrap h1 { font-size:22px; font-weight:700; color:#1a2e24; margin-bottom:20px; display:flex; align-items:center; gap:10px; }
         .ab-quicklinks { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
         .ab-quicklinks a { display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid #e1f5ee; color:#1a2e24; border-radius:8px; padding:9px 14px; font-size:13px; font-weight:600; text-decoration:none; }
-        .ab-quicklinks a:hover { border-color:#1D9E75; color:#1D9E75; }
+        .ab-quicklinks a:hover { border-color:var(--ab-teal, #1D9E75); color:var(--ab-teal, #1D9E75); }
         .ab-provider-bar { background:#eef4ff; border:1px solid #bfdbfe; border-radius:10px; padding:12px 16px; margin-bottom:20px; }
         .ab-provider-bar .ptitle { font-size:13px; font-weight:700; color:#1a6fa8; margin-bottom:6px; }
         .ab-provider-item { font-size:13px; color:#1e40af; padding:3px 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -46,13 +67,13 @@ class DashboardPage {
         .ab-stat-card .label { font-size:12px; font-weight:600; color:#5a7068; text-transform:uppercase; letter-spacing:.4px; }
         .ab-stat-card .value { font-size:28px; font-weight:800; color:#1a2e24; margin:4px 0 2px; }
         .ab-stat-card .sub   { font-size:12px; color:#5a7068; }
-        .ab-stat-card.green  { border-color:#1D9E75; background:#f0faf6; }
+        .ab-stat-card.green  { border-color:var(--ab-teal, #1D9E75); background:var(--ab-teal-light, #f0faf6); }
 
         .ab-day-section { margin-bottom:28px; }
         .ab-day-header { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
         .ab-day-label { font-size:16px; font-weight:700; color:#1a2e24; }
-        .ab-day-badge { background:#1D9E75; color:#fff; font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.4px; }
-        .ab-day-badge.tomorrow { background:#0F6E56; }
+        .ab-day-badge { background:var(--ab-teal, #1D9E75); color:#fff; font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.4px; }
+        .ab-day-badge.tomorrow { background:var(--ab-teal-dark, #0F6E56); }
         <?php self::day_list_styles(); ?>
 
         .ab-notif-bar { background:#fff8e7; border:1px solid #fde68a; border-radius:10px; padding:12px 16px; margin-bottom:20px; }
@@ -68,22 +89,22 @@ class DashboardPage {
         .ab-request-item .rwhen { font-weight:400; color:#5a7068; font-size:12px; margin-left:6px; }
         .ab-request-item .rtext { font-size:13px; color:#1a2e24; margin-top:3px; background:#fff; border-radius:6px; padding:8px 10px; }
 
-        .ab-section-title { font-size:16px; font-weight:700; color:#1D9E75; margin:24px 0 12px; border-bottom:2px solid #e1f5ee; padding-bottom:8px; }
+        .ab-section-title { font-size:16px; font-weight:700; color:var(--ab-teal, #1D9E75); margin:24px 0 12px; border-bottom:2px solid #e1f5ee; padding-bottom:8px; }
 
         .ab-shortcodes { background:#fff; border:1px solid #e1f5ee; border-radius:10px; margin-bottom:24px; }
         .ab-shortcodes summary { cursor:pointer; padding:14px 18px; font-size:14px; font-weight:700; color:#1a2e24; list-style:none; display:flex; align-items:center; gap:8px; }
         .ab-shortcodes summary::-webkit-details-marker { display:none; }
-        .ab-shortcodes summary::before { content:'▸'; color:#1D9E75; transition:transform .15s; }
+        .ab-shortcodes summary::before { content:'▸'; color:var(--ab-teal, #1D9E75); transition:transform .15s; }
         .ab-shortcodes[open] summary::before { transform:rotate(90deg); }
         .ab-shortcodes-body { padding:0 18px 18px; }
         .ab-sc-item { border-top:1px solid #f0f5f2; padding:14px 0; }
         .ab-sc-item:first-child { border-top:none; padding-top:4px; }
-        .ab-sc-code { display:inline-block; background:#f0faf6; color:#0F6E56; font-family:Consolas,Monaco,monospace; font-size:13px; padding:3px 8px; border-radius:5px; }
+        .ab-sc-code { display:inline-block; background:var(--ab-teal-light, #f0faf6); color:var(--ab-teal-dark, #0F6E56); font-family:Consolas,Monaco,monospace; font-size:13px; padding:3px 8px; border-radius:5px; }
         .ab-sc-desc { font-size:13px; color:#5a7068; margin:6px 0 8px; }
         .ab-sc-atts { width:100%; border-collapse:collapse; font-size:12.5px; }
         .ab-sc-atts th { text-align:left; color:#5a7068; font-weight:600; padding:4px 10px 4px 0; }
         .ab-sc-atts td { padding:4px 10px 4px 0; color:#1a2e24; }
-        .ab-sc-atts code { background:#f8fdfb; padding:1px 5px; border-radius:4px; color:#0F6E56; }
+        .ab-sc-atts code { background:#f8fdfb; padding:1px 5px; border-radius:4px; color:var(--ab-teal-dark, #0F6E56); }
         </style>
 
         <h1>📅 <?php _e('Dashboard operativo', 'amir-booking'); ?>
@@ -203,7 +224,7 @@ class DashboardPage {
               <p class="ab-sc-desc"><?php $sct( 'Grilla "Próximamente" con los tours en borrador que tienen la lista de interés activada (ver TourFlow → Lista de interés). Deja anotarse sin cobrar todavía.', '"Coming soon" grid with draft tours that have the waitlist enabled (see TourFlow → Waitlist). Lets people sign up without charging yet.' ); ?></p>
               <table class="ab-sc-atts">
                 <tr><th>columns</th><td><?php $sct( 'Opcional. Igual que en', 'Optional. Same as in' ); ?> <code>[flow_tour_list]</code>.</td></tr>
-                <tr><th>accent</th><td><?php $sct( 'Opcional. Color de acento en hex (ej. <code>#1D9E75</code>). Por defecto el verde de la marca.', 'Optional. Accent color in hex (e.g. <code>#1D9E75</code>). Defaults to the brand green.' ); ?></td></tr>
+                <tr><th>accent</th><td><?php $sct( 'Opcional. Color de acento en hex (ej. <code>var(--ab-teal, #1D9E75)</code>). Por defecto el verde de la marca.', 'Optional. Accent color in hex (e.g. <code>var(--ab-teal, #1D9E75)</code>). Defaults to the brand green.' ); ?></td></tr>
                 <tr><th>lang</th><td><?php $sct( 'Opcional, igual que en', 'Optional, same as in' ); ?> <code>[flow_booking]</code>.</td></tr>
               </table>
             </div>
@@ -339,7 +360,7 @@ class DashboardPage {
             <div class="ab-notif-item">
               <?php echo $notif_icon; ?>
               <?php echo esc_html($n->message); ?>
-              <a href="<?php echo esc_url( $notif_url ); ?>" style="color:#1D9E75;font-size:12px;"><?php echo esc_html( $notif_cta ); ?></a>
+              <a href="<?php echo esc_url( $notif_url ); ?>" style="color:var(--ab-teal, #1D9E75);font-size:12px;"><?php echo esc_html( $notif_cta ); ?></a>
             </div>
           <?php endforeach; ?>
           <form method="post" style="margin-top:8px;">
@@ -419,7 +440,7 @@ class DashboardPage {
                 <td><?php echo \AmirBooking\Core\Currency::format((float)$b->total_mxn, 0); ?></td>
                 <td>
                   <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=view&id='.$b->id); ?>"
-                     style="color:#1D9E75;font-size:12px;font-weight:600;"><?php _e('Ver detalle →', 'amir-booking'); ?></a>
+                     style="color:var(--ab-teal, #1D9E75);font-size:12px;font-weight:600;"><?php _e('Ver detalle →', 'amir-booking'); ?></a>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -452,13 +473,13 @@ class DashboardPage {
         .ab-day-empty { background:#f8fdfb; border:1px dashed #c3d9d0; border-radius:10px; padding:20px; text-align:center; font-size:13px; color:#5a7068; }
 
         .ab-tour-block { background:#fff; border:1px solid #e1f5ee; border-radius:10px; margin-bottom:12px; overflow:hidden; }
-        .ab-tour-block-header { display:flex; align-items:center; gap:14px; padding:14px 18px; background:#f0faf6; border-bottom:1px solid #e1f5ee; cursor:pointer; }
+        .ab-tour-block-header { display:flex; align-items:center; gap:14px; padding:14px 18px; background:var(--ab-teal-light, #f0faf6); border-bottom:1px solid #e1f5ee; cursor:pointer; }
         .ab-tour-block-header:hover { background:#e1f5ee; }
         .ab-tour-thumb { width:48px; height:48px; border-radius:8px; object-fit:cover; flex-shrink:0; background:#c3d9d0; }
         .ab-tour-name { font-size:15px; font-weight:700; color:#1a2e24; flex:1; }
         .ab-tour-time { font-size:13px; color:#5a7068; }
-        .ab-tour-pax-pill { display:flex; align-items:center; gap:6px; background:#1D9E75; color:#fff; padding:5px 12px; border-radius:20px; font-size:13px; font-weight:700; flex-shrink:0; }
-        .ab-tour-slots-pill { background:#e1f5ee; color:#0F6E56; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600; flex-shrink:0; }
+        .ab-tour-pax-pill { display:flex; align-items:center; gap:6px; background:var(--ab-teal, #1D9E75); color:#fff; padding:5px 12px; border-radius:20px; font-size:13px; font-weight:700; flex-shrink:0; }
+        .ab-tour-slots-pill { background:#e1f5ee; color:var(--ab-teal-dark, #0F6E56); padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600; flex-shrink:0; }
         .ab-tour-slots-pill.low { background:#fff8e7; color:#BA7517; }
         .ab-tour-slots-pill.full { background:#fef2f2; color:#e24b4a; }
 
@@ -470,12 +491,12 @@ class DashboardPage {
 
         .ab-pax-breakdown { display:flex; gap:6px; }
         .ab-pax-chip { font-size:11px; padding:2px 7px; border-radius:12px; font-weight:600; }
-        .ab-pax-chip.adult   { background:#e1f5ee; color:#0F6E56; }
+        .ab-pax-chip.adult   { background:#e1f5ee; color:var(--ab-teal-dark, #0F6E56); }
         .ab-pax-chip.child   { background:#e8f4ff; color:#1a6fa8; }
         .ab-pax-chip.baby    { background:#f5f0ff; color:#6a3d9a; }
 
         .ab-status-chip { font-size:11px; padding:3px 8px; border-radius:12px; font-weight:600; }
-        .ab-status-chip.confirmed { background:#e1f5ee; color:#0F6E56; }
+        .ab-status-chip.confirmed { background:#e1f5ee; color:var(--ab-teal-dark, #0F6E56); }
         .ab-status-chip.pending   { background:#fff8e7; color:#BA7517; }
         .ab-status-chip.cancelled_client,.ab-status-chip.cancellation_requested { background:#fef2f2; color:#e24b4a; }
 
@@ -552,8 +573,8 @@ class DashboardPage {
                   <?php foreach ( $tour['bookings'] as $b ) : ?>
                     <tr>
                       <td>
-                        <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=view&id='.$b->id); ?>"
-                           style="font-weight:700;color:#1D9E75;"><?php echo esc_html($b->booking_ref); ?></a>
+                        <a href="<?php echo $this->booking_url($b->id); ?>"
+                           style="font-weight:700;color:var(--ab-teal, #1D9E75);"><?php echo esc_html($b->booking_ref); ?></a>
                         <span class="ab-status-chip <?php echo esc_attr($b->status); ?>"><?php echo esc_html($b->status); ?></span>
                       </td>
                       <td>
@@ -614,7 +635,7 @@ class DashboardPage {
               <tbody>
               <?php foreach ( $rooms['arrivals'] as $b ) : ?>
                 <tr>
-                  <td><a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=view&id='.$b->id); ?>" style="font-weight:700;color:#1D9E75;"><?php echo esc_html($b->booking_ref); ?></a></td>
+                  <td><a href="<?php echo $this->booking_url($b->id); ?>" style="font-weight:700;color:var(--ab-teal, #1D9E75);"><?php echo esc_html($b->booking_ref); ?></a></td>
                   <td><?php echo esc_html($b->room_name_es); ?></td>
                   <td><?php echo esc_html($b->customer_name); ?></td>
                   <td><?php echo (int) $b->adults; ?></td>
@@ -631,7 +652,7 @@ class DashboardPage {
               <tbody>
               <?php foreach ( $rooms['departures'] as $b ) : ?>
                 <tr>
-                  <td><a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=view&id='.$b->id); ?>" style="font-weight:700;color:#1D9E75;"><?php echo esc_html($b->booking_ref); ?></a></td>
+                  <td><a href="<?php echo $this->booking_url($b->id); ?>" style="font-weight:700;color:var(--ab-teal, #1D9E75);"><?php echo esc_html($b->booking_ref); ?></a></td>
                   <td><?php echo esc_html($b->room_name_es); ?></td>
                   <td><?php echo esc_html($b->customer_name); ?></td>
                 </tr>

@@ -241,6 +241,29 @@ class TourImporter {
 			}, $t['detail_facts'] );
 			update_post_meta( $post_id, '_amir_detail_facts', wp_json_encode( $facts, JSON_UNESCAPED_UNICODE ) );
 		}
+
+		// FAQ por tour (v5.9.0, § 16.94 CONTRIBUTING.md) — mismo formato bilingüe
+		// que ya guarda TourPostType::save_faq_items(), sin tocar ese método
+		// (mismo criterio del resto de la clase: el importador escribe la meta
+		// directo, no pasa por $_POST). Preguntas sin texto en ningún idioma
+		// se descartan, igual que hace save_faq_items() con el editor real.
+		if ( ! empty( $t['faq_items'] ) && is_array( $t['faq_items'] ) ) {
+			$faq = [];
+			foreach ( $t['faq_items'] as $item ) {
+				$q_es = sanitize_text_field( $item['question_es'] ?? '' );
+				$q_en = sanitize_text_field( $item['question_en'] ?? '' );
+				if ( $q_es === '' && $q_en === '' ) {
+					continue;
+				}
+				$faq[] = [
+					'question_es' => $q_es,
+					'question_en' => $q_en,
+					'answer_es'   => sanitize_textarea_field( $item['answer_es'] ?? '' ),
+					'answer_en'   => sanitize_textarea_field( $item['answer_en'] ?? '' ),
+				];
+			}
+			update_post_meta( $post_id, '_amir_faq_items', wp_json_encode( $faq, JSON_UNESCAPED_UNICODE ) );
+		}
 	}
 
 	/**

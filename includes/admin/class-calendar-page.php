@@ -15,11 +15,42 @@ defined( 'ABSPATH' ) || exit;
 class CalendarPage {
 
     /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private string $lang_override = '';
+
+    public function set_lang( string $lang ): void {
+        $this->lang_override = $lang;
+    }
+
     private function lang(): string {
+        if ( $this->lang_override !== '' ) {
+            return $this->lang_override;
+        }
         return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
     }
 
-    public function render(): void {
+    /**
+     * Igual patrón que BookingsPage::$base_url — el panel de gestión sin
+     * wp-admin pasa la suya propia a render() para que "Hoy"/navegación de
+     * mes queden dentro del panel, y para que el DashboardPage reusado acá
+     * abajo (render_day_tours/render_day_rooms) linkee "ver reserva" al
+     * panel también en vez de a wp-admin.
+     */
+    private string $base_url = '';
+    private string $bookings_base_url = '';
+
+    private function base_url(): string {
+        return $this->base_url !== '' ? $this->base_url : admin_url( 'admin.php?page=amir-calendar' );
+    }
+
+    /**
+     * $bookings_base_url es la URL de "Reservas" en el mismo contexto
+     * (wp-admin o el panel de gestión) — necesaria porque el detalle del
+     * día reusa DashboardPage::render_day_tours()/render_day_rooms(), que
+     * linkean a una reserva puntual, no a este calendario.
+     */
+    public function render( string $base_url = '', string $bookings_base_url = '' ): void {
+        $this->base_url          = $base_url;
+        $this->bookings_base_url = $bookings_base_url;
         $month_param = sanitize_text_field( $_GET['month'] ?? '' );
         $month_ts    = $month_param && preg_match( '/^\d{4}-\d{2}$/', $month_param )
             ? strtotime( $month_param . '-01' )
@@ -38,17 +69,17 @@ class CalendarPage {
         <style>
         .amir-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
         .amir-cal-title { font-size: 22px; font-weight: 700; color: #1a2e24; text-transform: capitalize; }
-        .amir-cal-nav a { display: inline-block; padding: 8px 16px; border: 1px solid #d1e8df; border-radius: 8px; color: #1D9E75; text-decoration: none; font-weight: 600; font-size: 13px; margin-left: 8px; }
-        .amir-cal-nav a:hover { background: #f0faf6; }
+        .amir-cal-nav a { display: inline-block; padding: 8px 16px; border: 1px solid #d1e8df; border-radius: 8px; color: var(--ab-teal, #1D9E75); text-decoration: none; font-weight: 600; font-size: 13px; margin-left: 8px; }
+        .amir-cal-nav a:hover { background: var(--ab-teal-light, #f0faf6); }
         .amir-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
         .amir-cal-dow { text-align: center; font-size: 11px; font-weight: 700; color: #5a7068; text-transform: uppercase; letter-spacing: .4px; padding-bottom: 6px; }
         .amir-cal-cell { min-height: 76px; border-radius: 10px; padding: 8px 10px; text-decoration: none; display: block; border: 1px solid #e1f5ee; background: #fff; }
         .amir-cal-cell.empty { border: none; background: transparent; }
-        .amir-cal-cell.has-bookings { background: #f0faf6; border-color: #1D9E75; }
-        .amir-cal-cell.is-selected { outline: 2px solid #1D9E75; outline-offset: -2px; }
+        .amir-cal-cell.has-bookings { background: var(--ab-teal-light, #f0faf6); border-color: var(--ab-teal, #1D9E75); }
+        .amir-cal-cell.is-selected { outline: 2px solid var(--ab-teal, #1D9E75); outline-offset: -2px; }
         .amir-cal-daynum { font-size: 13px; font-weight: 700; color: #1a2e24; }
-        .amir-cal-cell.today .amir-cal-daynum { color: #1D9E75; }
-        .amir-cal-badge { margin-top: 6px; display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: #1D9E75; color: #fff; }
+        .amir-cal-cell.today .amir-cal-daynum { color: var(--ab-teal, #1D9E75); }
+        .amir-cal-badge { margin-top: 6px; display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: var(--ab-teal, #1D9E75); color: #fff; }
         .amir-cal-detail { margin-top: 28px; border-top: 1px solid #e1f5ee; padding-top: 20px; }
         .amir-cal-detail-title { font-size: 16px; font-weight: 700; color: #1a2e24; margin-bottom: 14px; text-transform: capitalize; }
         <?php \AmirBooking\Admin\DashboardPage::day_list_styles(); ?>
@@ -60,7 +91,7 @@ class CalendarPage {
           <div class="amir-cal-title"><?php echo esc_html( date_i18n( 'F Y', $month_ts ) ); ?></div>
           <div class="amir-cal-nav">
             <a href="<?php echo esc_url( $this->month_url( $year, $month - 1 ) ); ?>">← <?php _e('Anterior', 'amir-booking'); ?></a>
-            <a href="<?php echo esc_url( admin_url( 'admin.php?page=amir-calendar' ) ); ?>"><?php _e('Hoy', 'amir-booking'); ?></a>
+            <a href="<?php echo esc_url( $this->base_url() ); ?>"><?php _e('Hoy', 'amir-booking'); ?></a>
             <a href="<?php echo esc_url( $this->month_url( $year, $month + 1 ) ); ?>"><?php _e('Siguiente →', 'amir-booking'); ?></a>
           </div>
         </div>
@@ -108,6 +139,7 @@ class CalendarPage {
             <div class="amir-cal-detail-title"><?php echo esc_html( date_i18n( _x( 'l j \d\e F', 'formato de fecha largo con día de semana', 'amir-booking' ), strtotime( $day ) ) ); ?></div>
             <?php
             $dashboard = new \AmirBooking\Admin\DashboardPage();
+            $dashboard->set_bookings_base_url( $this->bookings_base_url );
             $dashboard->render_day_tours( $dashboard->get_day_summary( $day )['tours'] );
             // Habitaciones (Pro Max, § 16 CONTRIBUTING.md) — check-ins/outs de este día.
             if ( AMIR_EDITION === 'pro_max' ) {
@@ -155,10 +187,10 @@ class CalendarPage {
     private function month_url( int $year, int $month, string $day = '' ): string {
         // Normalizar mes fuera de 1-12 (navegación a mes anterior/siguiente)
         $ts = mktime( 0, 0, 0, $month, 1, $year );
-        $args = [ 'page' => 'amir-calendar', 'month' => date( 'Y-m', $ts ) ];
+        $args = [ 'month' => date( 'Y-m', $ts ) ];
         if ( $day ) {
             $args['day'] = $day;
         }
-        return add_query_arg( $args, admin_url( 'admin.php' ) );
+        return add_query_arg( $args, $this->base_url() );
     }
 }

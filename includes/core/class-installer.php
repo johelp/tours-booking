@@ -46,6 +46,7 @@ class Installer {
 
         // El rol se registra una sola vez (es de red en Multisite)
         TourManagerRole::register();
+        QuickPanelRole::register();
         flush_rewrite_rules();
     }
 
@@ -157,6 +158,7 @@ class Installer {
         }
 
         TourManagerRole::remove();
+        QuickPanelRole::remove();
     }
 
     private static function uninstall_for_blog(): void {

@@ -57,8 +57,8 @@ class RoomPostType {
 			return;
 		}
 		printf(
-			'<code title="%s" onclick="navigator.clipboard.writeText(\'%d\');var t=this.nextElementSibling;t.style.opacity=1;setTimeout(function(){t.style.opacity=0;},900);" style="cursor:pointer;background:#f0faf6;color:#0F6E56;padding:2px 7px;border-radius:5px;font-size:12px;">%d</code>'
-			. '<span style="color:#1D9E75;font-size:11px;opacity:0;transition:opacity .2s;margin-left:5px;">✓ copiado</span>',
+			'<code title="%s" onclick="navigator.clipboard.writeText(\'%d\');var t=this.nextElementSibling;t.style.opacity=1;setTimeout(function(){t.style.opacity=0;},900);" style="cursor:pointer;background:var(--ab-teal-light, #f0faf6);color:var(--ab-teal-dark, #0F6E56);padding:2px 7px;border-radius:5px;font-size:12px;">%d</code>'
+			. '<span style="color:var(--ab-teal, #1D9E75);font-size:11px;opacity:0;transition:opacity .2s;margin-left:5px;">✓ copiado</span>',
 			esc_attr__( 'Clic para copiar — es el room_id que va en [flow_discovery mode="room" room_id="…"]', 'amir-booking' ),
 			$db_id,
 			$db_id
@@ -133,7 +133,7 @@ class RoomPostType {
 		  .flow-room-grid-3 { grid-template-columns:1fr 1fr 1fr; }
 		  .flow-room-field label { display:block; font-weight:600; font-size:12px; color:#1a2e24; margin-bottom:4px; text-transform:uppercase; letter-spacing:.3px; }
 		  .flow-room-field input, .flow-room-field select, .flow-room-field textarea { width:100%; border:1px solid #c3d9d0; border-radius:6px; padding:7px 10px; font-size:13px; box-sizing:border-box; }
-		  .flow-room-field input:focus, .flow-room-field select:focus { outline:none; border-color:#1D9E75; box-shadow:0 0 0 2px rgba(29,158,117,.15); }
+		  .flow-room-field input:focus, .flow-room-field select:focus { outline:none; border-color:var(--ab-teal, #1D9E75); box-shadow:0 0 0 2px rgba(29,158,117,.15); }
 		  .flow-room-hint { font-size:11px; color:#888; margin-top:3px; }
 		</style>
 
@@ -241,7 +241,7 @@ class RoomPostType {
 		  ?>
 		</div>
 		<button type="button" id="flow-add-amenity-btn"
-		        style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
+		        style="background:transparent;color:var(--ab-teal, #1D9E75);border:1px solid var(--ab-teal, #1D9E75);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
 		  + <?php _e( 'Agregar amenity', 'amir-booking' ); ?>
 		</button>
 
@@ -303,7 +303,7 @@ class RoomPostType {
 		</div>
 
 		<button type="button" id="flow-room-gallery-btn"
-		        style="background:#1D9E75;color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;">
+		        style="background:var(--ab-teal, #1D9E75);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;">
 		  + <?php _e( 'Agregar fotos a la galería', 'amir-booking' ); ?>
 		</button>
 
@@ -357,7 +357,12 @@ class RoomPostType {
 			! isset( $_POST['flow_room_nonce'] ) ||
 			! wp_verify_nonce( $_POST['flow_room_nonce'], 'flow_room_meta' ) ||
 			( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) ||
-			! current_user_can( 'manage_options' )
+			// Mismo bug real que TourPostType::save_meta() (ver ese
+			// comentario) — acá era todavía más restrictivo, exigía
+			// manage_options A SECAS, sin ningún fallback: un Tour Manager
+			// nunca pudo guardar una habitación, ni en wp-admin. Corregido
+			// 2026-09-12 al armar Habitaciones en el panel de gestión.
+			( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) )
 		) {
 			return;
 		}

@@ -4,7 +4,7 @@ TourFlow es el plugin de WordPress que usa tu negocio para publicar tours, recib
 
 Este manual está escrito para vos, el operador — el dueño o el staff que usa el panel de administración día a día. No asume conocimientos de programación.
 
-> Versión del plugin al momento de escribir este manual: **v5.7.7**. Actualizado en esta ronda: capítulos [2](docs-manual/02-cargar-un-tour.md) y [18](docs-manual/18-tipos-de-tour.md) — sumaron "Armá tu tour" (variante de Solo a pedido sin precio fijo), "Mínimo de personas por reserva" (ahora bloquea reservas individuales chicas, no solo avisa por email), y las secciones Pro Max que faltaban del editor de tour (Depósito parcial, Reserva directa, Venta separada). Rondas anteriores actualizaron el capítulo [1](docs-manual/01-primeros-pasos.md) (tabla de shortcodes al día — nombres `flow_*`, `[flow_spots_left]` y `[flow_tour_dates]` nuevos, sección Pro Max con `[flow_discovery]`/`[flow_explore]`/`[flow_search_bar]`/`[flow_room_list]`/`[flow_room_search]`), y los capítulos [3](docs-manual/03-precios-y-horarios.md) y [5](docs-manual/05-disponibilidad.md). El resto del manual (Marketplace de proveedores, habitaciones/Pro Max, flujo continuo, GDPR, multi-idioma 3+, personalización visual v3+, wishlist con reserva real, video en la ficha, flujo Explorar) todavía no tiene su capítulo propio — son features reales y en uso, pendientes de documentar acá. Algunas funciones marcadas como "próximamente" ya están terminadas y no se actualizó la nota — verificá contra el panel si tenés dudas.
+> Versión del plugin al momento de escribir este manual: **v5.11.2**. Actualizado en esta ronda: capítulo nuevo [19](docs-manual/19-panel-de-gestion.md) — el panel de gestión propio (`tu-sitio.com/gestor/`) que permite operar Tours, Habitaciones (Pro Max), Reservas, Calendario, Modo campo, Disponibilidad y Partners+Liquidación sin entrar nunca a WordPress. El resto de esta nota de versión (features sin capítulo propio: Marketplace de proveedores, habitaciones/Pro Max fuera del panel nuevo, flujo continuo, GDPR, multi-idioma 3+, personalización visual v3+, wishlist con reserva real, video en la ficha, flujo Explorar, split payments de Mercado Pago) sigue vigente de una ronda anterior (v5.7.7) — quedan pendientes de documentar en una sesión dedicada aparte. Algunas funciones marcadas como "próximamente" en capítulos viejos ya están terminadas y no se actualizó la nota — verificá contra el panel si tenés dudas.
 
 ## Índice
 
@@ -26,6 +26,7 @@ Este manual está escrito para vos, el operador — el dueño o el staff que usa
 16. [Panel de administración](docs-manual/16-panel-administracion.md) — recorrido de cada pantalla
 17. [Preguntas frecuentes / solución de problemas](docs-manual/17-faq.md)
 18. [Tipos de tour y experiencia](docs-manual/18-tipos-de-tour.md) — los siete modos de disponibilidad combinables, con ejemplos armados
+19. [Panel de gestión](docs-manual/19-panel-de-gestion.md) — operar Tours, Reservas, Calendario y más sin entrar a WordPress
 
 ---
 

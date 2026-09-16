@@ -4,6 +4,8 @@
 
 Este capítulo recorre las pantallas de uso diario que no tienen ya su propio capítulo dedicado: Dashboard, Calendario, Reservas, Reportes y Log de pagos. (Disponibilidad, Partners, Lista de interés, Cupones y Configuración están explicadas en sus propios capítulos.)
 
+> Si tu operación no necesita entrar nunca a WordPress, buena parte de este capítulo (Dashboard, Calendario, Reservas) también existe en el **[panel de gestión](19-panel-de-gestion.md)**, en `tu-sitio.com/gestor/` — una versión con su propio login y pinta propia, pensada para quien opera el día a día. Este capítulo describe las mismas tareas tal como se ven dentro de `wp-admin`.
+
 ## Dashboard (pantalla de inicio)
 
 Pensada para consultarse rápido, incluso desde una tablet en el punto de encuentro el día de la operación. Muestra:

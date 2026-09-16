@@ -13,7 +13,23 @@ defined( 'ABSPATH' ) || exit;
  */
 class RoomAvailabilityPage {
 
-	public function render(): void {
+	/** Mismo patrón que AmirBooking\Admin\AvailabilityPage — ver esa clase para el porqué (panel de gestión sin wp-admin). */
+	private string $base_url = '';
+
+	private function base_url(): string {
+		return $this->base_url !== '' ? $this->base_url : admin_url( 'admin.php?page=flow-room-availability' );
+	}
+
+	public function render( string $base_url = '' ): void {
+		$this->base_url = $base_url;
+
+		// Esta pantalla nunca tuvo su propio chequeo de capability — dependía
+		// solo del gate del menú (`manage_options` en class-admin-menu.php).
+		// El panel de gestión no pasa por ese menú, así que hace falta acá.
+		if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
+			wp_die( 'No tienes permisos suficientes para acceder a esta página.' );
+		}
+
 		$this->handle_actions();
 
 		$rooms         = $this->get_rooms();
@@ -40,11 +56,11 @@ class RoomAvailabilityPage {
 		<div style="display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap;">
 		  <label style="font-weight:600;font-size:13px;">Habitación:</label>
 		  <?php foreach ( $rooms as $r ) : ?>
-		    <a href="<?php echo admin_url( 'admin.php?page=flow-room-availability&room_id=' . $r->id ); ?>"
+		    <a href="<?php echo $this->base_url().'&room_id='.$r->id; ?>"
 		       style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;text-decoration:none;
-		              background:<?php echo $selected_room === (int) $r->id ? '#1D9E75' : '#f0faf6'; ?>;
-		              color:<?php echo $selected_room === (int) $r->id ? '#fff' : '#1D9E75'; ?>;
-		              border:1.5px solid <?php echo $selected_room === (int) $r->id ? '#1D9E75' : '#c3d9d0'; ?>;">
+		              background:<?php echo $selected_room === (int) $r->id ? 'var(--ab-teal, #1D9E75)' : 'var(--ab-teal-light, #f0faf6)'; ?>;
+		              color:<?php echo $selected_room === (int) $r->id ? '#fff' : 'var(--ab-teal, #1D9E75)'; ?>;
+		              border:1.5px solid <?php echo $selected_room === (int) $r->id ? 'var(--ab-teal, #1D9E75)' : '#c3d9d0'; ?>;">
 		      <?php echo esc_html( $r->name_es ); ?>
 		    </a>
 		  <?php endforeach; ?>
@@ -85,7 +101,7 @@ class RoomAvailabilityPage {
 		          <tr style="border-bottom:1px solid #f5f5f5;">
 		            <td class="ab-td">
 		              <span style="background:<?php echo $rule->rule_type === 'block' ? '#fef2f2' : '#e1f5ee'; ?>;
-		                           color:<?php echo $rule->rule_type === 'block' ? '#e24b4a' : '#0F6E56'; ?>;
+		                           color:<?php echo $rule->rule_type === 'block' ? '#e24b4a' : 'var(--ab-teal-dark, #0F6E56)'; ?>;
 		                           font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;">
 		                <?php echo $rule->rule_type === 'block' ? '🚫 Bloquear' : '✅ Permitir'; ?>
 		              </span>
@@ -198,7 +214,7 @@ class RoomAvailabilityPage {
 			}
 		}
 
-		wp_redirect( admin_url( 'admin.php?page=flow-room-availability&room_id=' . $room_id ) );
+		wp_redirect( $this->base_url().'&room_id='.$room_id );
 		exit;
 	}
 

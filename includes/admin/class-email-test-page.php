@@ -167,11 +167,17 @@ class EmailTestPage {
                 <div class="ab-text-field">
                   <label for="<?php echo esc_attr( $field_id ); ?>"><?php echo esc_html( $field['label'] ?? $key ); ?></label>
                   <textarea id="<?php echo esc_attr( $field_id ); ?>" name="texts[<?php echo esc_attr( $key ); ?>]"
-                            rows="<?php echo strlen( $default ) > 90 ? 3 : 1; ?>"><?php echo esc_textarea( $current ); ?></textarea>
+                            rows="<?php echo $key === 'custom_html_block' ? 8 : ( strlen( $default ) > 90 ? 3 : 1 ); ?>"><?php echo esc_textarea( $current ); ?></textarea>
                   <button type="button" class="ab-reset" data-default="<?php echo esc_attr( $default ); ?>"
                           onclick="this.previousElementSibling.value=this.dataset.default"><?php echo esc_html( $this->tt( 'Restaurar texto por defecto', 'Restore default text' ) ); ?></button>
                   <?php if ( ! empty( $m[1] ) ) : ?>
                     <div class="ab-placeholders"><?php echo esc_html( $this->tt( 'Variables:', 'Variables:' ) ); ?> <?php foreach ( $m[1] as $ph ) : ?><code>{<?php echo esc_html( $ph ); ?>}</code> <?php endforeach; ?></div>
+                  <?php endif; ?>
+                  <?php if ( $key === 'custom_html_block' ) : ?>
+                    <div class="ab-placeholders"><?php echo esc_html( $this->tt(
+                      'Se pega después del saludo, antes del resto del email. Admite HTML (imágenes, tablas, estilos en línea), pero no bloques <style> ni <script> — se descartan al guardar. Para un banner de ancho completo (imagen a los bordes) usá margin:0 -32px con tu <div> — nunca un margen superior negativo, se solapa con el saludo de arriba.',
+                      'Renders right after the greeting, before the rest of the email. HTML is allowed (images, tables, inline styles), but <style> and <script> blocks are stripped on save. For a full-width banner (edge-to-edge image), use margin:0 -32px on your <div> — never a negative top margin, it overlaps the greeting above it.'
+                    ) ); ?></div>
                   <?php endif; ?>
                 </div>
               <?php endforeach; ?>

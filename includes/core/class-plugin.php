@@ -46,6 +46,18 @@ final class Plugin {
         // ── Rol Tour Manager ──────────────────────────────────────────────
         TourManagerRole::register_hooks();
 
+        // ── Roles del "Panel rápido" (QuickPanelRole, 2026-09-15) ──────────
+        // Idempotente y se llama en cada carga (no solo en activate()) para
+        // que instalaciones ya activas los reciban sin desactivar/reactivar
+        // el plugin — mismo criterio de autocorrección que
+        // Installer::ensure_booking_status_enum()/ManagerPanel::maybe_flush_rewrite_rules().
+        QuickPanelRole::register();
+
+        // ── Panel de gestión sin wp-admin (fase 1: Dashboard/Reservas/
+        // Calendario) — universal a las 3 ediciones, no gateado a Pro Max
+        // pese al namespace TourFlow\ (ver PROMPT-PANEL-GESTOR.md).
+        \TourFlow\Panel\ManagerPanel::register();
+
         // ── Elementor (se inicializa solo si Elementor está activo) ───────
         ( new \AmirBooking\Elementor\ElementorIntegration() )->register();
 

@@ -109,8 +109,8 @@ class TourPostType {
             return;
         }
         printf(
-            '<code title="%s" onclick="navigator.clipboard.writeText(\'%d\');var t=this.nextElementSibling;t.style.opacity=1;setTimeout(function(){t.style.opacity=0;},900);" style="cursor:pointer;background:#f0faf6;color:#0F6E56;padding:2px 7px;border-radius:5px;font-size:12px;">%d</code>'
-            . '<span style="color:#1D9E75;font-size:11px;opacity:0;transition:opacity .2s;margin-left:5px;">✓ copiado</span>',
+            '<code title="%s" onclick="navigator.clipboard.writeText(\'%d\');var t=this.nextElementSibling;t.style.opacity=1;setTimeout(function(){t.style.opacity=0;},900);" style="cursor:pointer;background:var(--ab-teal-light, #f0faf6);color:var(--ab-teal-dark, #0F6E56);padding:2px 7px;border-radius:5px;font-size:12px;">%d</code>'
+            . '<span style="color:var(--ab-teal, #1D9E75);font-size:11px;opacity:0;transition:opacity .2s;margin-left:5px;">✓ copiado</span>',
             esc_attr__( 'Clic para copiar — es el tour_id que va en los shortcodes ([flow_booking tour_id="…"], etc.)', 'amir-booking' ),
             $db_id,
             $db_id
@@ -286,8 +286,8 @@ class TourPostType {
           .amir-meta-grid-3 { grid-template-columns:1fr 1fr 1fr; }
           .amir-field label { display:block; font-weight:600; font-size:12px; color:#1a2e24; margin-bottom:4px; text-transform:uppercase; letter-spacing:.3px; }
           .amir-field input, .amir-field select, .amir-field textarea { width:100%; border:1px solid #c3d9d0; border-radius:6px; padding:7px 10px; font-size:13px; box-sizing:border-box; }
-          .amir-field input:focus, .amir-field select:focus { outline:none; border-color:#1D9E75; box-shadow:0 0 0 2px rgba(29,158,117,.15); }
-          .amir-section-title { font-size:13px; font-weight:700; color:#1D9E75; margin:16px 0 10px; border-bottom:1px solid #e1f5ee; padding-bottom:6px; }
+          .amir-field input:focus, .amir-field select:focus { outline:none; border-color:var(--ab-teal, #1D9E75); box-shadow:0 0 0 2px rgba(29,158,117,.15); }
+          .amir-section-title { font-size:13px; font-weight:700; color:var(--ab-teal, #1D9E75); margin:16px 0 10px; border-bottom:1px solid #e1f5ee; padding-bottom:6px; }
           .amir-hint { font-size:11px; color:#888; margin-top:3px; }
           /* Secciones de casos especiales (fecha fija, solo a pedido, venta
              separada, lista de interés) — colapsadas por defecto para no
@@ -297,11 +297,11 @@ class TourPostType {
              escondido sin querer. Pedido del cliente 2026-08-14. */
           .amir-collapsible { margin:16px 0 0; border-top:1px solid #e1f5ee; padding-top:2px; }
           .amir-collapsible summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:7px;
-            font-size:13px; font-weight:700; color:#1D9E75; padding:8px 0; }
+            font-size:13px; font-weight:700; color:var(--ab-teal, #1D9E75); padding:8px 0; }
           .amir-collapsible summary::-webkit-details-marker { display:none; }
           .amir-collapsible summary::before { content:'▸'; display:inline-block; transition:transform .15s; font-size:11px; }
           .amir-collapsible[open] summary::before { transform:rotate(90deg); }
-          .amir-collapsible summary .amir-active-flag { font-size:10px; font-weight:700; color:#0F6E56; background:#e1f5ee; border-radius:8px; padding:1px 8px; text-transform:none; letter-spacing:0; }
+          .amir-collapsible summary .amir-active-flag { font-size:10px; font-weight:700; color:var(--ab-teal-dark, #0F6E56); background:#e1f5ee; border-radius:8px; padding:1px 8px; text-transform:none; letter-spacing:0; }
         </style>
 
         <div class="amir-field" style="margin-bottom:16px;">
@@ -345,7 +345,7 @@ class TourPostType {
           </div>
           <div class="amir-field">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-              <input type="checkbox" name="amir_featured" value="1" <?php checked( $m['featured'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+              <input type="checkbox" name="amir_featured" value="1" <?php checked( $m['featured'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
               <?php _e('⭐ Destacado (Flujo de descubrimiento)', 'amir-booking'); ?>
             </label>
             <p class="amir-hint"><?php _e('Aparece en el paso 1 del flujo continuo — solo tours propios marcados acá, ordenados por "Orden de listado".', 'amir-booking'); ?></p>
@@ -378,7 +378,7 @@ class TourPostType {
           <div class="amir-meta-grid">
             <div class="amir-field">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-                <input type="checkbox" name="amir_request_only" id="amir-request-only-cb" value="1" <?php checked( $m['request_only'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+                <input type="checkbox" name="amir_request_only" id="amir-request-only-cb" value="1" <?php checked( $m['request_only'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
                 <?php _e('Todas las reservas de este tour requieren mi aprobación', 'amir-booking'); ?>
               </label>
             </div>
@@ -392,7 +392,7 @@ class TourPostType {
           <div class="amir-meta-grid">
             <div class="amir-field">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;" id="amir-custom-quote-label">
-                <input type="checkbox" name="amir_custom_quote" id="amir-custom-quote-cb" value="1" <?php checked( $m['custom_quote'], '1' ); ?> <?php disabled( ! $m['request_only'] ); ?> style="accent-color:#1D9E75;width:auto;" />
+                <input type="checkbox" name="amir_custom_quote" id="amir-custom-quote-cb" value="1" <?php checked( $m['custom_quote'], '1' ); ?> <?php disabled( ! $m['request_only'] ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
                 <?php _e('Este tour no tiene precio fijo — el cliente arma su pedido y yo cotizo', 'amir-booking'); ?>
               </label>
               <p class="amir-hint" id="amir-custom-quote-hint" style="<?php echo $m['request_only'] ? 'display:none;' : ''; ?>">
@@ -426,7 +426,7 @@ class TourPostType {
           <div class="amir-meta-grid">
             <div class="amir-field">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-                <input type="checkbox" name="amir_deposit_enabled" id="amir-deposit-enabled-cb" value="1" <?php checked( $m['deposit_enabled'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+                <input type="checkbox" name="amir_deposit_enabled" id="amir-deposit-enabled-cb" value="1" <?php checked( $m['deposit_enabled'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
                 <?php _e('Cobrar solo un % como depósito', 'amir-booking'); ?>
               </label>
             </div>
@@ -459,7 +459,7 @@ class TourPostType {
           <div class="amir-meta-grid">
             <div class="amir-field">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-                <input type="checkbox" name="amir_skip_upsell" value="1" <?php checked( $m['skip_upsell'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+                <input type="checkbox" name="amir_skip_upsell" value="1" <?php checked( $m['skip_upsell'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
                 <?php _e('Este tour no combina con otros — reservar directo', 'amir-booking'); ?>
               </label>
             </div>
@@ -477,14 +477,14 @@ class TourPostType {
           <div class="amir-meta-grid amir-meta-grid-3">
             <div class="amir-field">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-                <input type="checkbox" name="amir_hide_from_lists" value="1" <?php checked( $m['hide_from_lists'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+                <input type="checkbox" name="amir_hide_from_lists" value="1" <?php checked( $m['hide_from_lists'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
                 <?php _e('Ocultar de listas/grillas', 'amir-booking'); ?>
               </label>
               <p class="amir-hint"><?php _e('No aparece en [flow_tour_list], ni en destacados (Flujo A) ni en el catálogo completo (Flujo B) — gana sobre "Destacado" si los dos están tildados.', 'amir-booking'); ?></p>
             </div>
             <div class="amir-field">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-                <input type="checkbox" name="amir_hide_from_suggestions" value="1" <?php checked( $m['hide_from_suggestions'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+                <input type="checkbox" name="amir_hide_from_suggestions" value="1" <?php checked( $m['hide_from_suggestions'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
                 <?php _e('Ocultar de sugerencias', 'amir-booking'); ?>
               </label>
               <p class="amir-hint"><?php _e('No aparece como "otro tour sugerido" en el paso de extras de otra reserva.', 'amir-booking'); ?></p>
@@ -500,13 +500,13 @@ class TourPostType {
         <div class="amir-meta-grid amir-meta-grid-3">
           <div class="amir-field">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-              <input type="checkbox" name="amir_allow_children" value="1" <?php checked( $m['allow_children'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+              <input type="checkbox" name="amir_allow_children" value="1" <?php checked( $m['allow_children'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
               <?php _e('Admite niños', 'amir-booking'); ?>
             </label>
           </div>
           <div class="amir-field">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-              <input type="checkbox" name="amir_allow_babies" value="1" <?php checked( $m['allow_babies'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+              <input type="checkbox" name="amir_allow_babies" value="1" <?php checked( $m['allow_babies'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
               <?php _e('Admite bebés', 'amir-booking'); ?>
             </label>
           </div>
@@ -524,7 +524,7 @@ class TourPostType {
         </p>
         <div class="amir-field">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-            <input type="checkbox" name="amir_require_participant_names" value="1" <?php checked( $m['require_participant_names'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+            <input type="checkbox" name="amir_require_participant_names" value="1" <?php checked( $m['require_participant_names'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
             <?php _e('Requiere nombre de cada integrante', 'amir-booking'); ?>
           </label>
         </div>
@@ -582,7 +582,7 @@ class TourPostType {
           <div class="amir-meta-grid">
             <div class="amir-field">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;">
-                <input type="checkbox" name="amir_wishlist_enabled" value="1" <?php checked( $m['wishlist_enabled'], '1' ); ?> style="accent-color:#1D9E75;width:auto;" />
+                <input type="checkbox" name="amir_wishlist_enabled" value="1" <?php checked( $m['wishlist_enabled'], '1' ); ?> style="accent-color:var(--ab-teal, #1D9E75);width:auto;" />
                 <?php _e('Activar lista de interés para este tour', 'amir-booking'); ?>
               </label>
             </div>
@@ -701,7 +701,7 @@ class TourPostType {
           ?>
         </div>
         <button type="button" id="amir-add-fact-btn"
-                style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
+                style="background:transparent;color:var(--ab-teal, #1D9E75);border:1px solid var(--ab-teal, #1D9E75);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
           + <?php _e( 'Agregar dato destacado', 'amir-booking' ); ?>
         </button>
 
@@ -859,7 +859,7 @@ class TourPostType {
             $excludes_str   = implode( "\n", (array) ( $data['excludes'] ?? [] ) );
         ?>
         <div class="amir-field-row" style="border:1px solid #e1f5ee;border-radius:8px;padding:14px;margin-bottom:14px;">
-          <div style="grid-column:1/-1;font-weight:700;font-size:12px;color:#1D9E75;text-transform:uppercase;margin-bottom:8px;">
+          <div style="grid-column:1/-1;font-weight:700;font-size:12px;color:var(--ab-teal, #1D9E75);text-transform:uppercase;margin-bottom:8px;">
             <?php echo esc_html( strtoupper( $lang ) ); ?>
           </div>
           <div class="amir-field">
@@ -975,7 +975,7 @@ class TourPostType {
                     <?php if ( $image_url ) : ?><img src="<?php echo esc_url( $image_url ); ?>" style="width:100%;height:100%;object-fit:cover;" /><?php endif; ?>
                   </div>
                   <button type="button" class="amir-stop-image-btn"
-                          style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
+                          style="background:transparent;color:var(--ab-teal, #1D9E75);border:1px solid var(--ab-teal, #1D9E75);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
                     🖼 <?php echo esc_html( $image_url ? $t_change_image : $t_add_image ); ?>
                   </button>
                   <button type="button" class="amir-stop-image-remove-btn" style="<?php echo $image_url ? '' : 'display:none;'; ?>background:transparent;color:#e24b4a;border:none;cursor:pointer;font-size:12px;"><?php echo esc_html( $t_remove_image ); ?></button>
@@ -997,7 +997,7 @@ class TourPostType {
           ?>
         </div>
         <button type="button" id="amir-add-stop-btn"
-                style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
+                style="background:transparent;color:var(--ab-teal, #1D9E75);border:1px solid var(--ab-teal, #1D9E75);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
           + <?php _e( 'Agregar parada', 'amir-booking' ); ?>
         </button>
 
@@ -1041,7 +1041,7 @@ class TourPostType {
               + '<div style="display:flex;align-items:center;gap:10px;">'
               +   '<input type="hidden" class="amir-stop-image-id" value="" />'
               +   '<div class="amir-stop-image-preview" style="width:56px;height:56px;border-radius:6px;overflow:hidden;background:#f8fdfb;border:1px solid #e1f5ee;flex-shrink:0;display:none;"></div>'
-              +   '<button type="button" class="amir-stop-image-btn" style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">🖼 <?php echo esc_js( $t_add_image ); ?></button>'
+              +   '<button type="button" class="amir-stop-image-btn" style="background:transparent;color:var(--ab-teal, #1D9E75);border:1px solid var(--ab-teal, #1D9E75);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">🖼 <?php echo esc_js( $t_add_image ); ?></button>'
               +   '<button type="button" class="amir-stop-image-remove-btn" style="display:none;background:transparent;color:#e24b4a;border:none;cursor:pointer;font-size:12px;"><?php echo esc_js( $t_remove_image ); ?></button>'
               + '</div>'
               + '</div>';
@@ -1166,7 +1166,7 @@ class TourPostType {
           ?>
         </div>
         <button type="button" id="amir-add-faq-btn"
-                style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
+                style="background:transparent;color:var(--ab-teal, #1D9E75);border:1px solid var(--ab-teal, #1D9E75);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
           + <?php _e( 'Agregar pregunta', 'amir-booking' ); ?>
         </button>
 
@@ -1249,7 +1249,7 @@ class TourPostType {
         </div>
 
         <button type="button" id="amir-gallery-btn"
-                style="background:#1D9E75;color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;">
+                style="background:var(--ab-teal, #1D9E75);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;">
           + <?php _e('Agregar fotos a la galería', 'amir-booking'); ?>
         </button>
 
@@ -1343,7 +1343,7 @@ class TourPostType {
         </div>
 
         <!-- Horarios -->
-        <div style="font-weight:700;font-size:13px;color:#1D9E75;margin-bottom:4px;">🕐 <?php _e( 'Horarios', 'amir-booking' ); ?></div>
+        <div style="font-weight:700;font-size:13px;color:var(--ab-teal, #1D9E75);margin-bottom:4px;">🕐 <?php _e( 'Horarios', 'amir-booking' ); ?></div>
         <p style="font-size:12px;color:#888;margin:0 0 10px;">
           <?php _e( 'Opcional — dejá esta lista vacía si el tour <strong>no</strong> tiene un horario de salida fijo (se reserva sin horario asignado). Si cargás uno o más, el cliente elige entre ellos al reservar.', 'amir-booking' ); ?>
         </p>
@@ -1370,13 +1370,13 @@ class TourPostType {
           <?php endforeach; endif; ?>
         </div>
         <button type="button" id="amir-add-schedule-btn"
-                style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;margin-bottom:8px;">
+                style="background:transparent;color:var(--ab-teal, #1D9E75);border:1px solid var(--ab-teal, #1D9E75);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;margin-bottom:8px;">
           + <?php _e('Agregar horario', 'amir-booking'); ?>
         </button>
 
         <!-- Precios per-capita -->
         <div id="amir-prices-percapita" style="<?php echo $price_model === 'group' ? 'display:none' : ''; ?>">
-          <div style="font-weight:700;font-size:13px;color:#1D9E75;margin-bottom:8px;">💲 <?php printf( __( 'Precios por persona (%s)', 'amir-booking' ), esc_html( \AmirBooking\Core\Currency::code() ) ); ?></div>
+          <div style="font-weight:700;font-size:13px;color:var(--ab-teal, #1D9E75);margin-bottom:8px;">💲 <?php printf( __( 'Precios por persona (%s)', 'amir-booking' ), esc_html( \AmirBooking\Core\Currency::code() ) ); ?></div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
             <?php
             $types = [
@@ -1433,7 +1433,7 @@ class TourPostType {
         <!-- Precios grupo -->
         <?php $group_ranges = self::group_price_ranges( $max_capacity ); ?>
         <div id="amir-prices-group" style="<?php echo $price_model === 'percapita' ? 'display:none' : ''; ?>">
-          <div style="font-weight:700;font-size:13px;color:#1D9E75;margin-bottom:8px;">💲 <?php printf( __( 'Precios por grupo (%s)', 'amir-booking' ), esc_html( \AmirBooking\Core\Currency::code() ) ); ?></div>
+          <div style="font-weight:700;font-size:13px;color:var(--ab-teal, #1D9E75);margin-bottom:8px;">💲 <?php printf( __( 'Precios por grupo (%s)', 'amir-booking' ), esc_html( \AmirBooking\Core\Currency::code() ) ); ?></div>
           <div style="display:grid;grid-template-columns:repeat(<?php echo min(4, count($group_ranges)); ?>,1fr);gap:12px;">
             <?php
             foreach ( $group_ranges as [ $gmin, $gmax, $glabel ] ) :
@@ -1609,7 +1609,7 @@ class TourPostType {
           ?>
         </div>
         <button type="button" id="amir-add-addon-btn"
-                style="background:transparent;color:#1D9E75;border:1px solid #1D9E75;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
+                style="background:transparent;color:var(--ab-teal, #1D9E75);border:1px solid var(--ab-teal, #1D9E75);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;">
           + <?php _e( 'Agregar servicio', 'amir-booking' ); ?>
         </button>
 
@@ -1659,7 +1659,7 @@ class TourPostType {
               <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
                 <input type="checkbox" name="amir_active_weekdays[]" value="<?php echo $i; ?>"
                        <?php checked( in_array($i, $active_days, false) ); ?>
-                       style="accent-color:#1D9E75;" />
+                       style="accent-color:var(--ab-teal, #1D9E75);" />
                 <?php echo esc_html( $d ); ?>
               </label>
             <?php endforeach; ?>
@@ -1727,7 +1727,22 @@ class TourPostType {
             ! isset( $_POST['amir_tour_nonce'] ) ||
             ! wp_verify_nonce( $_POST['amir_tour_nonce'], 'amir_tour_meta' ) ||
             defined('DOING_AUTOSAVE') && DOING_AUTOSAVE ||
-            ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'edit_amir_tour', $post_id ) )
+            // Bug real encontrado 2026-09-12 armando el panel de gestión sin
+            // wp-admin: 'edit_amir_tour' NUNCA fue una capability real —
+            // amir_tour se registra con capability_type='post' (no un array
+            // ['amir_tour','amir_tours']), así que WordPress nunca generó
+            // ese nombre de meta-cap; current_user_can('edit_amir_tour', $id)
+            // caía siempre al catch-all de map_meta_cap() y quedaba en false
+            // para cualquiera que no fuera Administrador. Un Tour Manager
+            // (el rol pensado justamente para gestionar tours, ver
+            // TourManagerRole) podía abrir y "Actualizar" un tour en
+            // wp-admin sin ningún error — el título se guardaba (usa la
+            // capability real 'edit_post', compartida con posts de blog),
+            // pero precio/horarios/galería/todo lo de acá quedaba sin
+            // persistir en silencio. Corregido al mismo criterio de
+            // capability que ya usa el resto del admin (BookingsPage,
+            // AvailabilityPage, etc.).
+            ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) )
         ) {
             return;
         }

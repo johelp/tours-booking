@@ -34,6 +34,40 @@ class SettingsPage {
         return $this->lang() === 'en' ? $en : $es;
     }
 
+    /**
+     * Guía corta de "cómo obtener tus credenciales", pedida por el cliente
+     * 2026-09-12 al preguntar en qué instancia estaba Mercado Pago —
+     * `docs-manual/10-pasarelas-de-pago.md` ya explica QUÉ cargar en cada
+     * campo, pero no DÓNDE conseguirlo dentro de la cuenta de MP. Mismo
+     * patrón `<details>` colapsable ya usado en el panel de gestión
+     * (`ToursSection::render_type_help()`) — abierto solo si el operador lo
+     * necesita, sin ocupar espacio permanente en una pantalla ya cargada de
+     * campos. Solo Mercado Pago por ahora — Stripe no se pidió.
+     */
+    private function render_mp_activation_guide(): void {
+        $es = '<strong>¿De dónde saco el Access Token?</strong>
+            <ol style="margin:8px 0 0;padding-left:20px;">
+            <li>Entrá a <a href="https://www.mercadopago.com/developers/panel/app" target="_blank" rel="noopener">mercadopago.com/developers/panel/app</a> con la cuenta de Mercado Pago del negocio (no la personal, si son distintas).</li>
+            <li>Creá una aplicación nueva (o entrá a una ya creada) — cualquier nombre sirve, es solo para identificarla en tu panel de MP.</li>
+            <li>En <em>Credenciales de producción</em> vas a encontrar el <strong>Access Token</strong> que empieza con <code>APP_USR-</code> (cargalo acá como "LIVE"). En <em>Credenciales de prueba</em> está el que empieza con <code>TEST-</code> (cargalo como "TEST", para probar sin mover dinero real).</li>
+            <li>Para que Mercado Pago te avise cuando un cliente paga, andá a <em>Tus integraciones → Webhooks</em> dentro de esa misma aplicación, pegá la URL que ves más abajo (junto al campo "Webhook Secret") y copiá la clave secreta que te genera MP a ese campo.</li>
+            </ol>
+            <p style="margin:10px 0 0;">Con las credenciales de <strong>Test</strong> ya podés simular una reserva completa sin arriesgar dinero real (Mercado Pago tiene tarjetas de prueba en su propia documentación) — pasá a "Live" recién cuando quieras cobrar de verdad.</p>';
+        $en = '<strong>Where do I get my Access Token?</strong>
+            <ol style="margin:8px 0 0;padding-left:20px;">
+            <li>Go to <a href="https://www.mercadopago.com/developers/panel/app" target="_blank" rel="noopener">mercadopago.com/developers/panel/app</a> using the business\'s Mercado Pago account (not a personal one, if they\'re different).</li>
+            <li>Create a new application (or open an existing one) — any name works, it\'s just to identify it in your MP dashboard.</li>
+            <li>Under <em>Production credentials</em> you\'ll find the <strong>Access Token</strong> starting with <code>APP_USR-</code> (load it here as "LIVE"). Under <em>Test credentials</em> is the one starting with <code>TEST-</code> (load it as "TEST", to try things out without moving real money).</li>
+            <li>For Mercado Pago to notify you when a customer pays, go to <em>Your integrations → Webhooks</em> inside that same application, paste the URL shown below (next to the "Webhook Secret" field) and copy the secret key MP generates into that field.</li>
+            </ol>
+            <p style="margin:10px 0 0;">With <strong>Test</strong> credentials you can already simulate a full booking without risking real money (Mercado Pago has test cards in its own docs) — switch to "Live" only once you want to charge for real.</p>';
+
+        echo '<details class="ab-hint-box" style="background:#eef4ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin:0 0 14px;">'
+            . '<summary style="cursor:pointer;font-weight:700;color:#1a6fa8;">💡 ' . esc_html( $this->tt( 'Guía rápida: cómo activar Mercado Pago', 'Quick guide: activating Mercado Pago' ) ) . '</summary>'
+            . '<div style="margin-top:10px;font-size:13px;color:#1e3a5f;line-height:1.7;">' . wp_kses_post( $this->tt( $es, $en ) ) . '</div>'
+            . '</details>';
+    }
+
     public function render(): void {
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
@@ -192,6 +226,7 @@ class SettingsPage {
           <!-- Mercado Pago -->
           <div class="ab-settings-section">
             <h3>💙 Mercado Pago</h3>
+            <?php $this->render_mp_activation_guide(); ?>
             <div class="ab-field">
               <label><?php echo esc_html( $this->tt( 'Modo', 'Mode' ) ); ?></label>
               <select name="amir_mp_mode">

@@ -153,6 +153,35 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
         return json_encode( $data, $options, $depth );
     }
 }
+// ManagerAuth (panel de gestión) — salt fija en tests, alcanza para probar
+// la firma/verificación del token, no hace falta que sea criptográficamente
+// impredecible acá.
+if ( ! function_exists( 'wp_salt' ) ) {
+    function wp_salt( string $scheme = 'auth' ) {
+        return 'test-salt-' . $scheme;
+    }
+}
+// Stub mínimo de WP_User/get_userdata — solo lo que ManagerAuth necesita
+// (has_cap()), controlado desde el test vía $GLOBALS['__amir_test_users'].
+if ( ! class_exists( 'WP_User' ) ) {
+    class WP_User {
+        public int $ID;
+        private array $caps;
+        public function __construct( int $id, array $caps = [] ) {
+            $this->ID   = $id;
+            $this->caps = $caps;
+        }
+        public function has_cap( string $cap ): bool {
+            return ! empty( $this->caps[ $cap ] );
+        }
+    }
+}
+$GLOBALS['__amir_test_users'] = [];
+if ( ! function_exists( 'get_userdata' ) ) {
+    function get_userdata( int $user_id ) {
+        return $GLOBALS['__amir_test_users'][ $user_id ] ?? false;
+    }
+}
 
 // ── i18n (sin gettext real: devuelven el msgid tal cual) ──────────────────
 foreach ( [ '__', 'esc_html__', 'esc_attr__' ] as $fn ) {
@@ -186,3 +215,5 @@ require_once __DIR__ . '/../includes/rooms/class-room-availability.php';
 require_once __DIR__ . '/../includes/rooms/class-room-booking-result.php';
 require_once __DIR__ . '/../includes/rooms/class-room-booking-manager.php';
 require_once __DIR__ . '/../includes/core/class-tour-importer.php';
+require_once __DIR__ . '/../includes/core/class-quick-panel-role.php';
+require_once __DIR__ . '/../includes/panel/class-manager-auth.php';

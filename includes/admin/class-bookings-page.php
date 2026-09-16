@@ -14,6 +14,23 @@ defined( 'ABSPATH' ) || exit;
 class BookingsPage {
 
     /**
+     * Base de la URL de esta pantalla — por defecto la de wp-admin de
+     * siempre (cero cambio de comportamiento para AdminMenu). El panel de
+     * gestión sin wp-admin (`TourFlow\Panel\ManagerPanel`, § "panel de
+     * gestión") pasa la suya propia a `render()` para que los ~12 links/
+     * redirects internos (paginación, ver detalle, volver al listado, crear
+     * reserva) queden dentro del panel en vez de mandar al gestor de vuelta
+     * a wp-admin — es la única razón de que este método exista. Los 2 links
+     * de descarga de PDF (voucher) quedan señalando a wp-admin a propósito,
+     * ver esos 2 call sites — no vale la pena duplicar esa ruta todavía.
+     */
+    private string $base_url = '';
+
+    private function base_url(): string {
+        return $this->base_url !== '' ? $this->base_url : admin_url( 'admin.php?page=amir-bookings-list' );
+    }
+
+    /**
      * Idioma de esta pantalla — sigue el idioma de admin del usuario logueado
      * (`get_user_locale()`, mismo criterio que `SettingsPage`, ver
      * CONTRIBUTING.md § 16.84/§ 16.86). Este archivo nunca usó `__()`/`_e()`
@@ -21,7 +38,24 @@ class BookingsPage {
      * es/en en código que ya usa `EmailTexts`/`SettingsPage` en vez de sumar
      * gettext acá.
      */
+    /**
+     * En wp-admin sigue el perfil del usuario (get_user_locale()), como
+     * siempre. El panel de gestión sin wp-admin pisa esto con set_lang()
+     * para que TODA la pantalla siga el idioma del SITIO en vez del perfil
+     * de quien está logueado — decisión explícita del cliente 2026-09-12
+     * ("el idioma del dashboard debería ser el mismo que el del sitio"),
+     * acotada solo al panel para no cambiar wp-admin.
+     */
+    private string $lang_override = '';
+
+    public function set_lang( string $lang ): void {
+        $this->lang_override = $lang;
+    }
+
     private function lang(): string {
+        if ( $this->lang_override !== '' ) {
+            return $this->lang_override;
+        }
         return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
     }
 
@@ -44,7 +78,8 @@ class BookingsPage {
         $this->export_csv( $this->get_filters() );
     }
 
-    public function render(): void {
+    public function render( string $base_url = '' ): void {
+        $this->base_url = $base_url;
         $action = sanitize_key( $_GET['action'] ?? 'list' );
 
         if ( $action === 'new' ) {
@@ -78,9 +113,9 @@ class BookingsPage {
         <h1 style="display:flex;align-items:center;justify-content:space-between;">
           <span>📋 <?php echo esc_html( $this->tt( 'Reservas', 'Bookings' ) ); ?> <span style="font-size:14px;font-weight:400;color:#5a7068;">(<?php echo $total; ?> <?php echo esc_html( $this->tt( 'total', 'total' ) ); ?>)</span></span>
           <div style="display:flex;gap:8px;">
-            <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=new'); ?>"
+            <a href="<?php echo $this->base_url().'&action=new'; ?>"
                class="button button-primary">+ <?php echo esc_html( $this->tt( 'Nueva reserva', 'New booking' ) ); ?></a>
-            <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=export'.$this->filter_query_string($filters)); ?>"
+            <a href="<?php echo $this->base_url().'&action=export'.$this->filter_query_string($filters); ?>"
                class="button">⬇ <?php echo esc_html( $this->tt( 'Exportar CSV', 'Export CSV' ) ); ?></a>
           </div>
         </h1>
@@ -92,7 +127,7 @@ class BookingsPage {
         <?php if ( $filters['cart_group_id'] ) : ?>
           <div class="notice notice-info" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
             <p style="margin:0;">🔗 <?php echo esc_html( sprintf( $this->tt( 'Mostrando solo las %d reserva(s) de una misma compra (carrito).', 'Showing only the %d booking(s) from the same purchase (cart).' ), (int) $total ) ); ?></p>
-            <a href="<?php echo esc_url( admin_url('admin.php?page=amir-bookings-list') ); ?>" style="font-weight:600;"><?php echo esc_html( $this->tt( 'Ver todas las reservas →', 'View all bookings →' ) ); ?></a>
+            <a href="<?php echo esc_url( $this->base_url() ); ?>" style="font-weight:600;"><?php echo esc_html( $this->tt( 'Ver todas las reservas →', 'View all bookings →' ) ); ?></a>
           </div>
         <?php endif; ?>
 
@@ -133,7 +168,7 @@ class BookingsPage {
           </select>
 
           <button type="submit" class="button button-primary"><?php echo esc_html( $this->tt( 'Filtrar', 'Filter' ) ); ?></button>
-          <a href="<?php echo admin_url('admin.php?page=amir-bookings-list'); ?>" class="button"><?php echo esc_html( $this->tt( 'Limpiar', 'Clear' ) ); ?></a>
+          <a href="<?php echo $this->base_url(); ?>" class="button"><?php echo esc_html( $this->tt( 'Limpiar', 'Clear' ) ); ?></a>
         </form>
 
         <!-- Tabla -->
@@ -158,12 +193,12 @@ class BookingsPage {
             <tr><td colspan="10" style="text-align:center;padding:32px;color:#5a7068;"><?php echo esc_html( $this->tt( 'No se encontraron reservas con los filtros seleccionados.', 'No bookings found with the selected filters.' ) ); ?></td></tr>
           <?php else : foreach ( $bookings as $b ) : ?>
             <tr>
-              <td><a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=view&id='.$b->id); ?>"
-                    style="font-weight:700;color:#1D9E75;"><?php echo esc_html($b->booking_ref); ?></a>
+              <td><a href="<?php echo $this->base_url().'&action=view&id='.$b->id; ?>"
+                    style="font-weight:700;color:var(--ab-teal, #1D9E75);"><?php echo esc_html($b->booking_ref); ?></a>
                 <?php if ( $b->cart_group_id && (int) $b->cart_group_count > 1 && ! $filters['cart_group_id'] ) : ?>
-                  <br><a href="<?php echo admin_url('admin.php?page=amir-bookings-list&cart_group_id='.urlencode($b->cart_group_id)); ?>"
+                  <br><a href="<?php echo $this->base_url().'&cart_group_id='.urlencode($b->cart_group_id); ?>"
                      title="<?php echo esc_attr( $this->tt( 'Estas reservas se hicieron juntas, en la misma compra', 'These bookings were made together, in the same purchase' ) ); ?>"
-                     style="display:inline-block;margin-top:3px;font-size:10.5px;font-weight:700;color:#0F6E56;background:#e1f5ee;border-radius:10px;padding:1px 8px;text-decoration:none;">
+                     style="display:inline-block;margin-top:3px;font-size:10.5px;font-weight:700;color:var(--ab-teal-dark, #0F6E56);background:#e1f5ee;border-radius:10px;padding:1px 8px;text-decoration:none;">
                      🔗 <?php echo esc_html( sprintf( $this->tt( '+%d más de esta compra', '+%d more from this purchase' ), (int) $b->cart_group_count - 1 ) ); ?>
                   </a>
                 <?php endif; ?>
@@ -198,8 +233,8 @@ class BookingsPage {
               <td><?php echo $this->source_badge($b->booking_source); ?></td>
               <td style="font-size:12px;color:#5a7068;"><?php echo date('d/m/y', strtotime($b->created_at)); ?></td>
               <td>
-                <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=view&id='.$b->id); ?>"
-                   style="color:#1D9E75;font-size:12px;font-weight:600;white-space:nowrap;"><?php echo esc_html( $this->tt( 'Ver →', 'View →' ) ); ?></a>
+                <a href="<?php echo $this->base_url().'&action=view&id='.$b->id; ?>"
+                   style="color:var(--ab-teal, #1D9E75);font-size:12px;font-weight:600;white-space:nowrap;"><?php echo esc_html( $this->tt( 'Ver →', 'View →' ) ); ?></a>
               </td>
             </tr>
           <?php endforeach; endif; ?>
@@ -213,8 +248,8 @@ class BookingsPage {
           <?php
           $total_pages = ceil($total/$per_page);
           for ($p=1; $p<=$total_pages; $p++) :
-            $url = admin_url('admin.php?page=amir-bookings-list&paged='.$p.$this->filter_query_string($filters));
-            echo '<a href="'.esc_url($url).'" style="padding:5px 10px;border-radius:6px;border:1px solid '.($p===$page?'#1D9E75':'#e1f5ee').';background:'.($p===$page?'#1D9E75':'#fff').';color:'.($p===$page?'#fff':'#1a2e24').';">'.$p.'</a>';
+            $url = $this->base_url().'&paged='.$p.$this->filter_query_string($filters);
+            echo '<a href="'.esc_url($url).'" style="padding:5px 10px;border-radius:6px;border:1px solid '.($p===$page?'var(--ab-teal, #1D9E75)':'#e1f5ee').';background:'.($p===$page?'var(--ab-teal, #1D9E75)':'#fff').';color:'.($p===$page?'#fff':'#1a2e24').';">'.$p.'</a>';
           endfor;
           ?>
         </div>
@@ -267,7 +302,7 @@ class BookingsPage {
         <?php $this->admin_styles(); ?>
 
         <h1 style="display:flex;align-items:center;gap:12px;">
-          <a href="<?php echo admin_url('admin.php?page=amir-bookings-list'); ?>" style="color:#5a7068;font-weight:400;font-size:16px;">← <?php echo esc_html( $this->tt( 'Reservas', 'Bookings' ) ); ?></a>
+          <a href="<?php echo $this->base_url(); ?>" style="color:#5a7068;font-weight:400;font-size:16px;">← <?php echo esc_html( $this->tt( 'Reservas', 'Bookings' ) ); ?></a>
           <span><?php echo esc_html($b->booking_ref); ?></span>
           <?php echo $this->status_badge($b->status); ?>
         </h1>
@@ -405,7 +440,7 @@ class BookingsPage {
               <form method="post" style="margin-bottom:10px;">
                 <?php wp_nonce_field('amir_booking_action_'.$booking_id); ?>
                 <input type="hidden" name="amir_action" value="manual_confirm" />
-                <button type="submit" class="button button-primary" style="width:100%;background:#1D9E75;border-color:#0F6E56;color:#fff;"
+                <button type="submit" class="button button-primary" style="width:100%;background:var(--ab-teal, #1D9E75);border-color:var(--ab-teal-dark, #0F6E56);color:#fff;"
                   onclick="return confirm('<?php echo esc_js( $this->tt( '¿Confirmar esta reserva manualmente? Se enviará el email de confirmación y se generará el voucher PDF.', 'Confirm this booking manually? The confirmation email will be sent and the PDF voucher generated.' ) ); ?>')">
                   ✅ <?php echo esc_html( $this->tt( 'Confirmar reserva manualmente', 'Confirm booking manually' ) ); ?>
                 </button>
@@ -433,8 +468,8 @@ class BookingsPage {
               <!-- Pago recibido fuera de Stripe/MP (transferencia, efectivo,
                    pasarela satélite sin webhook) — no reintenta con la
                    pasarela, registra la referencia que cargue el operador. -->
-              <div style="background:#f0faf6;border:1px solid #c3e9dc;border-radius:8px;padding:14px;margin-bottom:10px;">
-                <div style="font-size:13px;font-weight:700;color:#0F6E56;margin-bottom:8px;">💵 <?php echo esc_html( $this->tt( 'Cargar pago manual', 'Record manual payment' ) ); ?></div>
+              <div style="background:var(--ab-teal-light, #f0faf6);border:1px solid #c3e9dc;border-radius:8px;padding:14px;margin-bottom:10px;">
+                <div style="font-size:13px;font-weight:700;color:var(--ab-teal-dark, #0F6E56);margin-bottom:8px;">💵 <?php echo esc_html( $this->tt( 'Cargar pago manual', 'Record manual payment' ) ); ?></div>
                 <form method="post">
                   <?php wp_nonce_field('amir_booking_action_'.$booking_id); ?>
                   <input type="hidden" name="amir_action" value="record_manual_payment" />
@@ -525,7 +560,7 @@ class BookingsPage {
                   <label style="display:block;font-size:12px;font-weight:600;color:#1a2e24;margin-bottom:4px;"><?php echo esc_html( $this->tt( 'Mensaje para el cliente (opcional)', 'Message for the customer (optional)' ) ); ?></label>
                   <textarea name="custom_email_note" rows="3" placeholder="<?php echo esc_attr( $this->tt( 'Ej: Armamos el recorrido con 2 paradas extra que pediste — el precio ya las incluye.', 'E.g.: We put together the route with the 2 extra stops you asked for — the price already includes them.' ) ); ?>"
                             style="width:100%;border:1px solid #c3d9d0;border-radius:6px;padding:8px;font-size:13px;box-sizing:border-box;margin-bottom:8px;"><?php echo esc_textarea( $b->custom_email_note ?? '' ); ?></textarea>
-                  <button type="submit" class="button button-primary" style="width:100%;background:#1D9E75;border-color:#0F6E56;color:#fff;"
+                  <button type="submit" class="button button-primary" style="width:100%;background:var(--ab-teal, #1D9E75);border-color:var(--ab-teal-dark, #0F6E56);color:#fff;"
                     onclick="return confirm('<?php echo esc_js( $this->tt( '¿Aprobar esta solicitud y mandar el link de pago al cliente?', 'Approve this request and send the payment link to the customer?' ) ); ?>')">
                     ✅ <?php echo esc_html( $this->tt( 'Aprobar y enviar link de pago', 'Approve and send payment link' ) ); ?>
                   </button>
@@ -554,7 +589,7 @@ class BookingsPage {
                 <form method="post">
                   <?php wp_nonce_field('amir_booking_action_'.$booking_id); ?>
                   <input type="hidden" name="amir_action" value="reactivate_date_request" />
-                  <button type="submit" class="button button-primary" style="width:100%;background:#1D9E75;border-color:#0F6E56;color:#fff;">
+                  <button type="submit" class="button button-primary" style="width:100%;background:var(--ab-teal, #1D9E75);border-color:var(--ab-teal-dark, #0F6E56);color:#fff;">
                     ↩ <?php echo esc_html( $this->tt( 'Reactivar solicitud', 'Reactivate request' ) ); ?>
                   </button>
                 </form>
@@ -615,7 +650,7 @@ class BookingsPage {
               <!-- Reprogramar -->
               <?php if ( $b->item_type !== 'room' ) : ?>
               <details style="margin-bottom:10px;">
-                <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#1D9E75;padding:8px 0;"><?php echo esc_html( $this->tt( 'Reprogramar reserva', 'Reschedule booking' ) ); ?></summary>
+                <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--ab-teal, #1D9E75);padding:8px 0;"><?php echo esc_html( $this->tt( 'Reprogramar reserva', 'Reschedule booking' ) ); ?></summary>
                 <div style="padding-top:10px;">
                   <form method="post">
                     <?php wp_nonce_field('amir_booking_action_'.$booking_id); ?>
@@ -643,7 +678,7 @@ class BookingsPage {
               <?php else : ?>
               <!-- Reprogramar habitación — TourFlow\Rooms\RoomBookingManager::reschedule() -->
               <details style="margin-bottom:10px;">
-                <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#1D9E75;padding:8px 0;"><?php echo esc_html( $this->tt( 'Reprogramar check-in/check-out', 'Reschedule check-in/check-out' ) ); ?></summary>
+                <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--ab-teal, #1D9E75);padding:8px 0;"><?php echo esc_html( $this->tt( 'Reprogramar check-in/check-out', 'Reschedule check-in/check-out' ) ); ?></summary>
                 <div style="padding-top:10px;">
                   <form method="post">
                     <?php wp_nonce_field('amir_booking_action_'.$booking_id); ?>
@@ -669,7 +704,18 @@ class BookingsPage {
                    email (CartVoucherGenerator) — dos documentos distintos.
                    Con cart_group_id, siempre el general; sin él (solo
                    tours reservados por el widget clásico, sin carrito), el
-                   individual de siempre. -->
+                   individual de siempre.
+
+                   Estos 2 links quedan apuntando a wp-admin a propósito
+                   (nunca $this->base_url()) — la descarga del PDF corre por
+                   AdminMenu::maybe_stream_pdf() (admin_init, gateado a
+                   page=amir-bookings-list), no por render(); el panel de
+                   gestión sin wp-admin abre esto en una pestaña nueva, cae
+                   en wp-admin SOLO para este link puntual (permitido,
+                   amir-bookings-list está en $allowed_pages de
+                   TourManagerRole::redirect_from_wp_admin()) en vez de
+                   duplicar la ruta de streaming — ver fase 2 del panel si
+                   hace falta evitar esto también. -->
               <?php if ( $b->cart_group_id && ( $b->status === 'confirmed' || $b->status === 'completed' ) ) : ?>
               <a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=cart_pdf&cart_group_id='.urlencode($b->cart_group_id)); ?>"
                  class="button" style="width:100%;text-align:center;display:block;margin-bottom:10px;box-sizing:border-box;" target="_blank">
@@ -1255,7 +1301,7 @@ class BookingsPage {
     private function status_badge( string $status ): string {
         $labels = $this->status_labels();
         $colors = [
-            'confirmed'               => '#e1f5ee:#0F6E56',
+            'confirmed'               => '#e1f5ee:var(--ab-teal-dark, #0F6E56)',
             'pending'                 => '#fff8e7:#BA7517',
             'date_requested'          => '#e8f4ff:#1a6fa8',
             'date_request_rejected'   => '#fef2f2:#c53030',
@@ -1264,7 +1310,7 @@ class BookingsPage {
             'cancelled_weather'       => '#fef2f2:#c53030',
             'cancelled_min_pax'       => '#fef2f2:#c53030',
             'rescheduled'             => '#e8f4ff:#1a6fa8',
-            'completed'               => '#f0faf6:#0F6E56',
+            'completed'               => 'var(--ab-teal-light, #f0faf6):var(--ab-teal-dark, #0F6E56)',
         ];
         [$bg,$color] = explode(':', $colors[$status] ?? '#f3f4f6:#5a7068');
         return "<span style='background:{$bg};color:{$color};font-size:11px;font-weight:700;padding:3px 8px;border-radius:12px;white-space:nowrap;'>"
@@ -1338,7 +1384,7 @@ class BookingsPage {
         .ab-bookings-table td { font-size:13px; padding:10px 12px; border-bottom:1px solid #f5f5f5; vertical-align:middle; }
         .ab-bookings-table tr:hover td { background:#f8fdfb; }
         .ab-detail-card { background:#fff; border:1px solid #e1f5ee; border-radius:10px; padding:16px 18px; margin-bottom:16px; }
-        .ab-detail-card-title { font-size:14px; font-weight:700; color:#1D9E75; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #e1f5ee; }
+        .ab-detail-card-title { font-size:14px; font-weight:700; color:var(--ab-teal, #1D9E75); margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #e1f5ee; }
         .ab-detail-row { display:flex; justify-content:space-between; align-items:flex-start; padding:7px 0; border-bottom:1px solid #f5f5f5; font-size:13px; gap:12px; }
         .ab-detail-row:last-child { border-bottom:none; }
         .ab-detail-row > span:first-child { color:#5a7068; flex-shrink:0; min-width:90px; }
@@ -1361,9 +1407,7 @@ class BookingsPage {
                 $manager = new \AmirBooking\Core\BookingManager();
                 $result  = $manager->create_manual( $_POST );
                 if ( $result->success ) {
-                    wp_redirect( admin_url(
-                        'admin.php?page=amir-bookings-list&action=view&id=' . $result->booking_id . '&created=1'
-                    ) );
+                    wp_redirect( $this->base_url() . '&action=view&id=' . $result->booking_id . '&created=1' );
                     exit;
                 } else {
                     $error = $result->error;
@@ -1378,7 +1422,7 @@ class BookingsPage {
         <div class="wrap ab-admin-wrap">
         <?php $this->admin_styles(); ?>
         <h1 style="display:flex;align-items:center;gap:12px;">
-          <a href="<?php echo admin_url('admin.php?page=amir-bookings-list'); ?>"
+          <a href="<?php echo $this->base_url(); ?>"
              style="text-decoration:none;color:#5a7068;font-size:20px;">←</a>
           <?php echo esc_html( $this->tt( 'Nueva reserva manual', 'New manual booking' ) ); ?>
         </h1>
@@ -1392,7 +1436,7 @@ class BookingsPage {
 
           <!-- ── Tour y fecha ── -->
           <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
-            <h3 style="margin:0 0 14px;color:#1D9E75;"><?php echo esc_html( $this->tt( 'Tour y fecha', 'Tour and date' ) ); ?></h3>
+            <h3 style="margin:0 0 14px;color:var(--ab-teal, #1D9E75);"><?php echo esc_html( $this->tt( 'Tour y fecha', 'Tour and date' ) ); ?></h3>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
               <div>
                 <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">Tour *</label>
@@ -1437,7 +1481,7 @@ class BookingsPage {
 
           <!-- ── Pasajeros ── -->
           <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
-            <h3 style="margin:0 0 14px;color:#1D9E75;"><?php echo esc_html( $this->tt( 'Pasajeros', 'Passengers' ) ); ?></h3>
+            <h3 style="margin:0 0 14px;color:var(--ab-teal, #1D9E75);"><?php echo esc_html( $this->tt( 'Pasajeros', 'Passengers' ) ); ?></h3>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
               <div>
                 <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;"><?php echo esc_html( $this->tt( 'Adultos *', 'Adults *' ) ); ?></label>
@@ -1459,7 +1503,7 @@ class BookingsPage {
 
           <!-- ── Datos del cliente ── -->
           <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
-            <h3 style="margin:0 0 14px;color:#1D9E75;"><?php echo esc_html( $this->tt( 'Datos del cliente', 'Customer details' ) ); ?></h3>
+            <h3 style="margin:0 0 14px;color:var(--ab-teal, #1D9E75);"><?php echo esc_html( $this->tt( 'Datos del cliente', 'Customer details' ) ); ?></h3>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
               <div>
                 <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;"><?php echo esc_html( $this->tt( 'Nombre completo *', 'Full name *' ) ); ?></label>
@@ -1490,7 +1534,7 @@ class BookingsPage {
 
           <!-- ── Precio y pago ── -->
           <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
-            <h3 style="margin:0 0 14px;color:#1D9E75;"><?php echo esc_html( $this->tt( 'Precio y pago', 'Price and payment' ) ); ?></h3>
+            <h3 style="margin:0 0 14px;color:var(--ab-teal, #1D9E75);"><?php echo esc_html( $this->tt( 'Precio y pago', 'Price and payment' ) ); ?></h3>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
               <div>
                 <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">
@@ -1545,7 +1589,7 @@ class BookingsPage {
 
           <!-- ── Notas y correo ── -->
           <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
-            <h3 style="margin:0 0 14px;color:#1D9E75;"><?php echo esc_html( $this->tt( 'Correo y notas', 'Email and notes' ) ); ?></h3>
+            <h3 style="margin:0 0 14px;color:var(--ab-teal, #1D9E75);"><?php echo esc_html( $this->tt( 'Correo y notas', 'Email and notes' ) ); ?></h3>
 
             <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px;">
               <?php echo esc_html( $this->tt( 'Nota personalizada en el correo', 'Custom note in the email' ) ); ?>
@@ -1576,7 +1620,7 @@ class BookingsPage {
             <div style="margin-top:18px;padding:12px 16px;background:#f8fdfb;border-radius:8px;border:1px solid #e1f5ee;">
               <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;">
                 <input type="checkbox" name="send_email" value="1" checked
-                       style="width:16px;height:16px;accent-color:#1D9E75;" />
+                       style="width:16px;height:16px;accent-color:var(--ab-teal, #1D9E75);" />
                 <span>
                   <strong><?php echo esc_html( $this->tt( 'Enviar correo de confirmación al cliente', 'Send confirmation email to the customer' ) ); ?></strong>
                   <span style="display:block;font-size:12px;color:#5a7068;margin-top:1px;">
@@ -1591,7 +1635,7 @@ class BookingsPage {
             <button type="submit" class="button button-primary" style="font-size:14px;height:38px;padding:0 20px;">
               <?php echo esc_html( $this->tt( 'Crear reserva confirmada', 'Create confirmed booking' ) ); ?>
             </button>
-            <a href="<?php echo admin_url('admin.php?page=amir-bookings-list'); ?>" class="button">
+            <a href="<?php echo $this->base_url(); ?>" class="button">
               <?php echo esc_html( $this->tt( 'Cancelar', 'Cancel' ) ); ?>
             </a>
           </div>

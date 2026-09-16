@@ -31,6 +31,8 @@ Sección **💙 Mercado Pago** en Configuración:
 | **Access Token TEST / LIVE** | Credencial de tu cuenta de Mercado Pago para cada modo. |
 | **Webhook Secret** | Se genera desde tu cuenta de Mercado Pago, en *Tus integraciones → Webhooks*, usando la URL que la pantalla de Configuración te indica. |
 
+La misma pantalla de Configuración tiene una guía colapsable **"💡 Guía rápida: cómo activar Mercado Pago"** con los pasos exactos para sacar cada credencial desde tu cuenta de Mercado Pago — no hace falta salir del plugin para encontrarla.
+
 ## Qué pasa si el cliente no termina de pagar
 
 Cuando alguien empieza una reserva, esta queda en estado **"pendiente"** de inmediato y **le reserva el cupo** — nadie más puede tomar ese lugar mientras tanto. Si no completa el pago dentro de un plazo (configurable en **Configuración → ⚙ General → "Minutos para expirar reserva pending"**, entre 5 y 60 minutos, **15 por defecto**), el sistema la cancela sola y libera el cupo automáticamente.

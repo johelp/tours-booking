@@ -188,6 +188,111 @@ construir ahora.** Fases 2 y 3 quedan documentadas acá como la puerta de
 entrada, mismo criterio que `PROMPT-REDSYS-EUROPA.md`/`PROMPT-ZAPIER-TOURFLOW.md`
 — se retoman cuando haya claridad sobre el punto 1.
 
+**Actualización 2026-09-10 — fase 1 ✅ hecha (v5.10.6), fase 2 con scaffolding real construido.** Ver § 7 para el diseño técnico confirmado contra la documentación real de MP y el detalle de lo que ya existe en `mercadopago-split-tourflow/`.
+
+## 7. Fase 2 — diseño técnico confirmado y scaffolding construido (2026-09-10)
+
+### 7.1 Decisiones cerradas con el cliente antes de codear
+
+- **Reembolsos con split activo**: se intenta automático con el token del
+  proveedor; si Mercado Pago lo rechaza (típicamente por saldo insuficiente
+  del proveedor — ver § 7.2), la reserva NO finge éxito ni falla en
+  silencio — queda logueada con el motivo real en el Log de pagos del
+  núcleo, para que el operador coordine el reembolso con el proveedor por
+  fuera del sistema.
+- **Conexión OAuth del proveedor**: link generado por el operador desde una
+  pantalla propia del satélite (TourFlow no tiene portal de autogestión
+  para proveedores, mismo criterio que `ProvidersPage` del núcleo) y
+  mandado por WhatsApp/email — el proveedor lo abre, entra a SU sesión de
+  Mercado Pago, autoriza, y vuelve. Sin login a ningún sistema de TourFlow.
+
+### 7.2 Lo que confirma la documentación real de MP (fetcheada 2026-09-10, no la conceptual de la ronda anterior)
+
+- **Checkout Pro (lo que ya usa `MercadoPagoGateway` del núcleo)**: el
+  campo es `marketplace_fee`, va en el body de `POST /checkout/preferences`
+  junto a `items` — **no** `application_fee` (ese es el de la API de Pagos
+  directa, que TourFlow no usa).
+- **Autenticación de la creación del cobro**: el header `Authorization` va
+  con el `access_token` del **vendedor** (el proveedor, obtenido por
+  OAuth) — nunca el del operador/marketplace. Fuente:
+  mercadopago.com.br/developers "Integrate checkout in Split Payments 1:1
+  (marketplace)".
+- **OAuth**: flujo `authorization_code` estándar —
+  `https://auth.mercadopago.com/authorization?client_id=...&response_type=code&platform_id=mp&state=...&redirect_uri=...`,
+  intercambio en `POST https://api.mercadopago.com/oauth/token`. El token
+  devuelto (`access_token`/`refresh_token`/`user_id`) dura **180 días** —
+  confirma que hace falta refresh real, no es un detalle menor.
+- **Reembolsos — el hallazgo más importante para el diseño**: "en el
+  modelo 1:1, el Marketplace no puede emitir un reembolso completo si el
+  vendedor no tiene fondos suficientes en su cuenta" (documentación oficial
+  de MP, sección de reembolsos de Split Payments). Esto es una limitación
+  real del modelo, no un bug a evitar — el diseño tiene que asumir que un
+  reembolso puede fallar por esto y decírselo al operador con claridad (ver
+  decisión § 7.1).
+
+### 7.3 Lo que sigue sin confirmar — genuinamente, ni con esta ronda de investigación
+
+- **Con el token de quién se puede leer `GET /v1/payments/{id}` de un pago
+  que se acreditó en la cuenta del proveedor** (para el webhook y para
+  `fetch_payment_status`) — la documentación pública fetcheada no lo aclaró
+  ni para el caso de éxito ni el de fallo. El gateway construido
+  (`Gateway::fetch_payment_with_best_token()`) intenta primero con el
+  token de la cuenta del operador (asumiendo que la app "colaboradora"
+  puede leerlo, patrón reportado en integraciones públicas de terceros) y
+  si no devuelve nada, prueba con el token de cada proveedor conectado uno
+  por uno hasta encontrar el dueño — funciona pero no está verificado
+  contra un pago real todavía. **Primer punto a confirmar en cuanto haya
+  un proveedor de prueba conectado.**
+- **Punto 1 de § 5 (aprobación de TourFlow como marketplace ante MP)**
+  sigue sin confirmarse — sigue siendo el bloqueo real para poder probar
+  cualquiera de esto en vivo, incluso con la app/OAuth ya funcionando.
+
+### 7.4 Arquitectura construida — `mercadopago-split-tourflow/`
+
+Mismo patrón exacto que `redsys-for-tourflow/` (ver `GUIA-PLUGINS-SATELITE-TOURFLOW.md`), namespace `MercadoPagoSplitForTourFlow\`, prefijo `mpstf_`. `php -l` limpio en los 8 archivos, sin probar contra WordPress real todavía (no hay credenciales de test reales para split — ver § 7.3).
+
+- **Tablas propias** (`class-mpstf-installer.php`): `mpstf_provider_accounts`
+  (una fila por proveedor que intentó conectar — `status`
+  `pending`/`connected`/`disconnected`, `access_token`/`refresh_token`/
+  `expires_at`) y `mpstf_split_payments` (mapea cada reserva cobrada CON
+  split a su proveedor + `preference_id`/`payment_id` de MP — existe porque
+  `PaymentGatewayInterface::refund()`/`fetch_payment_status()` solo reciben
+  strings sueltos, nunca el booking completo, así que sin esta tabla no hay
+  forma de saber el token de QUÉ proveedor usar).
+- **`Gateway` (`class-mpstf-gateway.php`)** — implementa
+  `PaymentGatewayInterface` completa, `id()` = `'mercadopago_split'`.
+  Regla central: split solo aplica a una reserva de UN tour de UN proveedor
+  conectado — un carrito (`booking_ref` empieza con `CART-`, hallazgo real
+  del código: `CartController` arma un `BookingResult` sintético que puede
+  representar tours de proveedores distintos bajo un solo cobro, y el
+  modelo 1:N de MP no es self-service) o cualquier otro caso cae DIRECTO a
+  `new \AmirBooking\Payments\MercadoPagoGateway()` (el gateway del núcleo)
+  como fallback — nunca se bloquea un pago por esto, exactamente el
+  comportamiento de hoy si este satélite no estuviera instalado.
+- **`OAuth`/`ProviderAccounts`** — flujo de conexión y CRUD de las tablas
+  propias, con refresh automático de token cuando vence (`Gateway::valid_access_token()`).
+- **`ProvidersPage`/`Settings`** — pantallas propias de admin (menú "MP
+  Split"): configuración de la app (client_id/secret/webhook secret/%
+  comisión) y, por proveedor, botón "Generar link de conexión" +
+  "Desconectar". Lee `amir_providers` del núcleo por SQL directo (sin punto
+  de extensión más limpio disponible, permitido por § 6 de la guía) —
+  nunca escribe ahí.
+- **`Rest`** — dos rutas propias (`/mpstf/v1/oauth-callback`,
+  `/mpstf/v1/webhook`) — deliberadamente NO se reusa el webhook de MP del
+  núcleo: `BookingController::mercadopago_webhook()` instancia
+  `MercadoPagoGateway` del núcleo directo, sin pasar por
+  `PaymentGatewayFactory`, así que nunca resolvería a este gateway.
+
+### 7.5 Qué falta para poder probar esto en vivo (no es código)
+
+1. Confirmar con MercadoPago si TourFlow necesita aprobación comercial
+   como marketplace, y conseguirla — bloqueo externo, ver § 5.1.
+2. Crear la app de MP (Tus integraciones → crear aplicación) para conseguir
+   `client_id`/`client_secret` reales y cargar el `redirect_uri` exacto
+   (`Settings::redirect_uri()`) en su configuración.
+3. Un proveedor de prueba con cuenta de MP propia para conectar de punta a
+   punta y resolver § 7.3 contra un pago real.
+
 ## 6. Fase 1 — `amir_partner_payouts`, diseño
 
 Mismo patrón exacto que `amir_provider_payouts` (`Installer::create_tables()`

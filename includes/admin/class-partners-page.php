@@ -9,7 +9,16 @@ defined( 'ABSPATH' ) || exit;
 class PartnersPage {
 
     /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private string $lang_override = '';
+
+    public function set_lang( string $lang ): void {
+        $this->lang_override = $lang;
+    }
+
     private function lang(): string {
+        if ( $this->lang_override !== '' ) {
+            return $this->lang_override;
+        }
         return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
     }
 
@@ -18,7 +27,23 @@ class PartnersPage {
         return $this->lang() === 'en' ? $en : $es;
     }
 
-    public function render(): void {
+    /** Mismo patrón que BookingsPage/CalendarPage — ver esas clases para el porqué (panel de gestión sin wp-admin). */
+    private string $base_url = '';
+    private string $bookings_base_url = '';
+
+    private function base_url(): string {
+        return $this->base_url !== '' ? $this->base_url : admin_url( 'admin.php?page=amir-partners' );
+    }
+
+    private function bookings_url( int $booking_id ): string {
+        $base = $this->bookings_base_url !== '' ? $this->bookings_base_url : admin_url( 'admin.php?page=amir-bookings-list' );
+        return $base . '&action=view&id=' . $booking_id;
+    }
+
+    public function render( string $base_url = '', string $bookings_base_url = '' ): void {
+        $this->base_url          = $base_url;
+        $this->bookings_base_url = $bookings_base_url;
+
         if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
             wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
         }
@@ -54,7 +79,7 @@ class PartnersPage {
 
         <!-- Formulario nuevo partner -->
         <div id="amir-new-partner-form" style="display:none;background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px;margin-bottom:24px;">
-          <h3 style="margin:0 0 16px;color:#1D9E75;"><?php echo esc_html( $this->tt( 'Nuevo partner', 'New partner' ) ); ?></h3>
+          <h3 style="margin:0 0 16px;color:var(--ab-teal, #1D9E75);"><?php echo esc_html( $this->tt( 'Nuevo partner', 'New partner' ) ); ?></h3>
           <form method="post">
             <?php wp_nonce_field('amir_partner_action'); ?>
             <input type="hidden" name="amir_action" value="create_partner" />
@@ -113,23 +138,23 @@ class PartnersPage {
                 <?php echo esc_html( sprintf( $this->tt( '%d reservas', '%d bookings' ), $stats['total_bookings'] ) ); ?><br>
                 <span style="font-size:12px;color:#5a7068;"><?php echo esc_html( \AmirBooking\Core\Currency::format( (float) $stats['total_revenue'], 0 ) ); ?></span>
               </td>
-              <td class="ab-td" style="font-weight:700;color:#1D9E75;">
+              <td class="ab-td" style="font-weight:700;color:var(--ab-teal, #1D9E75);">
                 <?php echo esc_html( \AmirBooking\Core\Currency::format( (float) $stats['commission_mxn'] ) ); ?>
               </td>
               <td class="ab-td">
                 <span style="background:<?php echo $p->active?'#e1f5ee':'#fef2f2'; ?>;
-                             color:<?php echo $p->active?'#0F6E56':'#e24b4a'; ?>;
+                             color:<?php echo $p->active?'var(--ab-teal-dark, #0F6E56)':'#e24b4a'; ?>;
                              font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;">
                   <?php echo esc_html( $p->active ? $this->tt('Activo','Active') : $this->tt('Inactivo','Inactive') ); ?>
                 </span>
               </td>
               <td class="ab-td">
-                <a href="<?php echo admin_url('admin.php?page=amir-partners&action=view&id='.$p->id); ?>"
-                   style="color:#1D9E75;font-size:12px;font-weight:600;"><?php echo esc_html( $this->tt( 'Ver links y QR →', 'View links and QR →' ) ); ?></a>
+                <a href="<?php echo $this->base_url().'&action=view&id='.$p->id; ?>"
+                   style="color:var(--ab-teal, #1D9E75);font-size:12px;font-weight:600;"><?php echo esc_html( $this->tt( 'Ver links y QR →', 'View links and QR →' ) ); ?></a>
               </td>
               <td class="ab-td">
-                <a href="<?php echo admin_url('admin.php?page=amir-partners&action=view&id='.$p->id); ?>"
-                   style="color:#1D9E75;font-size:12px;"><?php echo esc_html( $this->tt( 'Detalle', 'Detail' ) ); ?></a>
+                <a href="<?php echo $this->base_url().'&action=view&id='.$p->id; ?>"
+                   style="color:var(--ab-teal, #1D9E75);font-size:12px;"><?php echo esc_html( $this->tt( 'Detalle', 'Detail' ) ); ?></a>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -159,7 +184,7 @@ class PartnersPage {
         <?php $this->styles(); ?>
 
         <h1>
-          <a href="<?php echo admin_url('admin.php?page=amir-partners'); ?>" style="color:#5a7068;font-weight:400;font-size:16px;">← Partners</a>
+          <a href="<?php echo $this->base_url(); ?>" style="color:#5a7068;font-weight:400;font-size:16px;">← Partners</a>
           &nbsp; <?php echo esc_html($p->name); ?>
         </h1>
 
@@ -174,7 +199,7 @@ class PartnersPage {
                 [ $this->tt('Reservas','Bookings'), esc_html( sprintf( $this->tt('%d confirmadas','%d confirmed'), $stats['total_bookings'] ) ) ],
                 [ $this->tt('Comisión','Commission'), \AmirBooking\Core\Currency::format( (float) $stats['commission_mxn'] ) ],
               ] as [$label,$val]) : ?>
-                <div style="background:#f0faf6;border:1px solid #e1f5ee;border-radius:10px;padding:14px 16px;">
+                <div style="background:var(--ab-teal-light, #f0faf6);border:1px solid #e1f5ee;border-radius:10px;padding:14px 16px;">
                   <div style="font-size:11px;font-weight:700;color:#5a7068;text-transform:uppercase;letter-spacing:.4px;"><?php echo esc_html( $label ); ?></div>
                   <div style="font-size:20px;font-weight:800;color:#1a2e24;margin-top:4px;"><?php echo $val; ?></div>
                 </div>
@@ -193,11 +218,11 @@ class PartnersPage {
                 $comm = \AmirBooking\Partners\PartnerTracker::calculate_commission($partner_id, (float)$b->total_mxn);
               ?>
                 <tr style="border-bottom:1px solid #f5f5f5;">
-                  <td class="ab-td"><a href="<?php echo admin_url('admin.php?page=amir-bookings-list&action=view&id='.$b->id); ?>" style="color:#1D9E75;"><?php echo esc_html($b->booking_ref); ?></a></td>
+                  <td class="ab-td"><a href="<?php echo $this->bookings_url($b->id); ?>" style="color:var(--ab-teal, #1D9E75);"><?php echo esc_html($b->booking_ref); ?></a></td>
                   <td class="ab-td"><?php echo esc_html($b->tour_name); ?></td>
                   <td class="ab-td"><?php echo $b->tour_date; ?></td>
                   <td class="ab-td">$<?php echo number_format($b->total_mxn,0,'.',','); ?></td>
-                  <td class="ab-td" style="color:#1D9E75;font-weight:700;">$<?php echo number_format($comm,2); ?></td>
+                  <td class="ab-td" style="color:var(--ab-teal, #1D9E75);font-weight:700;">$<?php echo number_format($comm,2); ?></td>
                 </tr>
               <?php endforeach; ?>
               </tbody>
@@ -208,7 +233,7 @@ class PartnersPage {
           <!-- Links y QR -->
           <div>
             <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:16px;">
-              <div style="font-size:14px;font-weight:700;color:#1D9E75;margin-bottom:14px;">🔗 <?php echo esc_html( $this->tt( 'Links de tracking', 'Tracking links' ) ); ?></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ab-teal, #1D9E75);margin-bottom:14px;">🔗 <?php echo esc_html( $this->tt( 'Links de tracking', 'Tracking links' ) ); ?></div>
 
               <div style="margin-bottom:16px;">
                 <div style="font-size:12px;font-weight:700;color:#5a7068;margin-bottom:6px;text-transform:uppercase;"><?php echo esc_html( $this->tt( 'Link al catálogo completo', 'Link to the full catalog' ) ); ?></div>
@@ -248,12 +273,12 @@ class PartnersPage {
 
             <!-- Datos del partner -->
             <div style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:16px;margin-top:14px;">
-              <div style="font-size:14px;font-weight:700;color:#1D9E75;margin-bottom:10px;"><?php echo esc_html( $this->tt( 'Datos del partner', 'Partner details' ) ); ?></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ab-teal, #1D9E75);margin-bottom:10px;"><?php echo esc_html( $this->tt( 'Datos del partner', 'Partner details' ) ); ?></div>
               <div style="font-size:12px;color:#5a7068;line-height:2;">
                 <div>Email: <strong style="color:#1a2e24;"><?php echo esc_html($p->email); ?></strong></div>
                 <div><?php echo esc_html( $this->tt( 'Tel:', 'Phone:' ) ); ?> <strong style="color:#1a2e24;"><?php echo esc_html($p->phone??'—'); ?></strong></div>
                 <div>Token: <code style="font-size:11px;"><?php echo esc_html($p->tracking_token); ?></code></div>
-                <div><?php echo esc_html( $this->tt( 'Comisión:', 'Commission:' ) ); ?> <strong style="color:#1D9E75;">
+                <div><?php echo esc_html( $this->tt( 'Comisión:', 'Commission:' ) ); ?> <strong style="color:var(--ab-teal, #1D9E75);">
                   <?php echo $p->commission_type==='percentage'
                     ? number_format($p->commission_value,1).'%'
                     : \AmirBooking\Core\Currency::format( (float) $p->commission_value ) . ' ' . esc_html( $this->tt( 'fijo', 'flat' ) ); ?>
@@ -282,7 +307,7 @@ class PartnersPage {
             ]);
             $msg = is_wp_error($result) ? $this->tt('Error: ','Error: ').$result->get_error_message() : $this->tt('Partner creado correctamente.','Partner created successfully.');
             set_transient('amir_partner_message', $msg, 30);
-            wp_redirect(admin_url('admin.php?page=amir-partners'));
+            wp_redirect($this->base_url());
             exit;
         }
 
@@ -300,7 +325,7 @@ class PartnersPage {
                 \AmirBooking\Partners\PartnerTracker::generate_partner_qr($partner_id, $token, 0);
                 set_transient('amir_partner_message', $this->tt('QR regenerado.','QR regenerated.'), 30);
             }
-            wp_redirect(admin_url('admin.php?page=amir-partners&action=view&id='.$partner_id));
+            wp_redirect($this->base_url().'&action=view&id='.$partner_id);
             exit;
         }
     }

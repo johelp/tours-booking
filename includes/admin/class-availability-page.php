@@ -10,7 +10,16 @@ defined( 'ABSPATH' ) || exit;
 class AvailabilityPage {
 
     /** Idioma de esta pantalla — ver el mismo helper en SettingsPage/BookingsPage. */
+    private string $lang_override = '';
+
+    public function set_lang( string $lang ): void {
+        $this->lang_override = $lang;
+    }
+
     private function lang(): string {
+        if ( $this->lang_override !== '' ) {
+            return $this->lang_override;
+        }
         return strpos( get_user_locale(), 'en' ) === 0 ? 'en' : 'es';
     }
 
@@ -19,7 +28,16 @@ class AvailabilityPage {
         return $this->lang() === 'en' ? $en : $es;
     }
 
-    public function render(): void {
+    /** Mismo patrón que BookingsPage/CalendarPage — ver esas clases para el porqué (panel de gestión sin wp-admin). */
+    private string $base_url = '';
+
+    private function base_url(): string {
+        return $this->base_url !== '' ? $this->base_url : admin_url( 'admin.php?page=amir-availability' );
+    }
+
+    public function render( string $base_url = '' ): void {
+        $this->base_url = $base_url;
+
         if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
             wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
         }
@@ -53,11 +71,11 @@ class AvailabilityPage {
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap;">
           <label style="font-weight:600;font-size:13px;">Tour:</label>
           <?php foreach ($tours as $t) : ?>
-            <a href="<?php echo admin_url('admin.php?page=amir-availability&tour_id='.$t->id); ?>"
+            <a href="<?php echo $this->base_url().'&tour_id='.$t->id; ?>"
                style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;text-decoration:none;
-                      background:<?php echo $selected_tour===$t->id?'#1D9E75':'#f0faf6'; ?>;
-                      color:<?php echo $selected_tour===$t->id?'#fff':'#1D9E75'; ?>;
-                      border:1.5px solid <?php echo $selected_tour===$t->id?'#1D9E75':'#c3d9d0'; ?>;">
+                      background:<?php echo $selected_tour===$t->id?'var(--ab-teal, #1D9E75)':'var(--ab-teal-light, #f0faf6)'; ?>;
+                      color:<?php echo $selected_tour===$t->id?'#fff':'var(--ab-teal, #1D9E75)'; ?>;
+                      border:1.5px solid <?php echo $selected_tour===$t->id?'var(--ab-teal, #1D9E75)':'#c3d9d0'; ?>;">
               <?php echo esc_html( $this->lang() === 'en' ? ( $t->name_en ?: $t->name_es ) : $t->name_es ); ?>
             </a>
           <?php endforeach; ?>
@@ -109,7 +127,7 @@ class AvailabilityPage {
                   <tr style="border-bottom:1px solid #f5f5f5;">
                     <td class="ab-td">
                       <span style="background:<?php echo $rule->rule_type==='block'?'#fef2f2':'#e1f5ee'; ?>;
-                                   color:<?php echo $rule->rule_type==='block'?'#e24b4a':'#0F6E56'; ?>;
+                                   color:<?php echo $rule->rule_type==='block'?'#e24b4a':'var(--ab-teal-dark, #0F6E56)'; ?>;
                                    font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;">
                         <?php echo $rule->rule_type==='block' ? '🚫 ' . esc_html( $this->tt( 'Bloquear', 'Block' ) ) : '✅ ' . esc_html( $this->tt( 'Permitir', 'Allow' ) ); ?>
                       </span>
@@ -127,7 +145,7 @@ class AvailabilityPage {
                           <input type="hidden" name="rule_id" value="<?php echo $rule->id; ?>" />
                           <input type="hidden" name="tour_id" value="<?php echo $selected_tour; ?>" />
                           <button type="submit" title="<?php echo esc_attr( $this->tt( 'Duplicar esta temporada al año siguiente, con las mismas fechas +1 año', 'Duplicate this season to next year, same dates +1 year' ) ); ?>"
-                                  style="background:transparent;border:none;color:#1D9E75;cursor:pointer;font-size:15px;padding:0 4px;">📋+1</button>
+                                  style="background:transparent;border:none;color:var(--ab-teal, #1D9E75);cursor:pointer;font-size:15px;padding:0 4px;">📋+1</button>
                         </form>
                       <?php endif; ?>
                       <form method="post" style="display:inline;">
@@ -180,7 +198,7 @@ class AvailabilityPage {
                   <?php foreach ( $this->weekday_labels() as $i=>$d) : ?>
                     <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;
                                   background:#f8fdfb;border:1px solid #c3d9d0;padding:5px 8px;border-radius:6px;">
-                      <input type="checkbox" name="weekdays[]" value="<?php echo $i; ?>" style="accent-color:#1D9E75;" />
+                      <input type="checkbox" name="weekdays[]" value="<?php echo $i; ?>" style="accent-color:var(--ab-teal, #1D9E75);" />
                       <?php echo $d; ?>
                     </label>
                   <?php endforeach; ?>
@@ -444,7 +462,7 @@ class AvailabilityPage {
         // y complica el cálculo de "hoy" en build_preview().
         $prev_disabled = ( $prev_y < (int) date('Y') ) || ( $prev_y === (int) date('Y') && $prev_m < (int) date('n') );
 
-        $base_url = admin_url( 'admin.php?page=amir-availability&tour_id=' . $tour_id );
+        $base_url = $this->base_url() . '&tour_id=' . $tour_id;
         $first_dow = (int) date( 'w', mktime(0,0,0,$month,1,$year) );
         $weekday_labels = $this->weekday_labels();
 
@@ -459,10 +477,10 @@ class AvailabilityPage {
               <?php if ( $prev_disabled ) : ?>
                 <span style="color:#c3d9d0;">‹</span>
               <?php else : ?>
-                <a href="<?php echo esc_url( $base_url . "&avail_year={$prev_y}&avail_month={$prev_m}" ); ?>" style="text-decoration:none;color:#1D9E75;font-weight:700;">‹</a>
+                <a href="<?php echo esc_url( $base_url . "&avail_year={$prev_y}&avail_month={$prev_m}" ); ?>" style="text-decoration:none;color:var(--ab-teal, #1D9E75);font-weight:700;">‹</a>
               <?php endif; ?>
               <strong style="min-width:120px;text-align:center;display:inline-block;"><?php echo esc_html( "$month_label $year" ); ?></strong>
-              <a href="<?php echo esc_url( $base_url . "&avail_year={$next_y}&avail_month={$next_m}" ); ?>" style="text-decoration:none;color:#1D9E75;font-weight:700;">›</a>
+              <a href="<?php echo esc_url( $base_url . "&avail_year={$next_y}&avail_month={$next_m}" ); ?>" style="text-decoration:none;color:var(--ab-teal, #1D9E75);font-weight:700;">›</a>
             </div>
           </div>
           <p style="font-size:12px;color:#5a7068;margin:0 0 12px;">
@@ -481,7 +499,7 @@ class AvailabilityPage {
             <?php foreach ( $days as $date => $status ) :
                 $day_num = (int) substr( $date, -2 );
                 $bg = [ 'available' => '#e8f5e9', 'blocked' => '#fef2f2', 'past' => '#f8fdfb' ][ $status ];
-                $fg = [ 'available' => '#0F6E56', 'blocked' => '#e24b4a', 'past' => '#c3d9d0' ][ $status ];
+                $fg = [ 'available' => 'var(--ab-teal-dark, #0F6E56)', 'blocked' => '#e24b4a', 'past' => '#c3d9d0' ][ $status ];
                 $title = [
                     'available' => $this->tt( 'Disponible', 'Available' ),
                     'blocked'   => $this->tt( 'Bloqueada por una regla', 'Blocked by a rule' ),

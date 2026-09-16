@@ -901,6 +901,7 @@ class ConfirmationEmail extends BaseEmail {
             'subject'       => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => '✅ Tu reserva está confirmada — {ref}', 'en' => '✅ Your booking is confirmed — {ref}' ],
             'intro_title'   => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¡Tu reserva está confirmada! 🎉', 'en' => 'Your booking is confirmed! 🎉' ],
             'intro_body'    => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Todo está listo para tu aventura. Aquí están los detalles de tu reserva:', 'en' => 'Hello <strong>{name}</strong>,<br>Everything is ready for your adventure. Here are your booking details:' ],
+            'custom_html_block' => [ 'label' => self::field_label( 'Bloque HTML personalizado (opcional) — banner, imagen, contenido de marca', 'Custom HTML block (optional) — banner, image, brand content' ), 'es' => '', 'en' => '' ],
             'policy_title'  => [ 'label' => self::field_label( 'Título de la política de cancelación', 'Cancellation policy title' ), 'es' => 'Política de cancelación:', 'en' => 'Cancellation policy:' ],
             'policy_full'   => [ 'label' => self::field_label( 'Política — reembolso completo', 'Policy — full refund' ), 'es' => '7+ días antes: reembolso completo', 'en' => '7+ days before: full refund' ],
             'policy_partial'=> [ 'label' => self::field_label( 'Política — reembolso parcial', 'Policy — partial refund' ), 'es' => '3–6 días antes: reembolso del 50%', 'en' => '3–6 days before: 50% refund' ],
@@ -918,6 +919,13 @@ class ConfirmationEmail extends BaseEmail {
 
         $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
                . '<p>' . $this->text( 'intro_body', [ 'name' => esc_html( $b->customer_name ) ] ) . '</p>';
+
+        // Bloque HTML libre del operador (piloto — CONTRIBUTING.md § 16.101),
+        // sin escapar a propósito: es contenido de marca (banner, imagen,
+        // texto propio), ya sanitizado con wp_kses_post() al guardarse en
+        // EmailTestPage::handle_save_texts(). Vacío por defecto — no agrega
+        // nada si el operador no cargó ninguno.
+        $custom_html_block = $this->text( 'custom_html_block' );
 
         $ref_box = '<div class="ref-box">
           <div class="ref-label">' . $this->t('booking_ref') . '</div>
@@ -984,6 +992,7 @@ class ConfirmationEmail extends BaseEmail {
         }
 
         return $intro
+            . $custom_html_block
             . $ref_box
             . $this->booking_info_table()
             . $custom_note
@@ -1007,6 +1016,7 @@ class ReminderEmail extends BaseEmail {
             'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => '⏰ ¡Tu tour es mañana! — {tour}', 'en' => '⏰ Your tour is tomorrow! — {tour}' ],
             'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¡Tu aventura es mañana! ⛵', 'en' => 'Your adventure is tomorrow! ⛵' ],
             'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Un recordatorio de tu reserva para mañana:', 'en' => 'Hello <strong>{name}</strong>,<br>A reminder about your booking for tomorrow:' ],
+            'custom_html_block' => [ 'label' => self::field_label( 'Bloque HTML personalizado (opcional) — banner, imagen, contenido de marca', 'Custom HTML block (optional) — banner, image, brand content' ), 'es' => '', 'en' => '' ],
         ];
     }
 
@@ -1021,6 +1031,10 @@ class ReminderEmail extends BaseEmail {
         $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
                . '<p>' . $this->text( 'intro_body', [ 'name' => esc_html( $b->customer_name ) ] ) . '</p>';
 
+        // Ver nota análoga en ConfirmationEmail::get_body_content() — mismo
+        // piloto, mismo campo, sin escapar a propósito.
+        $custom_html_block = $this->text( 'custom_html_block' );
+
         $recs_block = $this->recs_html(
             'amir_email_recs_es', 'amir_email_recs_en',
             [ 'Ropa cómoda y traje de baño', 'Protector solar biodegradable (obligatorio en la laguna)', 'Agua y snacks ligeros', 'Documento de identidad', 'Cámara o celular en bolsa impermeable' ],
@@ -1030,6 +1044,7 @@ class ReminderEmail extends BaseEmail {
         $footer_wa = $wa ? '<p style="text-align:center;margin-top:24px;font-size:13px;color:#5a7068;">' . $this->t('wa_help') . ': <a href="https://wa.me/' . esc_attr( $wa ) . '" style="color:' . esc_attr( $this->brand_color() ) . ';">wa.me/' . esc_html( $wa ) . '</a></p>' : '';
 
         return $intro
+            . $custom_html_block
             . $this->booking_info_table()
             . $recs_block
             . $footer_wa;
