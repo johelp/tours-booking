@@ -523,15 +523,21 @@ class CartController {
 		// quedó esperando al proveedor).
 		$manager = new \AmirBooking\Core\BookingManager();
 		foreach ( $bookings as $b ) {
-			if ( $b->status === 'pending' ) {
+			// 'payment_expired': el pago llegó después de vencer la reserva —
+			// confirm() la recupera si el cupo sigue libre, o la reembolsa.
+			if ( in_array( $b->status, [ 'pending', 'payment_expired' ], true ) ) {
 				$manager->confirm( (int) $b->id, $status->charge_reference );
 			}
 			\AmirBooking\Payments\PaymentEventLogger::log( (int) $b->id, $gateway->id(), 'succeeded', '', [ 'charge_reference' => $status->charge_reference, 'cart_group_id' => $cart_group_id ] );
 		}
 
 		$final = $wpdb->get_results( $wpdb->prepare(
-			"SELECT booking_ref, status FROM {$wpdb->prefix}amir_bookings WHERE cart_group_id = %s", $cart_group_id
+			"SELECT booking_ref, status, refund_amount_mxn FROM {$wpdb->prefix}amir_bookings WHERE cart_group_id = %s", $cart_group_id
 		) );
+		$refunded_refs = wp_list_pluck(
+			array_filter( $final, fn( $b ) => $b->status === 'cancelled_client' && (float) ( $b->refund_amount_mxn ?? 0 ) > 0 ),
+			'booking_ref'
+		);
 		$confirmed_refs       = wp_list_pluck( array_filter( $final, fn( $b ) => $b->status === 'confirmed' ), 'booking_ref' );
 		$pending_provider_refs = wp_list_pluck( array_filter( $final, fn( $b ) => $b->status === 'pending_provider_approval' ), 'booking_ref' );
 
@@ -544,10 +550,24 @@ class CartController {
 			do_action( 'flow_cart_confirmed', $cart_group_id );
 		}
 
+		// Ningún ítem quedó confirmado ni esperando al proveedor: el pago
+		// llegó tarde y no había cupo (ya se reembolsó), o no se pudo
+		// confirmar — nunca responder éxito con la reserva no hecha.
+		if ( empty( $confirmed_refs ) && empty( $pending_provider_refs ) ) {
+			return new \WP_REST_Response( [
+				'code'          => ! empty( $refunded_refs ) ? 'payment_expired_refunded' : 'confirm_failed',
+				'refunded_refs' => array_values( $refunded_refs ),
+				'error'         => ! empty( $refunded_refs )
+					? 'Tu reserva venció antes de completarse el pago y ya no hay cupo disponible. Te reembolsamos el pago. / Your reservation expired before the payment was completed and is no longer available. We refunded your payment.'
+					: 'Recibimos tu pago pero todavía no pudimos confirmar la reserva. Contactanos y lo resolvemos. / We received your payment but could not confirm the booking yet. Please contact us.',
+			], 409 );
+		}
+
 		return new \WP_REST_Response( [
 			'confirmed'              => true,
 			'booking_refs'           => $confirmed_refs,
 			'pending_provider_refs'  => $pending_provider_refs,
+			'refunded_refs'          => array_values( $refunded_refs ),
 		], 200 );
 	}
 }

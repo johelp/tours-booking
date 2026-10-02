@@ -140,14 +140,19 @@ final class RoomBookingManager {
 			return RoomBookingResult::error( 'Error al guardar la reserva. Por favor intenta de nuevo.' );
 		}
 
-		$wpdb->query( 'COMMIT' );
-
-		// mark_used() recién después del commit — mismo criterio que
-		// BookingManager::create_pending() (nunca contar un uso de un
-		// cupón si la reserva termina fallando).
-		if ( $coupon_id > 0 ) {
-			( new \AmirBooking\Core\CouponEngine() )->mark_used( $coupon_id );
+		// Marcar el cupón como usado — DENTRO de la transacción y ANTES del
+		// COMMIT, mismo fix que BookingManager::create_pending() (hallazgo de
+		// auditoría de seguridad, 2026-09-24). mark_used() ahora es un UPDATE
+		// atómico condicionado a usage_limit — si el cupón se agotó entre la
+		// validación inicial (arriba, antes de abrir la transacción) y acá,
+		// se revierte la reserva completa en vez de dejarla confirmada con un
+		// descuento que ya no correspondía.
+		if ( $coupon_id > 0 && ! ( new \AmirBooking\Core\CouponEngine() )->mark_used( $coupon_id ) ) {
+			$wpdb->query( 'ROLLBACK' );
+			return RoomBookingResult::error( 'Este cupón ya alcanzó su límite de usos. Por favor actualiza la página e intenta de nuevo.' );
 		}
+
+		$wpdb->query( 'COMMIT' );
 
 		$result = new RoomBookingResult( true, $booking_id, $booking_ref, $total );
 

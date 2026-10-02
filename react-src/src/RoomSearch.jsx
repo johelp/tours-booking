@@ -427,6 +427,22 @@ function CartPaymentStep( { t, cartGroupId, onSuccess } ) {
 	const elements = useElements();
 	const [ processing, setProcessing ] = useState( false );
 	const [ error, setError ] = useState( '' );
+	const [ verifyFailed, setVerifyFailed ] = useState( null );
+
+	// Verifica el pago con el backend sin fingir éxito: si el pago llegó tarde
+	// y ya se reembolsó, o la verificación falla, se le dice la verdad al
+	// cliente (ver RoomsAPI.confirmCartPaymentSafe).
+	async function verify( piId ) {
+		setProcessing( true );
+		const res = await RoomsAPI.confirmCartPaymentSafe( cartGroupId, piId );
+		setProcessing( false );
+		if ( res.ok ) {
+			setVerifyFailed( null );
+			onSuccess( res.data.booking_refs ?? [] );
+			return;
+		}
+		setVerifyFailed( { piId, refunded: res.code === 'payment_expired_refunded' } );
+	}
 
 	async function handlePay() {
 		if ( ! stripe || ! elements ) return;
@@ -442,13 +458,33 @@ function CartPaymentStep( { t, cartGroupId, onSuccess } ) {
 		}
 
 		if ( paymentIntent?.status === 'succeeded' ) {
-			try {
-				const data = await RoomsAPI.cartConfirmPayment( cartGroupId, paymentIntent.id );
-				onSuccess( data.booking_refs ?? [] );
-			} catch {
-				onSuccess( [] );
-			}
+			await verify( paymentIntent.id );
+		} else {
+			setProcessing( false );
 		}
+	}
+
+	if ( verifyFailed ) {
+		return (
+			<div className="ab-panel" style={ { textAlign: 'center' } }>
+				<div className="ab-confirm-icon">{ verifyFailed.refunded ? '↩' : '⏳' }</div>
+				<h2 className="ab-confirm-title">
+					{ verifyFailed.refunded
+						? t( 'Tu reserva venció y te reembolsamos el pago', 'Your reservation expired and we refunded your payment' )
+						: t( 'Recibimos tu pago', 'We received your payment' ) }
+				</h2>
+				<p className="ab-confirm-sub">
+					{ verifyFailed.refunded
+						? t( 'El pago se completó cuando la reserva ya había vencido y el cupo dejó de estar disponible, así que devolvimos el importe completo a tu tarjeta. Podés volver a intentar la reserva.', 'The payment went through after the reservation had expired and the spot was no longer available, so we refunded the full amount to your card. You can try booking again.' )
+						: t( 'Todavía no pudimos confirmar tu reserva — puede tardar unos segundos. Tocá el botón para reintentar; de todas formas te llega la confirmación por email en cuanto quede lista.', "We couldn't confirm your booking yet — it can take a few seconds. Tap the button to retry; you'll get the confirmation by email as soon as it's ready." ) }
+				</p>
+				{ ! verifyFailed.refunded && (
+					<button className="ab-btn ab-btn-primary" style={ { marginTop: 16 } } onClick={ () => verify( verifyFailed.piId ) } disabled={ processing }>
+						{ processing ? t( 'Procesando…', 'Processing…' ) : t( 'Reintentar verificación', 'Retry verification' ) }
+					</button>
+				) }
+			</div>
+		);
 	}
 
 	return (

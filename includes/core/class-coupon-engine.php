@@ -76,13 +76,32 @@ class CouponEngine {
         return round( min( $discount, $subtotal ), 2 );
     }
 
-    /** Incrementa el contador de usos — llamar solo cuando la reserva se crea con éxito. */
-    public function mark_used( int $coupon_id ): void {
+    /**
+     * Incrementa el contador de usos — llamar solo cuando la reserva se crea
+     * con éxito, DENTRO de la misma transacción que reserva el cupo, y ANTES
+     * del COMMIT (revertir todo si devuelve false).
+     *
+     * Atómico a propósito (hallazgo de auditoría de seguridad, 2026-09-24):
+     * el `UPDATE` re-chequea `usage_limit` en el propio WHERE en vez de
+     * confiar en el `SELECT` de validate() (hecho antes, fuera de esta
+     * sentencia) — sin esto, dos reservas concurrentes con el mismo cupón de
+     * un solo uso podían pasar `validate()` las dos antes de que cualquiera
+     * incrementara el contador, agotando un cupón `usage_limit=1` N veces (y,
+     * si el cupón cubre el 100% del total, generando N reservas gratis ya
+     * confirmadas). Devuelve false si el cupón ya se agotó entre la
+     * validación inicial y este punto — el caller debe hacer ROLLBACK de la
+     * reserva completa en ese caso, nunca dejarla confirmada con un
+     * descuento que ya no correspondía.
+     */
+    public function mark_used( int $coupon_id ): bool {
         global $wpdb;
-        $wpdb->query( $wpdb->prepare(
-            "UPDATE {$wpdb->prefix}amir_coupons SET times_used = times_used + 1 WHERE id = %d",
+        $affected = $wpdb->query( $wpdb->prepare(
+            "UPDATE {$wpdb->prefix}amir_coupons
+             SET times_used = times_used + 1
+             WHERE id = %d AND ( usage_limit IS NULL OR times_used < usage_limit )",
             $coupon_id
         ) );
+        return (int) $affected > 0;
     }
 }
 

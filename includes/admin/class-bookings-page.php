@@ -80,6 +80,17 @@ class BookingsPage {
 
     public function render( string $base_url = '' ): void {
         $this->base_url = $base_url;
+
+        // Hallazgo de auditoría de seguridad, 2026-09-24: esta era la única
+        // pantalla del admin (junto con CalendarPage) sin este chequeo propio
+        // — dependía solo del gate del menú de quien la invoca (AdminMenu/
+        // ManagerPanel). Mismo guard que ya usan todas las demás pantallas
+        // (ver AvailabilityPage/PartnersPage/etc.) — defensa en profundidad,
+        // no depender solo del caller.
+        if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
+            wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
+        }
+
         $action = sanitize_key( $_GET['action'] ?? 'list' );
 
         if ( $action === 'new' ) {
@@ -749,6 +760,7 @@ class BookingsPage {
                     <option value="cancelled_client"   <?php selected($b->status,'cancelled_client'); ?>><?php echo esc_html( $this->tt( 'Cancelada (cliente)', 'Cancelled (customer)' ) ); ?></option>
                     <option value="cancelled_weather"  <?php selected($b->status,'cancelled_weather'); ?>><?php echo esc_html( $this->tt( 'Cancelada (clima)', 'Cancelled (weather)' ) ); ?></option>
                     <option value="cancelled_min_pax"  <?php selected($b->status,'cancelled_min_pax'); ?>><?php echo esc_html( $this->tt( 'Cancelada (mínimo de pax)', 'Cancelled (minimum pax)' ) ); ?></option>
+                    <option value="payment_expired"    <?php selected($b->status,'payment_expired'); ?>><?php echo esc_html( $this->tt( 'Vencida (sin pago)', 'Expired (unpaid)' ) ); ?></option>
                   </select>
                   <button type="submit" class="button" style="width:100%;"
                     onclick="return confirm('<?php echo esc_js( $this->tt( '¿Cambiar el estado de esta reserva? Esto NO calcula reembolsos ni manda emails de cancelación — solo cambia el estado. Para cancelar con reembolso, usá la acción de cancelación correspondiente.', 'Change the status of this booking? This does NOT calculate refunds or send cancellation emails — it only changes the status. To cancel with a refund, use the corresponding cancellation action.' ) ); ?>')">
@@ -904,7 +916,7 @@ class BookingsPage {
                 $new_status = sanitize_key( $_POST['new_status'] ?? '' );
                 $allowed = [ 'confirmed', 'pending', 'awaiting_payment', 'date_requested',
                              'date_request_rejected', 'cancelled_client', 'cancelled_weather',
-                             'cancelled_min_pax', 'rescheduled', 'completed' ];
+                             'cancelled_min_pax', 'rescheduled', 'completed', 'payment_expired' ];
                 if ( ! in_array( $new_status, $allowed, true ) ) {
                     return $this->tt( 'Estado no válido.', 'Invalid status.' );
                 }
@@ -1307,6 +1319,7 @@ class BookingsPage {
             'date_request_rejected'   => '#fef2f2:#c53030',
             'cancellation_requested'  => '#fef2f2:#e24b4a',
             'cancelled_client'        => '#fef2f2:#c53030',
+            'payment_expired'         => '#f3f4f6:#6b7280',
             'cancelled_weather'       => '#fef2f2:#c53030',
             'cancelled_min_pax'       => '#fef2f2:#c53030',
             'rescheduled'             => '#e8f4ff:#1a6fa8',
@@ -1339,6 +1352,7 @@ class BookingsPage {
             'confirmed'              => '✅ ' . $this->tt( 'Confirmada', 'Confirmed' ),
             'cancellation_requested' => '🚫 ' . $this->tt( 'Solicita cancelación', 'Cancellation requested' ),
             'cancelled_client'       => '✗ ' . $this->tt( 'Cancelada (cliente)', 'Cancelled (customer)' ),
+            'payment_expired'        => '⌛ ' . $this->tt( 'Vencida (sin pago)', 'Expired (unpaid)' ),
             'cancelled_weather'      => '⛈ ' . $this->tt( 'Cancelada (clima)', 'Cancelled (weather)' ),
             'cancelled_min_pax'      => '👥 ' . $this->tt( 'Cancelada (mín. pax)', 'Cancelled (min. pax)' ),
             'rescheduled'            => '🔄 ' . $this->tt( 'Reprogramada', 'Rescheduled' ),

@@ -37,6 +37,16 @@ class EmailTexts {
      * Guarda (o limpia, si el valor llega vacío — así "Restaurar default" es
      * simplemente dejar el campo en blanco y guardar) los textos de un
      * tipo+idioma de una sola vez.
+     *
+     * Sanea con `wp_kses_post()` acá adentro, no solo en el caller (hallazgo
+     * de auditoría de seguridad, 2026-09-24): el único llamador actual
+     * (`EmailTestPage::handle_save_texts()`) ya lo hacía antes de invocar
+     * `save()` — sin cambio de comportamiento hoy, aplicarlo dos veces es
+     * inofensivo — pero el contrato de seguridad no debe depender de que
+     * cada caller futuro (ej. una API REST de configuración, import) se
+     * acuerde de aplicarlo: sin esto, un segundo camino de guardado podría
+     * persistir HTML/script sin sanear en `custom_html_block`, que se
+     * imprime sin escapar dentro de un email real (class-email-dispatcher.php).
      */
     public static function save( string $type, string $lang, array $texts ): void {
         $all = get_option( self::OPTION, [] );
@@ -44,7 +54,7 @@ class EmailTexts {
             $all = [];
         }
         foreach ( $texts as $key => $val ) {
-            $val = trim( wp_unslash( (string) $val ) );
+            $val = trim( wp_kses_post( wp_unslash( (string) $val ) ) );
             if ( $val === '' ) {
                 unset( $all[ $type ][ $lang ][ $key ] );
             } else {

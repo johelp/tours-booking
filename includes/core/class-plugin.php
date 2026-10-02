@@ -284,6 +284,21 @@ final class Plugin {
                 return;
             }
 
+            // Defensivo (hallazgo de auditoría de seguridad, 2026-09-24,
+            // mismo criterio que el listener de amir_partner_payouts más
+            // abajo): amir_provider_booking_approved no tenía NINGÚN chequeo
+            // de existencia — confirm() ahora está blindado contra la carrera
+            // que podía dispararlo dos veces (ver el UPDATE condicionado al
+            // status en BookingManager::confirm()), pero esto queda como
+            // segunda capa por si algún otro camino futuro dispara el hook
+            // más de una vez para la misma reserva.
+            $already = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}amir_provider_payouts WHERE booking_id = %d", $booking_id
+            ) );
+            if ( $already ) {
+                return;
+            }
+
             $cost = ( new \AmirBooking\Core\PricingEngine() )->calculate_provider_cost(
                 (int) $booking->tour_id,
                 (int) $booking->schedule_id,

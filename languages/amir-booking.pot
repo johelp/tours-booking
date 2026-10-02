@@ -571,3 +571,5 @@ msgstr ""
 msgid "🔄 Tu reserva fue reprogramada — %s"
 msgstr ""
 
+msgid "Pago no completado"
+msgstr ""

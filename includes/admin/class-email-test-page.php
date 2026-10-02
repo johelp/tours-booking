@@ -26,6 +26,7 @@ class EmailTestPage {
         'cancellation'      => [ 'label' => [ 'Cancelación de reserva', 'Booking cancellation' ],                 'class' => \AmirBooking\Emails\CancellationEmail::class ],
         'tour_opened'       => [ 'label' => [ 'Tour ya disponible (wishlist)', 'Tour now available (waitlist)' ], 'class' => \AmirBooking\Emails\TourOpenedEmail::class ],
         'payment_link'      => [ 'label' => [ 'Link de pago (reserva manual)', 'Payment link (manual booking)' ],'class' => \AmirBooking\Emails\PaymentLinkEmail::class ],
+        'payment_failed'    => [ 'label' => [ 'Pago rechazado: actualizar tarjeta', 'Payment declined: update card' ], 'class' => \AmirBooking\Emails\PaymentFailedEmail::class ],
         'reschedule'        => [ 'label' => [ 'Reserva reprogramada', 'Booking rescheduled' ],                    'class' => \AmirBooking\Emails\RescheduleEmail::class ],
         'provider_notice'   => [ 'label' => [ 'Marketplace: aviso al proveedor', 'Marketplace: notice to provider' ], 'class' => \AmirBooking\Emails\ProviderNoticeEmail::class ],
         'provider_pending'  => [ 'label' => [ 'Marketplace: aviso interino al cliente', 'Marketplace: interim notice to customer' ], 'class' => \AmirBooking\Emails\ProviderPendingNoticeEmail::class ],
@@ -347,6 +348,9 @@ class EmailTestPage {
             'provider_response_token' => 'test-provider-token-0000',
             'provider_reject_reason'  => '',
             'special_requests'        => '',
+            // PaymentFailedEmail::deadline_label() — plazo de gracia tras un pago rechazado.
+            'created_at'              => current_time( 'mysql' ),
+            'payment_failed_at'       => current_time( 'mysql' ),
         ];
     }
 }

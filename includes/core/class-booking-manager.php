@@ -52,6 +52,10 @@ class BookingManager {
     public function create_pending( array $data ): BookingResult {
         global $wpdb;
 
+        // Liberar el cupo (y el uso del cupón) de reservas impagas ya vencidas
+        // antes de decidir disponibilidad — no depender solo del cron horario.
+        PendingExpiry::release( true );
+
         // Si no hay schedule_id, tomar el primero disponible del tour
         $schedule_id = (int) ( $data['schedule_id'] ?? 0 );
         if ( $schedule_id === 0 ) {
@@ -128,10 +132,10 @@ class BookingManager {
         // propósito, así que nada de lo que sigue (disponibilidad, cupos,
         // PricingEngine) aplica: se delega a un camino sin calendario ni
         // cotización, el operador carga el precio real al aprobar.
-        $is_custom_quote = (bool) $wpdb->get_var( $wpdb->prepare(
-            "SELECT custom_quote FROM {$wpdb->prefix}amir_tours WHERE id = %d", (int) $data['tour_id']
+        $tour_flags = $wpdb->get_row( $wpdb->prepare(
+            "SELECT custom_quote, price_model FROM {$wpdb->prefix}amir_tours WHERE id = %d", (int) $data['tour_id']
         ) );
-        if ( $is_custom_quote ) {
+        if ( $tour_flags && $tour_flags->custom_quote ) {
             return $this->create_custom_quote_request( $data );
         }
 
@@ -146,9 +150,21 @@ class BookingManager {
             return BookingResult::error( 'No hay disponibilidad: ' . $avail->reason );
         }
 
-        // Validar que los cupos alcanzan para los pax solicitados
-        $pax = (int)$data['adults'] + (int)$data['children'] + (int)$data['babies'];
-        if ( $pax > $avail->slots_remaining ) {
+        // Validar que los cupos alcanzan para los pax solicitados — no aplica
+        // a tours "grupo" (price_model='group', ej. charter/tour privado
+        // exclusivo): ahí la disponibilidad es binaria (el horario está libre
+        // o no, sin importar cuántas personas), ya resuelta arriba por
+        // $avail->available. AvailabilityEngine::check_group_capacity()
+        // devuelve slots_remaining=1 como sentinel de "sí hay lugar", no como
+        // una cantidad real de personas — bug real encontrado en el camino
+        // (auditoría de seguridad, 2026-09-24, al testear el fix de la
+        // sobreventa de tours "grupo" bajo carrera, ver más abajo): sin este
+        // `if`, CUALQUIER reserva de un tour "grupo" con más de 1 persona
+        // total (adults+children+babies) se rechazaba siempre con "solo
+        // queda 1 cupo disponible", aunque el horario estuviera libre.
+        $is_group_model = $tour_flags && ( $tour_flags->price_model ?? '' ) === 'group';
+        $pax            = (int)$data['adults'] + (int)$data['children'] + (int)$data['babies'];
+        if ( ! $is_group_model && $pax > $avail->slots_remaining ) {
             return BookingResult::error(
                 $this->slots_left_error( $avail->slots_remaining, $data['lang'] ?? 'es' )
             );
@@ -196,12 +212,28 @@ class BookingManager {
         ) );
 
         $tour_row = $wpdb->get_row( $wpdb->prepare(
-            "SELECT max_capacity, provider_id, provider_charge_mode, request_only, deposit_enabled, deposit_pct FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+            "SELECT max_capacity, price_model, provider_id, provider_charge_mode, request_only, deposit_enabled, deposit_pct FROM {$wpdb->prefix}amir_tours WHERE id = %d",
             (int) $data['tour_id']
         ) );
         $max_capacity = (int) ( $tour_row->max_capacity ?? 0 );
 
-        if ( $pax > ( $max_capacity - $booked_pax ) ) {
+        // Tours "grupo" (price_model='group', ej. charter/tour privado
+        // exclusivo) — UNA sola reserva pending/confirmed agota el horario
+        // completo, sin importar cuántas personas tenga (mismo criterio que
+        // AvailabilityEngine::check_group_capacity(), que ya aplica esta
+        // regla en el chequeo inicial de arriba, ANTES de abrir esta
+        // transacción). Hallazgo de auditoría de seguridad, 2026-09-24: este
+        // re-chequeo, al no volver a traer price_model, siempre usaba la
+        // fórmula per-cápita de abajo (pensada para tours normales) — dos
+        // requests casi simultáneas por el mismo tour "privado" podían pasar
+        // las dos (ninguna ve todavía la reserva de la otra) y terminar
+        // reservando el mismo horario exclusivo dos veces.
+        if ( ( $tour_row->price_model ?? '' ) === 'group' ) {
+            if ( $booked_pax > 0 ) {
+                $wpdb->query( 'ROLLBACK' );
+                return BookingResult::error( 'No hay disponibilidad: Horario reservado (tour privado)' );
+            }
+        } elseif ( $pax > ( $max_capacity - $booked_pax ) ) {
             $wpdb->query( 'ROLLBACK' );
             return BookingResult::error(
                 $this->slots_left_error( max( 0, $max_capacity - $booked_pax ), $data['lang'] ?? 'es' )
@@ -334,13 +366,22 @@ class BookingManager {
             }
         }
 
-        $wpdb->query( 'COMMIT' );
-
-        // Marcar el cupón como usado (fuera de la transacción de cupos —
-        // si esto falla no debe tirar abajo una reserva ya confirmada)
-        if ( $quote->coupon_id > 0 ) {
-            ( new CouponEngine() )->mark_used( $quote->coupon_id );
+        // Marcar el cupón como usado — DENTRO de la transacción y ANTES del
+        // COMMIT (hallazgo de auditoría de seguridad, 2026-09-24: antes esto
+        // se hacía después del COMMIT, sin ninguna garantía atómica; dos
+        // requests concurrentes con el mismo cupón de un solo uso pasaban la
+        // validación de la línea ~165 -hecha antes de abrir la transacción-
+        // las dos, y terminaban ambas confirmadas con el descuento aplicado.
+        // mark_used() ahora es un UPDATE condicionado a usage_limit — si el
+        // cupón se agotó entre la validación inicial y acá, se revierte la
+        // reserva completa en vez de dejarla confirmada con un descuento que
+        // ya no correspondía).
+        if ( $quote->coupon_id > 0 && ! ( new CouponEngine() )->mark_used( $quote->coupon_id ) ) {
+            $wpdb->query( 'ROLLBACK' );
+            return BookingResult::error( 'Este cupón ya alcanzó su límite de usos. Por favor actualiza la página e intenta de nuevo.' );
         }
+
+        $wpdb->query( 'COMMIT' );
 
         // Invalidar caché de disponibilidad para este tour/mes
         $date_parts = explode( '-', $data['date'] );
@@ -867,15 +908,36 @@ class BookingManager {
              && (int) ( $booking->deposit_pct ?? 0 ) > 0
              && empty( $booking->balance_paid_at )
         ) {
-            $wpdb->update(
-                "{$wpdb->prefix}amir_bookings",
-                [ 'balance_paid_at' => current_time( 'mysql' ) ],
-                [ 'id' => $booking_id ],
-                [ '%s' ],
-                [ '%d' ]
-            );
-            do_action( 'amir_booking_balance_paid', $booking_id );
+            // UPDATE condicionado a que balance_paid_at siga vacío — atómico
+            // (hallazgo de auditoría de seguridad, 2026-09-24): dos llamadas
+            // casi simultáneas a confirm() para el pago del mismo saldo (el
+            // webhook de la pasarela y el POST /confirm-payment que dispara
+            // el propio cliente son caminos redundantes a propósito) no deben
+            // disparar el aviso de "saldo cobrado" dos veces. $wpdb->update()
+            // no puede expresar "IS NULL" en el WHERE, por eso acá se arma la
+            // sentencia a mano en vez de usar ese helper.
+            $updated = $wpdb->query( $wpdb->prepare(
+                "UPDATE {$wpdb->prefix}amir_bookings SET balance_paid_at = %s WHERE id = %d AND balance_paid_at IS NULL",
+                current_time( 'mysql' ), $booking_id
+            ) );
+            if ( $updated ) {
+                do_action( 'amir_booking_balance_paid', $booking_id );
+            }
             return true;
+        }
+
+        // Pago que llega DESPUÉS de que la reserva venció por falta de pago
+        // ('payment_expired', ver PendingExpiry) — ej. el cliente tardó en
+        // el paso de pago, o un medio offline (efectivo/transferencia de
+        // Mercado Pago) se acreditó horas después. Antes esto quedaba
+        // cobrado y sin reserva. Si el cupo sigue libre se recupera la
+        // reserva; si no, se reembolsa solo (nunca dejar dinero cobrado sin
+        // servicio).
+        if ( $booking && $booking->status === 'payment_expired' ) {
+            $booking = $this->recover_expired_booking( $booking, $charge_id );
+            if ( ! $booking ) {
+                return false;
+            }
         }
 
         // 'awaiting_payment' (lista de interés ya publicada, o solicitud de
@@ -893,39 +955,64 @@ class BookingManager {
         // El cobro ya ocurrió sin importar si el tour tiene proveedor — eso
         // solo decide si la reserva queda 'confirmed' directo o pasa antes
         // por la aprobación del proveedor (marketplace, § 11 CONTRIBUTING.md).
-        $wpdb->update(
-            "{$wpdb->prefix}amir_bookings",
-            [
-                'stripe_charge_id'  => $charge_id,
-                'gateway_charge_id' => $charge_id,
-            ],
-            [ 'id' => $booking_id ],
-            [ '%s', '%s' ],
-            [ '%d' ]
-        );
-
+        //
+        // El "reclamo" de la reserva es una TRANSICIÓN REAL de estado
+        // condicionada al estado leído arriba (mismo patrón que
+        // cancel()/provider_approve(); hallazgo de auditoría de seguridad,
+        // 2026-09-24): confirm() puede llegar dos veces casi simultáneas para
+        // la misma reserva (el webhook de la pasarela y el POST
+        // /confirm-payment del propio cliente son caminos redundantes A
+        // PROPÓSITO) — solo una ve filas afectadas, la otra aborta sin
+        // disparar emails ni filas de liquidación por segunda vez. Tiene que
+        // cambiar `status` de verdad: MySQL cuenta como "afectada" solo una
+        // fila que efectivamente cambió, así que un UPDATE que solo reescribe
+        // el mismo charge_id no serviría como reclamo.
+        //
         // provider_responded_at ya seteado = este booking pasó por
         // provider_approve() en modo 'on_approval' (§ 11.0 CONTRIBUTING.md):
         // el proveedor YA aprobó antes, sin cobrar nada — este confirm() es
         // el pago que llegó recién ahora, por el link. No corresponde
         // volver a pedirle aprobación al proveedor una segunda vez.
         if ( $this->tour_has_active_provider( (int) $booking->tour_id ) && empty( $booking->provider_responded_at ) ) {
-            $wpdb->update(
+            $claimed = $wpdb->update(
                 "{$wpdb->prefix}amir_bookings",
                 [
                     'status'                  => 'pending_provider_approval',
+                    'stripe_charge_id'        => $charge_id,
+                    'gateway_charge_id'       => $charge_id,
                     'provider_response_token' => self::generate_access_token(),
                     'provider_notified_at'    => current_time( 'mysql' ),
                 ],
-                [ 'id' => $booking_id ],
-                [ '%s', '%s', '%s' ],
-                [ '%d' ]
+                [ 'id' => $booking_id, 'status' => $booking->status ],
+                [ '%s', '%s', '%s', '%s', '%s' ],
+                [ '%d', '%s' ]
             );
+
+            if ( ! $claimed ) {
+                return false;
+            }
 
             // Dispara el email al proveedor (con los links de aprobar/rechazar)
             // y el aviso interino al cliente — ver EmailDispatcher.
             do_action( 'amir_booking_pending_provider_approval', $booking_id );
             return true;
+        }
+
+        $claimed = $wpdb->update(
+            "{$wpdb->prefix}amir_bookings",
+            [
+                'status'            => 'confirmed',
+                'stripe_charge_id'  => $charge_id,
+                'gateway_charge_id' => $charge_id,
+                'confirmed_at'      => current_time( 'mysql' ),
+            ],
+            [ 'id' => $booking_id, 'status' => $booking->status ],
+            [ '%s', '%s', '%s', '%s' ],
+            [ '%d', '%s' ]
+        );
+
+        if ( ! $claimed ) {
+            return false;
         }
 
         $this->finalize_confirmation( $booking_id, $charge_id );
@@ -940,6 +1027,193 @@ class BookingManager {
         }
 
         return true;
+    }
+
+    // ── Pago rechazado ────────────────────────────────────────────────────
+
+    /**
+     * Un intento de cobro falló (tarjeta rechazada, datos mal puestos,
+     * fondos insuficientes). Llamado por el webhook FAILED de cada pasarela.
+     *
+     * NO cancela la reserva: el cliente puede reintentar con otra tarjeta y
+     * un pago exitoso posterior sobre una reserva cancelada quedaba cobrado
+     * sin reserva. En cambio abre un PLAZO DE GRACIA (`amir_payment_grace_mins`,
+     * configurable) en el que la reserva sigue reteniendo el cupo — el mismo
+     * criterio de Vrbo/Booking con una tarjeta inválida — y avisa al cliente
+     * por email con un link para actualizar los datos (hook
+     * `amir_booking_payment_failed`). Solo el PRIMER fallo abre el plazo (los
+     * siguientes no lo estiran) y no aplica a una salida del mismo día, donde
+     * congelar el cupo no tiene sentido: ahí rige el vencimiento normal.
+     */
+    public function record_payment_failure( int $booking_id, string $reason ): void {
+        global $wpdb;
+
+        $booking = $this->get_booking( $booking_id );
+        if ( ! $booking || $booking->status !== 'pending' ) {
+            return;
+        }
+
+        $wpdb->query( $wpdb->prepare(
+            "UPDATE {$wpdb->prefix}amir_bookings
+             SET internal_notes = CONCAT( COALESCE( internal_notes, '' ), %s )
+             WHERE id = %d AND status = 'pending'",
+            "\n[" . current_time( 'mysql' ) . '] Intento de pago fallido: ' . $reason,
+            $booking_id
+        ) );
+
+        if ( PendingExpiry::grace_mins() <= 0 || (string) $booking->tour_date <= current_time( 'Y-m-d' ) ) {
+            return;
+        }
+
+        $opened = $wpdb->query( $wpdb->prepare(
+            "UPDATE {$wpdb->prefix}amir_bookings
+             SET payment_failed_at = %s
+             WHERE id = %d AND status = 'pending' AND payment_failed_at IS NULL",
+            current_time( 'mysql' ),
+            $booking_id
+        ) );
+
+        if ( $opened ) {
+            do_action( 'amir_booking_payment_failed', $booking_id, $reason );
+        }
+    }
+
+    // ── Pago tardío sobre una reserva vencida ─────────────────────────────
+
+    /**
+     * Un cobro exitoso llegó para una reserva 'payment_expired'. Devuelve la
+     * reserva ya devuelta a 'pending' (el caller sigue con el flujo normal
+     * de confirmación) o null si no hay nada más que hacer — porque otro
+     * proceso la recuperó primero, o porque ya no había cupo y se reembolsó.
+     */
+    private function recover_expired_booking( object $booking, string $charge_id ): ?object {
+        global $wpdb;
+
+        if ( ! $this->slot_still_free_for( $booking ) ) {
+            $this->refund_late_payment( $booking, $charge_id );
+            return null;
+        }
+
+        // Reclamo atómico: solo un proceso saca la reserva de 'payment_expired'.
+        $claimed = $wpdb->update(
+            "{$wpdb->prefix}amir_bookings",
+            [ 'status' => 'pending' ],
+            [ 'id' => (int) $booking->id, 'status' => 'payment_expired' ],
+            [ '%s' ],
+            [ '%d', '%s' ]
+        );
+        if ( ! $claimed ) {
+            return null;
+        }
+
+        // El vencimiento le devolvió su uso al cupón — ya pagó con ese
+        // descuento, así que se vuelve a contar (sin re-validar el límite).
+        $code = strtoupper( trim( (string) ( $booking->coupon_code ?? '' ) ) );
+        if ( $code !== '' ) {
+            $wpdb->query( $wpdb->prepare(
+                "UPDATE {$wpdb->prefix}amir_coupons SET times_used = times_used + 1 WHERE code = %s",
+                $code
+            ) );
+        }
+
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            (int) $booking->id, $booking->payment_gateway ?: 'stripe', 'late_payment_recovered',
+            'Pago recibido después de vencer la reserva; el cupo seguía libre, se recuperó.'
+        );
+
+        $booking->status = 'pending';
+        return $booking;
+    }
+
+    /**
+     * ¿El cupo/habitación de esta reserva vencida sigue libre? Cuenta las
+     * reservas de OTROS clientes (pending/confirmed) igual que el motor de
+     * disponibilidad.
+     */
+    private function slot_still_free_for( object $booking ): bool {
+        global $wpdb;
+
+        $type = $booking->item_type ?? 'tour';
+
+        if ( $type === 'room' ) {
+            return class_exists( '\TourFlow\Rooms\RoomAvailability' )
+                && \TourFlow\Rooms\RoomAvailability::is_available(
+                    (int) $booking->room_id,
+                    (string) $booking->tour_date,
+                    (string) $booking->check_out_date,
+                    (int) $booking->id
+                );
+        }
+
+        if ( $type !== 'tour' ) {
+            return true; // productos digitales no consumen cupo
+        }
+
+        $tour = $wpdb->get_row( $wpdb->prepare(
+            "SELECT max_capacity, price_model FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+            (int) $booking->tour_id
+        ) );
+        $others = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COALESCE(SUM(adults + children + babies), 0)
+             FROM {$wpdb->prefix}amir_bookings
+             WHERE tour_id = %d AND schedule_id = %d AND tour_date = %s
+               AND status IN ('pending', 'confirmed') AND id != %d",
+            (int) $booking->tour_id, (int) $booking->schedule_id, (string) $booking->tour_date, (int) $booking->id
+        ) );
+
+        if ( ( $tour->price_model ?? '' ) === 'group' ) {
+            return $others === 0;
+        }
+
+        $max = (int) ( $tour->max_capacity ?? 0 );
+        if ( $max <= 0 ) {
+            return true;
+        }
+        $pax = (int) $booking->adults + (int) $booking->children + (int) $booking->babies;
+        return $pax <= ( $max - $others );
+    }
+
+    /**
+     * Pago tardío sin cupo disponible: se reembolsa lo cobrado (nunca dejar
+     * al cliente con el dinero tomado y sin servicio) y se avisa al operador.
+     * La reserva queda 'cancelled_client' con refund_amount_mxn > 0 — el
+     * caller (confirm-payment) lo usa para avisarle al cliente que fue
+     * reembolsado en vez de mostrarle un falso "reservado".
+     */
+    private function refund_late_payment( object $booking, string $charge_id ): void {
+        global $wpdb;
+
+        $charged = ( (int) ( $booking->deposit_pct ?? 0 ) > 0 )
+            ? round( (float) $booking->total_mxn * (int) $booking->deposit_pct / 100, 2 )
+            : (float) $booking->total_mxn;
+
+        $claimed = $wpdb->update(
+            "{$wpdb->prefix}amir_bookings",
+            [
+                'status'                  => 'cancelled_client',
+                'stripe_charge_id'        => $charge_id,
+                'gateway_charge_id'       => $charge_id,
+                'cancellation_policy_pct' => 0,
+                'refund_amount_mxn'       => $charged,
+                'internal_notes'          => ( $booking->internal_notes ?? '' ) . "\n[" . current_time( 'mysql' )
+                    . '] Pago recibido después de vencer la reserva y sin cupo disponible — reembolsado automáticamente.',
+            ],
+            [ 'id' => (int) $booking->id, 'status' => 'payment_expired' ],
+            [ '%s', '%s', '%s', '%d', '%f', '%s' ],
+            [ '%d', '%s' ]
+        );
+        if ( ! $claimed ) {
+            return;
+        }
+
+        \AmirBooking\Payments\PaymentEventLogger::log(
+            (int) $booking->id, $booking->payment_gateway ?: 'stripe', 'late_payment_refund',
+            'Pago recibido después de vencer la reserva y sin cupo — reembolso automático.',
+            [ 'amount_mxn' => $charged, 'charge_reference' => $charge_id ]
+        );
+
+        do_action( 'amir_process_gateway_refund', (int) $booking->id, $charged );
+        $this->create_admin_notification( 'late_payment_refunded', (int) $booking->id );
     }
 
     /**
@@ -1398,21 +1672,10 @@ class BookingManager {
      * Cron job: liberar reservas pending expiradas.
      */
     public function release_expired_pending(): void {
-        global $wpdb;
-
-        $expire_mins = (int) get_option( 'amir_pending_expire_mins', 15 );
-        // Usar current_time para respetar la zona horaria configurada en WordPress
-        $cutoff      = date( 'Y-m-d H:i:s', current_time( 'timestamp' ) - ( $expire_mins * 60 ) );
-
-        $wpdb->query(
-            $wpdb->prepare(
-                "UPDATE {$wpdb->prefix}amir_bookings
-                 SET status = 'cancelled_client'
-                 WHERE status = 'pending'
-                   AND created_at < %s",
-                $cutoff
-            )
-        );
+        // Lógica compartida con los caminos de disponibilidad (liberación
+        // perezosa) — ver PendingExpiry para el porqué del estado propio
+        // 'payment_expired' y de la devolución del uso del cupón.
+        PendingExpiry::release( false );
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
@@ -1450,12 +1713,25 @@ class BookingManager {
      *    (credencial débil — solo mientras se actualiza el frontend).
      *
      * Usa hash_equals() para evitar timing attacks al comparar el token.
+     *
+     * `$require_token` (hallazgo de auditoría de seguridad, 2026-09-24): para
+     * acciones que CAMBIAN estado (cancelar una reserva), el fallback débil
+     * por email queda deshabilitado — cancelar la reserva de un desconocido
+     * es un efecto real y no reversible por la víctima sin contactar
+     * soporte, y a diferencia del `access_token` (256 bits, viene del link
+     * del email de confirmación), el email del cliente es algo que un
+     * tercero puede conocer/adivinar sin probar que controla esa casilla.
+     * El fallback por email sigue disponible para lectura (ver reserva,
+     * descargar PDF) — ahí el impacto es de privacidad, no de integridad.
      */
-    public function authorize_public_access( object $booking, string $token = '', string $email = '' ): bool {
+    public function authorize_public_access( object $booking, string $token = '', string $email = '', bool $require_token = false ): bool {
         if ( $token !== '' && ! empty( $booking->access_token ) ) {
             if ( hash_equals( (string) $booking->access_token, $token ) ) {
                 return true;
             }
+        }
+        if ( $require_token ) {
+            return false;
         }
         if ( $email !== '' && strtolower( $email ) === strtolower( (string) $booking->customer_email ) ) {
             return true;
@@ -1639,13 +1915,21 @@ class BookingManager {
                 $booking->adults + $booking->children + $booking->babies,
                 $booking->tour_date
             ),
+            'late_payment_refunded' => sprintf(
+                'Pago recibido tarde sin cupo — reserva %s de %s reembolsada automáticamente (verificar el reembolso en el Log de pagos)',
+                $booking->booking_ref,
+                $booking->customer_name
+            ),
+        ];
+        $titles = [
+            'late_payment_refunded' => 'Pago tardío reembolsado',
         ];
 
         $wpdb->insert(
             "{$wpdb->prefix}amir_notifications",
             [
                 'type'    => $type,
-                'title'   => 'Nueva reserva',
+                'title'   => $titles[ $type ] ?? 'Nueva reserva',
                 'message' => $messages[ $type ] ?? '',
                 'data'    => json_encode( [ 'booking_id' => $booking_id ] ),
                 'is_read' => 0,

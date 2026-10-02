@@ -341,6 +341,15 @@ class BookingController {
         // siempre) — total_mxn de la fila NUNCA se toca, esto solo arma el
         // objeto que se le pasa a la pasarela para ESTE cobro puntual.
         $charge_now = (float) $booking->total_mxn;
+        // Reserva con depósito parcial que todavía NO se cobró nada (pending/
+        // awaiting_payment): el cobro inicial es solo el % de depósito, igual
+        // que en create_pending() — antes este camino cobraba el TOTAL
+        // completo (auditoría del flujo de pago rechazado, 2026-09-28: al
+        // reintentar un pago fallido desde el link, el cliente terminaba
+        // pagando de más que lo pactado).
+        if ( ! $is_balance_payment && ( $booking->item_type ?? 'tour' ) === 'tour' && (int) ( $booking->deposit_pct ?? 0 ) > 0 ) {
+            $charge_now = round( (float) $booking->total_mxn * (int) $booking->deposit_pct / 100, 2 );
+        }
         if ( $is_balance_payment ) {
             $deposit_charged = round( (float) $booking->total_mxn * (int) $booking->deposit_pct / 100, 2 );
             $charge_now       = round( (float) $booking->total_mxn - $deposit_charged, 2 );
@@ -438,9 +447,14 @@ class BookingController {
             return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
         }
 
+        // Requiere el access_token — hallazgo de auditoría de seguridad,
+        // 2026-09-24: esto CAMBIA estado (pide cancelar), a diferencia de
+        // GET booking/PDF donde el fallback débil por email sigue siendo
+        // aceptable (solo lectura). Un tercero que conozca el email del
+        // cliente pero no su token no debería poder disparar esto.
         $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
         $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
+        if ( ! $manager->authorize_public_access( $booking, $token, $email, require_token: true ) ) {
             return new \WP_REST_Response( [ 'error' => 'Datos incorrectos' ], 403 );
         }
 
@@ -591,10 +605,16 @@ class BookingController {
             return new \WP_REST_Response( [ 'error' => 'Reserva no encontrada' ], 404 );
         }
 
-        // Autorizar por access_token (link de email/QR) o por email del cliente
+        // Requiere el access_token (link de email/QR) — hallazgo de auditoría
+        // de seguridad, 2026-09-24: cancelar una reserva es un efecto real y
+        // no reversible por la víctima sin contactar soporte, y el email del
+        // cliente (a diferencia del token de 256 bits) puede ser conocido/
+        // adivinado por un tercero sin que pruebe controlar esa casilla — el
+        // fallback débil por email queda solo para acciones de lectura (ver
+        // reserva, descargar PDF).
         $token = sanitize_text_field( $request->get_param( 'token' ) ?? '' );
         $email = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        if ( ! $manager->authorize_public_access( $booking, $token, $email ) ) {
+        if ( ! $manager->authorize_public_access( $booking, $token, $email, require_token: true ) ) {
             return new \WP_REST_Response( [ 'error' => 'Datos incorrectos' ], 403 );
         }
 
@@ -816,9 +836,39 @@ class BookingController {
             $charge_id = $pi_id;
         }
 
-        // Confirmar la reserva
+        // Confirmar la reserva. El resultado de confirm() ya NO se ignora
+        // (auditoría del flujo de pago rechazado, 2026-09-28): antes, si la
+        // reserva no estaba en un estado confirmable (vencida, cancelada por
+        // un intento fallido previo) igual se respondía "confirmed: true" y
+        // el cliente veía "¡Reservado!" con el dinero ya cobrado y la reserva
+        // cancelada. Se relee el estado real y se responde en consecuencia.
         $manager = new \AmirBooking\Core\BookingManager();
         $manager->confirm( $booking_id, $charge_id );
+
+        $fresh = $manager->get_booking( $booking_id );
+        if ( ! $fresh || ! in_array( $fresh->status, [ 'confirmed', 'pending_provider_approval' ], true ) ) {
+            $refunded = $fresh && $fresh->status === 'cancelled_client' && (float) ( $fresh->refund_amount_mxn ?? 0 ) > 0;
+            $en       = ( $booking->lang ?? 'es' ) === 'en';
+            \AmirBooking\Payments\PaymentEventLogger::log(
+                $booking_id, $gateway ? $gateway->id() : ( $booking->payment_gateway ?: 'stripe' ),
+                'confirm_after_payment_failed', $fresh->status ?? 'missing'
+            );
+            if ( $refunded ) {
+                return new \WP_REST_Response( [
+                    'code'  => 'payment_expired_refunded',
+                    'error' => $en
+                        ? 'Your reservation expired before the payment was completed and the spot is no longer available. We have refunded your payment.'
+                        : 'Tu reserva venció antes de completarse el pago y ya no hay cupo disponible. Te reembolsamos el pago.',
+                ], 409 );
+            }
+            return new \WP_REST_Response( [
+                'code'  => 'confirm_failed',
+                'error' => $en
+                    ? 'We received your payment but could not confirm the booking yet. Please contact us and we will sort it out.'
+                    : 'Recibimos tu pago pero todavía no pudimos confirmar la reserva. Contactanos y lo resolvemos enseguida.',
+            ], 409 );
+        }
+
         \AmirBooking\Payments\PaymentEventLogger::log(
             $booking_id, $gateway ? $gateway->id() : ( $booking->payment_gateway ?: 'stripe' ), 'succeeded', '', [ 'charge_reference' => $charge_id ]
         );
@@ -916,7 +966,7 @@ class BookingController {
             return rest_ensure_response( [ 'confirmed' => true, 'booking_ref' => $booking->booking_ref ] );
         }
 
-        if ( $booking->status !== 'pending' ) {
+        if ( ! in_array( $booking->status, [ 'pending', 'payment_expired' ], true ) ) {
             return rest_ensure_response( [ 'confirmed' => false ] );
         }
 
@@ -927,7 +977,15 @@ class BookingController {
             $status = $gateway->fetch_payment_status( $booking->booking_ref );
             if ( $status && $status->status === \AmirBooking\Payments\PaymentStatusResult::SUCCEEDED ) {
                 $manager->confirm( $booking_id, $status->charge_reference );
-                return rest_ensure_response( [ 'confirmed' => true, 'booking_ref' => $booking->booking_ref ] );
+                // No asumir éxito: confirm() puede haber recuperado la reserva
+                // vencida, o reembolsado el pago si ya no había cupo.
+                $fresh = $manager->get_booking( $booking_id );
+                $ok    = $fresh && in_array( $fresh->status, [ 'confirmed', 'pending_provider_approval' ], true );
+                return rest_ensure_response( [
+                    'confirmed'   => $ok,
+                    'booking_ref' => $booking->booking_ref,
+                    'refunded'    => $fresh && $fresh->status === 'cancelled_client' && (float) ( $fresh->refund_amount_mxn ?? 0 ) > 0,
+                ] );
             }
         }
 
@@ -977,21 +1035,28 @@ class BookingController {
 
         switch ( $event->type ) {
             case \AmirBooking\Payments\PaymentEvent::SUCCEEDED:
-                if ( $booking->status === 'pending' ) {
+                // 'payment_expired': pago que llega después de vencer la
+                // reserva — confirm() lo recupera o lo reembolsa.
+                if ( in_array( $booking->status, [ 'pending', 'payment_expired' ], true ) ) {
                     ( new \AmirBooking\Core\BookingManager() )->confirm( (int) $booking->id, $event->charge_reference );
                 }
                 break;
 
             case \AmirBooking\Payments\PaymentEvent::FAILED:
-                if ( $booking->status === 'pending' ) {
-                    $wpdb->update(
-                        "{$wpdb->prefix}amir_bookings",
-                        [ 'status' => 'cancelled_client', 'internal_notes' => 'Pago fallido: ' . $event->reason ],
-                        [ 'id' => $booking->id ],
-                        [ '%s', '%s' ],
-                        [ '%d' ]
-                    );
-                }
+                // Un intento fallido (tarjeta rechazada, datos mal puestos)
+                // NO cancela la reserva — auditoría del flujo de pago
+                // rechazado, 2026-09-28. El PaymentIntent de Stripe sigue
+                // siendo válido y el cliente reintenta con otra tarjeta en el
+                // mismo formulario (Mercado Pago igual, dentro de la misma
+                // preferencia); antes este webhook llegaba entre el intento
+                // fallido y el reintento, marcaba la reserva 'cancelled_client',
+                // y el pago exitoso posterior quedaba cobrado SIN reserva
+                // (confirm() solo acepta pending/awaiting_payment). Si el
+                // cliente abandona, el vencimiento normal (PendingExpiry)
+                // libera el cupo — el intento fallido queda anotado y en el
+                // Log de pagos con su motivo. record_payment_failure() abre
+                // además el plazo de gracia y avisa al cliente por email.
+                ( new \AmirBooking\Core\BookingManager() )->record_payment_failure( (int) $booking->id, (string) $event->reason );
                 break;
 
             case \AmirBooking\Payments\PaymentEvent::REFUNDED:

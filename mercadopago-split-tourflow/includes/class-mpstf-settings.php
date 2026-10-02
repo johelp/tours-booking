@@ -75,8 +75,22 @@ class Settings {
 		}
 
 		update_option( 'mpstf_client_id', sanitize_text_field( $_POST['client_id'] ?? '' ) );
-		update_option( 'mpstf_client_secret', sanitize_text_field( $_POST['client_secret'] ?? '' ) );
-		update_option( 'mpstf_webhook_secret', sanitize_text_field( $_POST['webhook_secret'] ?? '' ) );
+
+		// Campos password: no pisar el secreto guardado si el campo se deja
+		// vacío al reenviar el form — mismo patrón que ya usa el satélite de
+		// Redsys (class-rftf-settings.php), corregido acá tras un hallazgo de
+		// auditoría de seguridad (2026-09-24): antes esta pantalla reimprimía
+		// el valor guardado en el atributo `value` del input, visible en "ver
+		// código fuente"/historial del navegador.
+		$client_secret = wp_unslash( $_POST['client_secret'] ?? '' );
+		if ( $client_secret !== '' ) {
+			update_option( 'mpstf_client_secret', sanitize_text_field( $client_secret ) );
+		}
+		$webhook_secret = wp_unslash( $_POST['webhook_secret'] ?? '' );
+		if ( $webhook_secret !== '' ) {
+			update_option( 'mpstf_webhook_secret', sanitize_text_field( $webhook_secret ) );
+		}
+
 		update_option( 'mpstf_marketplace_fee_pct', (float) ( $_POST['marketplace_fee_pct'] ?? 0 ) );
 
 		wp_safe_redirect( admin_url( 'admin.php?page=mercadopago-split-tourflow&saved=1' ) );
@@ -111,11 +125,11 @@ class Settings {
 					</tr>
 					<tr>
 						<th><label for="client_secret">Client Secret de la app</label></th>
-						<td><input type="password" id="client_secret" name="client_secret" class="regular-text" value="<?php echo esc_attr( self::client_secret() ); ?>"></td>
+						<td><input type="password" id="client_secret" name="client_secret" class="regular-text" value="" placeholder="<?php echo self::client_secret() !== '' ? '••••••••••••••••' : ''; ?>" autocomplete="new-password"></td>
 					</tr>
 					<tr>
 						<th><label for="webhook_secret">Webhook secret</label></th>
-						<td><input type="password" id="webhook_secret" name="webhook_secret" class="regular-text" value="<?php echo esc_attr( self::webhook_secret() ); ?>">
+						<td><input type="password" id="webhook_secret" name="webhook_secret" class="regular-text" value="" placeholder="<?php echo self::webhook_secret() !== '' ? '••••••••••••••••' : ''; ?>" autocomplete="new-password">
 							<p class="description">El "secret" que Mercado Pago muestra al configurar la notificación webhook de esta APP (Tus integraciones → Webhooks) — no es el de la cuenta de ningún proveedor.</p></td>
 					</tr>
 					<tr>

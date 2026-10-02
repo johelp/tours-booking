@@ -394,7 +394,8 @@ class Installer {
                                         'cancelled_min_pax',
                                         'cancelled_provider',
                                         'rescheduled',
-                                        'completed'
+                                        'completed',
+                                        'payment_expired'
                                      ) NOT NULL DEFAULT 'pending',
             booking_source           ENUM('direct','tripadvisor','getyourguide','partner','manual','wishlist','date_request') NOT NULL DEFAULT 'direct',
             lang                     VARCHAR(5) NOT NULL DEFAULT 'es',
@@ -434,6 +435,7 @@ class Installer {
             provider_responded_at     DATETIME DEFAULT NULL,
             provider_reject_reason    VARCHAR(500) DEFAULT NULL,
             confirmed_at             DATETIME,
+            payment_failed_at        DATETIME DEFAULT NULL,
             checked_in_at            DATETIME DEFAULT NULL,
             consent_recorded_at      DATETIME DEFAULT NULL,
             consent_text_hash        VARCHAR(64) DEFAULT NULL,
@@ -537,7 +539,7 @@ class Installer {
             paid_at      DATETIME DEFAULT NULL,
             PRIMARY KEY (id),
             KEY provider_id (provider_id),
-            KEY booking_id (booking_id),
+            UNIQUE KEY booking_id (booking_id),
             KEY status (status)
         ) $charset;" );
 
@@ -560,7 +562,7 @@ class Installer {
             paid_at      DATETIME DEFAULT NULL,
             PRIMARY KEY (id),
             KEY partner_id (partner_id),
-            KEY booking_id (booking_id),
+            UNIQUE KEY booking_id (booking_id),
             KEY status (status)
         ) $charset;" );
 
@@ -690,6 +692,7 @@ class Installer {
         add_option( 'amir_usd_rate_manual',       '17.00' );
         add_option( 'amir_stripe_mode',           'test' );
         add_option( 'amir_pending_expire_mins',   '15' );
+        add_option( 'amir_payment_grace_mins',    '360' );
         add_option( 'amir_review_delay_days',     '1' );
         add_option( 'amir_admin_email',           get_option( 'admin_email' ) );
         add_option( 'amir_delete_data_on_uninstall', '0' );
@@ -864,7 +867,7 @@ class Installer {
             'amir_usd_rate_mode', 'amir_usd_rate_manual', 'amir_stripe_mode',
             'amir_stripe_pk_test', 'amir_stripe_sk_test',
             'amir_stripe_pk_live', 'amir_stripe_sk_live',
-            'amir_stripe_webhook_secret', 'amir_pending_expire_mins',
+            'amir_stripe_webhook_secret', 'amir_pending_expire_mins', 'amir_payment_grace_mins',
             'amir_default_gateway', 'amir_mp_mode',
             'amir_mp_access_token_test', 'amir_mp_access_token_live', 'amir_mp_webhook_secret',
             'amir_review_delay_days', 'amir_admin_email',
@@ -942,16 +945,19 @@ class Installer {
         $all_ok = true;
 
         $status_col = $wpdb->get_row( "SHOW COLUMNS FROM {$wpdb->prefix}amir_bookings LIKE 'status'" );
-        // Chequea solo el valor agregado más reciente (date_request_rejected)
-        // — si ese falta, date_requested (agregado antes) seguro también
-        // puede faltar, así que un solo strpos() cubre ambos casos sin
-        // tener que ir sumando un check por cada valor nuevo del ENUM.
-        if ( $status_col && strpos( $status_col->Type, 'date_request_rejected' ) === false ) {
+        // Chequea solo el valor agregado más reciente (payment_expired,
+        // v5.13.4) — si ese falta, date_request_rejected/date_requested
+        // (agregados antes) seguro también pueden faltar, así que un solo
+        // strpos() cubre todos los casos sin tener que ir sumando un check
+        // por cada valor nuevo del ENUM. Los valores nuevos se agregan
+        // SIEMPRE al final de la lista (insertar en el medio obliga a MySQL
+        // a reconstruir la tabla).
+        if ( $status_col && strpos( $status_col->Type, 'payment_expired' ) === false ) {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings MODIFY COLUMN status ENUM(
                 'wishlist','date_requested','date_request_rejected','awaiting_payment','pending',
                 'pending_provider_approval','confirmed','cancellation_requested',
                 'cancelled_client','cancelled_weather','cancelled_min_pax',
-                'cancelled_provider','rescheduled','completed'
+                'cancelled_provider','rescheduled','completed','payment_expired'
             ) NOT NULL DEFAULT 'pending'" );
             if ( $wpdb->last_error ) {
                 $all_ok = false;
@@ -1532,6 +1538,49 @@ class Installer {
         // dbDelta la crea sola vía create_tables() más abajo, no hace falta
         // ALTER TABLE acá (solo aplica a columnas nuevas en tablas ya
         // existentes).
+
+        // 1.40.0 (auditoría de seguridad, 2026-09-24) — booking_id pasa de
+        // KEY a UNIQUE KEY en amir_provider_payouts/amir_partner_payouts.
+        // Defensa en profundidad, no el fix real (ese es el UPDATE
+        // condicionado al status en BookingManager::confirm(), que cierra la
+        // carrera de fondo: dos llamadas casi simultáneas — el webhook de la
+        // pasarela y el POST /confirm-payment del cliente — podían disparar
+        // dos veces el hook que genera la fila de liquidación). Con esto,
+        // aunque algún camino futuro dispare ese hook dos veces para la
+        // misma reserva, la base de datos rechaza la segunda fila en vez de
+        // duplicar la comisión. dbDelta no es confiable para pasar una KEY
+        // existente a UNIQUE en una instalación ya activa (regla de
+        // CLAUDE.md) — ALTER explícito, idempotente (solo actúa si el índice
+        // todavía no es único).
+        foreach ( [ 'amir_provider_payouts', 'amir_partner_payouts' ] as $payout_table ) {
+            $existing_index = $wpdb->get_row( "SHOW INDEX FROM {$wpdb->prefix}{$payout_table} WHERE Key_name = 'booking_id'" );
+            if ( $existing_index && (int) $existing_index->Non_unique === 1 ) {
+                $wpdb->query( "ALTER TABLE {$wpdb->prefix}{$payout_table} DROP INDEX booking_id" );
+                $wpdb->query( "ALTER TABLE {$wpdb->prefix}{$payout_table} ADD UNIQUE KEY booking_id (booking_id)" );
+            }
+        }
+
+        // 1.41.0 (v5.13.4, auditoría del flujo de pago rechazado) — nuevo
+        // estado 'payment_expired' en amir_bookings.status: una reserva que
+        // venció por falta de pago ya no se marca 'cancelled_client'
+        // (indistinguible de una cancelación real con reembolso). Se fuerza
+        // el chequeo del ENUM ahora (ignorando el caché de 1 hora del
+        // transient) para que quede listo antes de que corra el vencimiento.
+        delete_transient( 'amir_booking_status_enum_ok' );
+        self::ensure_booking_status_enum();
+
+        // 1.41.0 (mismo pedido) — plazo de gracia tras un pago rechazado:
+        // `payment_failed_at` marca cuándo falló el PRIMER intento de cobro de
+        // la reserva. Desde ahí la reserva retiene el cupo
+        // `amir_payment_grace_mins` (configurable, ver PendingExpiry) en vez
+        // de soltarlo a los 15 minutos, para que el cliente actualice la
+        // tarjeta desde el link del email — mismo criterio que las
+        // plataformas de alquiler vacacional (Vrbo/Booking).
+        $bcols_grace = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'payment_failed_at', $bcols_grace, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN payment_failed_at DATETIME DEFAULT NULL AFTER confirmed_at" );
+        }
+        add_option( 'amir_payment_grace_mins', '360' );
 
         self::create_tables();
         self::create_verify_page();

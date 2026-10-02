@@ -2164,6 +2164,222 @@ tal cual, ya cubierto). **Sin probar en vivo todavía** — no pasó por un
 WordPress real. Fases 2 (split de MP) y 3 (payout automático de partners)
 quedan documentadas en `PROMPT-MERCADOPAGO-SPLIT.md`, sin construir.
 
+### 16.101 v5.13.3 — auditoría de seguridad completa + corrección de todos los hallazgos alto/medio
+
+Pedido explícito del cliente: "security audit this codebase" sobre todo el
+núcleo (`includes/`, ~36.000 líneas) más los 3 plugins satélite
+(`redsys-for-tourflow/`, `mercadopago-split-tourflow/`, `tourflow-cleaner/`).
+Metodología: 5 sub-agentes en paralelo, cada uno cubriendo un dominio de
+riesgo distinto (pagos/dinero, autenticación/control de acceso, inyección/
+manejo de archivos, lógica de negocio, secretos/supply-chain), seguido de
+verificación manual línea por línea de cada hallazgo de severidad media o
+mayor antes de darlo por confirmado (un hallazgo de SSRF propuesto por uno
+de los agentes se descartó/bajó a duda razonable en esa verificación — ver
+más abajo). Sin pruebas contra servidores reales, sin acceso a internet
+(no se pudieron chequear CVEs de dependencias de terceros). El reporte
+completo (con evidencia archivo:línea de cada hallazgo, incluidos los
+descartados) se entregó aparte al cliente en la misma sesión.
+
+**No se encontró nada crítico.** Los controles más sensibles (verificación
+de firma de los 4 webhooks de pago, verificación de que un
+`payment_intent_id` pertenece a la reserva que dice confirmar, roles del
+Panel rápido sin fuga de montos, `tourflow-cleaner` con nonce+confirmación
+real) ya estaban bien construidos. Se corrigieron TODOS los hallazgos de
+severidad alta y media del reporte:
+
+- **[Alto condicional] Cupón de un solo uso + 100% de descuento → reservas
+  gratis ilimitadas por carrera.** `CouponEngine::mark_used()`
+  (`includes/core/class-coupon-engine.php`) era un `UPDATE times_used =
+  times_used + 1` incondicional, llamado DESPUÉS del `COMMIT` de la
+  reserva — N requests concurrentes con el mismo cupón `usage_limit=1`
+  pasaban `validate()` las N (el SELECT de arriba, hecho antes de que
+  cualquiera incrementara el contador) y terminaban todas confirmadas, sin
+  cobrar nada si el cupón cubre el 100% (camino ya existente:
+  `create_pending()` llama a `confirm()` directo sin pasarela). Corregido:
+  `mark_used()` ahora es un `UPDATE ... WHERE id=%d AND (usage_limit IS
+  NULL OR times_used < usage_limit)`, devuelve si afectó una fila, y se
+  llama DENTRO de la transacción de la reserva (antes del `COMMIT`) tanto
+  en `BookingManager::create_pending()` (tours) como en
+  `RoomBookingManager::create_pending()` (habitaciones) — si el cupón se
+  agotó justo antes, se hace `ROLLBACK` de la reserva completa en vez de
+  dejarla confirmada con un descuento que ya no correspondía. 5 tests
+  nuevos (`CouponEngineTest.php`) + 2 en `RoomBookingManagerTest.php`.
+
+- **[Medio] Rate limiter evadible falsificando `X-Forwarded-For`/
+  `X-Real-IP`/`CF-Connecting-IP`.** `RateLimiter::client_ip()`
+  (`includes/core/class-rate-limiter.php`) confiaba primero en esas
+  cabeceras, controlables por el propio cliente en cualquier hosting sin
+  un proxy de confianza delante que las sobreescriba — anulaba el único
+  freno de fuerza bruta contra el login de `/gestor/` y contra iterar
+  `booking_ref` con el credential débil de `authorize_public_access()`.
+  Corregido: usa SOLO `REMOTE_ADDR` por defecto; un sitio que sí está
+  detrás de un proxy/CDN de confianza real puede optar por confiar en esas
+  cabeceras de nuevo enganchando el filtro nuevo `amir_trust_proxy_headers`
+  (`add_filter('amir_trust_proxy_headers', '__return_true')`), nunca
+  default-on. 4 tests nuevos (`RateLimiterTest.php`).
+
+- **[Medio] `BookingManager::confirm()` no era atómico → duplicación real
+  de comisión en `amir_provider_payouts`.** A diferencia de `cancel()`/
+  `provider_approve()` (que sí condicionan su `UPDATE` al `status` leído),
+  `confirm()` podía procesarse dos veces para la misma reserva si el
+  webhook de la pasarela y el `POST /confirm-payment` que dispara el
+  propio cliente (caminos redundantes a propósito) llegaban casi
+  simultáneos — cada ejecución disparaba
+  `amir_provider_booking_approved`/`amir_booking_confirmed`, y el listener
+  de proveedores (a diferencia del de partners) no tenía NINGÚN chequeo de
+  duplicado. Corregido en 3 capas: (1) el `UPDATE` que fija
+  `stripe_charge_id`/`gateway_charge_id` en `confirm()` ahora está
+  condicionado a `status = $booking->status` (mismo patrón que
+  `cancel()`), aborta sin disparar nada si otro proceso ya ganó la
+  carrera; (2) el branch de pago de saldo de depósito usa una query
+  atómica condicionada a `balance_paid_at IS NULL`; (3) el listener de
+  `amir_provider_booking_approved` (`class-plugin.php`) suma el mismo
+  chequeo defensivo de existencia que ya tenía el de partners; (4) defensa
+  en profundidad a nivel de esquema — `booking_id` pasa de `KEY` a
+  `UNIQUE KEY` en `amir_provider_payouts`/`amir_partner_payouts`
+  (`AMIR_DB_VERSION` → `1.40.0`, `ALTER TABLE` explícito e idempotente en
+  `maybe_update()` para instalaciones ya activas). 1 test nuevo + 1
+  actualizado en `BookingManagerProviderApprovalTest.php`.
+
+- **[Medio] Sobreventa de tours "grupo" (`price_model='group'`, ej.
+  charter/tour privado exclusivo) bajo carrera.** El re-chequeo
+  transaccional (dentro del `FOR UPDATE`) de `create_pending()` no volvía
+  a traer `price_model` — siempre aplicaba la fórmula per-cápita pensada
+  para tours normales, así que dos requests casi simultáneas por el mismo
+  tour "privado" podían pasar las dos y reservar el mismo horario
+  exclusivo dos veces (`AvailabilityEngine::check_group_capacity()`, que
+  sí aplica la regla correcta — "una reserva agota el horario completo" —
+  solo corre en el chequeo INICIAL, antes de abrir la transacción).
+  Corregido replicando esa misma regla dentro de la transacción. **Bug
+  lateral real encontrado escribiendo el test de este fix, sin relación
+  con la auditoría de seguridad**: el chequeo de cupos anterior a la
+  transacción (`$pax > $avail->slots_remaining`) también estaba roto para
+  tours "grupo" — `check_group_capacity()` devuelve `slots_remaining=1`
+  como sentinel de "sí hay lugar" (no como cantidad real de personas), así
+  que CUALQUIER reserva de un tour "grupo" con más de 1 persona total
+  (adults+children+babies) se rechazaba siempre, aunque el horario
+  estuviera libre — corregido saltando ese chequeo para `price_model=
+  'group'` (la disponibilidad ahí ya es binaria, resuelta por
+  `$avail->available`). Relevante para el caso real de Sicilia Mia/retiros
+  semanales (`project_sicilia_mia_retreat_modeling`, memoria) que
+  justamente usa este `price_model`. 2 tests nuevos
+  (`BookingManagerGroupOverbookingTest.php`).
+
+- **[Medio, latente] `BookingsPage`/`CalendarPage` eran las únicas 2
+  pantallas del admin sin `current_user_can()` propio** — dependían solo
+  del gate del menú de quien las invoca (`AdminMenu`/`ManagerPanel`), a
+  diferencia de todas las demás (`AvailabilityPage`, `PartnersPage`, etc.).
+  No era explotable hoy (nadie las llama sin ese gate), pero es el mismo
+  patrón que ya causó 2 bugs reales documentados (Habitaciones, Reportes,
+  ver §§ 16.34/16.62 más arriba en este archivo). Corregido con el mismo
+  guard de dos líneas que ya usan las demás pantallas.
+
+- **[Medio] La cookie del panel `/gestor/` autenticaba *cualquier* request
+  del sitio, no solo el escaneo de QR de Modo Campo para el que fue
+  pensada.** `determine_current_user` (`class-manager-panel.php`) se
+  registraba sin ninguna condición — no es una escalación de privilegios
+  (`ManagerAuth::verify_token()` revalida la capability real en cada
+  request), pero ensanchaba el radio de una cookie robada/reusada a
+  cualquier AJAX/REST autenticado del sitio, no solo TourFlow. Corregido
+  con `request_needs_panel_auth()`, que acota el filtro a los dos casos
+  reales que lo necesitan (la llamada AJAX de Modo Campo, y cualquier
+  request al panel mismo — `/gestor/...` o `?tourflow_manager_page=...`
+  con permalinks planos).
+
+- **[Medio, tradeoff endurecido] El acceso público por email a una reserva
+  ya no alcanza para cancelarla.** `authorize_public_access()`
+  (`class-booking-manager.php`) suma un parámetro `require_token` — para
+  acciones que CAMBIAN estado (`POST cancel`/`request-cancel`), el
+  fallback débil por email queda deshabilitado: cancelar la reserva de un
+  desconocido es un efecto real y no reversible por la víctima, y el
+  email (a diferencia del `access_token` de 256 bits) es algo que un
+  tercero puede conocer/adivinar sin probar que controla esa casilla. El
+  fallback por email sigue disponible para lectura (ver reserva, PDF) —
+  ahí el impacto es de privacidad, no de integridad, y sigue siendo el
+  tradeoff deliberado de siempre (regla 5 de `CLAUDE.md`). 6 tests nuevos
+  (`BookingManagerPublicAccessTest.php`).
+
+**Hallazgos bajos, corregidos de paso**: `mercadopago-split-tourflow`
+reimprimía `client_secret`/`webhook_secret` en el `value` del HTML del
+admin (visible en "ver código fuente") — ahora usa el mismo patrón que ya
+tenía el satélite de Redsys (placeholder, nunca reimprime, no pisa si se
+deja vacío). `EmailTexts::save()` ahora sanea con `wp_kses_post()` por sí
+misma en vez de depender de que el único caller actual lo siga haciendo.
+`.gitignore` suma `.claude/worktrees/` (un worktree trae su propio `.git`
+anidado — mismo motivo de fondo por el que `.claude/settings.local.json`
+había quedado commiteado alguna vez) y `/scratch/` (se estaba filtrando
+vacía dentro del ZIP de distribución — el script de build más reciente no
+la excluía del `rsync`, ya corregido ahí también).
+
+**Descartado tras verificación manual, no corregido**: un hunter propuso
+un SSRF "confirmado" en `TourImporter::sideload_image()` (usa
+`download_url()` de WordPress sobre URLs de imagen del JSON de import).
+Verificación manual: `download_url()` de WordPress core usa
+`wp_safe_remote_get()` internamente desde hace muchas versiones, que ya
+bloquea por defecto rangos de IP privados/loopback/reservados — el
+hallazgo se degradó a `needs_validation` (no confirmable sin acceso a
+internet en este entorno para verificar el comportamiento exacto de la
+versión de WP en producción) en vez de aplicarse un fix a ciegas sobre una
+protección que probablemente ya existe en el núcleo de WordPress.
+
+`AMIR_VERSION` → `5.13.3`, `AMIR_DB_VERSION` → `1.40.0`. `php -l` limpio en
+los 12 archivos tocados. **132 tests en verde (20 nuevos, sin ningún test
+existente roto)** — 2 archivos de test nuevos completos
+(`BookingManagerGroupOverbookingTest.php`,
+`BookingManagerPublicAccessTest.php`) más 3 nuevos
+(`CouponEngineTest.php`, `RateLimiterTest.php`) y ampliaciones a
+`RoomBookingManagerTest.php`/`BookingManagerProviderApprovalTest.php`. El
+fake de pruebas (`tests/fakes/FakeWpdb.php`) se amplió con soporte para
+distinguir `get_var()` por contenido de la query, un historial de
+`query()`/`update()` inspeccionable, y overrides configurables de filas
+afectadas — necesario para poder simular condiciones de carrera reales en
+tests unitarios sin una base de datos de verdad. **Sin probar en vivo
+todavía** — ninguno de estos fixes pasó por un WordPress real; antes de
+darlo por cerrado, probar especialmente el fix de tours "grupo" contra un
+tour real `price_model='group'` (ej. Sicilia Mia) y confirmar que la
+migración de `amir_provider_payouts`/`amir_partner_payouts` a `UNIQUE KEY`
+corre sin error contra datos reales que pudieran tener ya un
+`booking_id` duplicado de antes del fix (poco probable, pero no
+descartable — si la migración fallara por eso, `ALTER TABLE ... ADD
+UNIQUE KEY` lo reportaría como error de MySQL, no en silencio).
+
+### 16.102 v5.13.4 — auditoría del flujo de pago rechazado + plazo de gracia configurable
+
+Pregunta del cliente (2026-09-28): "¿qué pasa con la reserva si el pago se rechaza, por ejemplo datos de tarjeta mal puestos?". Se siguió el camino completo (widget → Stripe → webhook → cron) y se encontraron **seis problemas reales**, dos de ellos graves (plata cobrada sin reserva). Luego el cliente pidió copiar el criterio de Vrbo/Booking para una tarjeta inválida — reserva "tentativa" que congela las fechas un período de cortesía (12–24 h) para que el cliente actualice los datos — aceptando también plazos **menores a 12 h**: se construyó como ajuste configurable.
+
+**Problemas encontrados y corregidos:**
+
+1. **[Grave] Una tarjeta rechazada cancelaba la reserva aunque el cliente después pagara bien.** El webhook `payment_intent.payment_failed` (Stripe; igual en Mercado Pago/Redsys/MP-split) marcaba la reserva `cancelled_client` en CADA intento fallido. Pero el PaymentIntent sigue vigente y el cliente reintenta en el mismo formulario: el webhook llegaba entre el intento fallido y el reintento, y el pago exitoso posterior quedaba **cobrado sin reserva** (`confirm()` solo acepta `pending`/`awaiting_payment`). Ahora un intento fallido nunca cancela: `BookingManager::record_payment_failure()` anota el motivo y abre el plazo de gracia (ver abajo). Corregido en el núcleo y en los satélites `redsys-for-tourflow` y `mercadopago-split-tourflow`.
+2. **[Grave] `confirm-payment` respondía "confirmado" sin mirar si `confirm()` había funcionado.** Ignoraba el resultado: con la reserva ya cancelada/vencida el cliente veía "¡Reservado!" con el dinero cobrado. Ahora relee el estado real y responde `409` con un `code` de máquina (`payment_expired_refunded`/`confirm_failed`). Igual en `confirm-mp` y en `cart/{id}/confirm-payment`. Los 4 pasos de pago de los flujos de carrito (`DiscoveryFlow`, `ExploreFlow`, `RoomSearch`, `ProductOrder`) **tragaban cualquier error y llamaban a `onSuccess([])`** (o `finally { onSuccess() }`, el de producto) — mostraban éxito ante cualquier falla; ahora usan `RoomsAPI.confirmCartPaymentSafe()` (un reintento ante error transitorio) y muestran "recibimos tu pago, reintentá la verificación" o "vencida y reembolsada" según el caso. El widget clásico distingue también el caso reembolsado.
+3. **El cupo de una reserva impaga se retenía ~1 h de más.** El vencimiento (`amir_pending_expire_mins`, 15 min) solo corría en el cron **horario**, y los queries de disponibilidad cuentan todo `pending` sin mirar antigüedad. Nueva clase `Core\PendingExpiry`: además del cron, se ejecuta de forma perezosa (máx. 1 vez por minuto, transient) al consultar disponibilidad (`AvailabilityEngine::check()`/`get_month_availability()`, `RoomAvailability::is_available()`) y al crear una reserva.
+4. **Una reserva vencida quedaba `cancelled_client`**, indistinguible de una cancelación real con reembolso — y por eso un pago tardío no se podía recuperar sin riesgo de "resucitar" una reserva ya reembolsada (Stripe deja el PI en `succeeded` aun reembolsado). Estado nuevo **`payment_expired`** (`AMIR_DB_VERSION` → `1.41.0`; ENUM ampliado en `create_tables()`, `ensure_booking_status_enum()` — que ahora chequea `payment_expired` — y `maybe_update()`; siempre al FINAL de la lista para no forzar reconstrucción de la tabla). Etiqueta/color/filtro en Reservas, mapa de estados de `[amir_verify_booking]` (string nuevo "Pago no completado" agregado a los `.po`/`.mo` en/fr/it/pt), chip del Dashboard.
+5. **Los cupones consumidos por una reserva impaga nunca se devolvían**: `PendingExpiry` decrementa `times_used` (`GREATEST(times_used-1,0)`) al vencer.
+6. **Habitaciones: las fechas quedaban bloqueadas para siempre.** `flow_room_bookings.status` se crea `pending` y nadie lo actualiza nunca — una reserva de habitación vencida, cancelada o con el pago rechazado no liberaba las fechas (`BookingManager::cancel()` tampoco tocaba esa tabla). `RoomAvailability::is_available()` ahora hace JOIN con `amir_bookings` y cuenta solo reservas en estados que retienen la habitación (`pending`, `confirmed`, `awaiting_payment`, `cancellation_requested`, `completed`). **Esto arregla también las cancelaciones de habitaciones que ya existían en producción**, no solo las vencidas.
+
+**Bug de facturación relacionado**: `init_payment()` (el link de pago que reusa este flujo de reintento) cobraba el **total** en una reserva `pending` con depósito parcial (solo el % de depósito en el flujo normal). Ahora el cobro inicial de una reserva con `deposit_pct > 0` es el depósito.
+
+**Plazo de gracia tras un pago rechazado** (pedido del cliente):
+- Columna nueva `amir_bookings.payment_failed_at` (se completa con el PRIMER intento fallido; los siguientes no la mueven — el plazo no se puede estirar) y opción `amir_payment_grace_mins` (default **360** = 6 h; presets 0/60/120/240/360/720/1440 en Configuración → General; `0` = desactivado, rige solo el vencimiento normal).
+- `PendingExpiry::hold_deadline()`: `max(vencimiento normal, min(payment_failed_at + gracia, 00:00 del día del tour))` — **nunca se estira hasta el día del tour** (una salida inminente no congela cupo), y no se abre para salidas del mismo día. El cupo se retiene porque la reserva sigue `pending` (los queries de disponibilidad ya cuentan `pending`).
+- Email nuevo `PaymentFailedEmail` (`type_key` `payment_failed`, editable en TourFlow → ✉️ Emails, por idioma; también para habitaciones/productos, que no tienen tour: arma el nombre desde `flow_rooms`), hook `amir_booking_payment_failed` → `EmailDispatcher::send_payment_failed_notice()`. Se manda una sola vez por reserva; trae el plazo y un botón que reusa el mecanismo ya existente de link de pago (`[amir_verify_booking]` monta `PayBooking.jsx` para reservas `pending`).
+- Solo se dispara con el webhook FAILED de la pasarela — el error que ve el cliente en el navegador no le avisa al backend (un endpoint público que lo hiciera sería un vector de spam de emails); si el webhook no está configurado, rige el vencimiento normal.
+
+**Pago tardío sobre una reserva vencida** (`payment_expired`; ej. el cliente tardó, o un medio offline de Mercado Pago se acreditó horas después): `BookingManager::confirm()` → `recover_expired_booking()`. Si el cupo sigue libre (mismo criterio que el motor: suma de pax de OTROS `pending`/`confirmed`, exclusividad total en tours `group`, `RoomAvailability::is_available()` para habitaciones) la reserva se recupera y se confirma; si no, `refund_late_payment()` la deja `cancelled_client` con `refund_amount_mxn` (lo realmente cobrado — solo el depósito si corresponde), dispara `amir_process_gateway_refund`, registra `late_payment_refund` en el Log de pagos y crea una notificación de Dashboard ("Pago tardío reembolsado"). Los reclamos son `UPDATE` condicionados al estado (dos llamadas simultáneas no procesan dos veces).
+
+**Corrección de un fix anterior (§ 16.101)**: el guard atómico de `confirm()` agregado en v5.13.3 hacía un `UPDATE` que solo reescribía `stripe_charge_id`/`gateway_charge_id` — MySQL cuenta como "afectada" solo una fila que **cambió de verdad**, así que funcionaba de casualidad (mismo charge_id → 0 filas) y habría abortado erróneamente cualquier `confirm()` cuyo charge_id ya estuviera guardado (ej. `change_status` desde el admin). Ahora el reclamo es una **transición real de `status`** (`pending`/`awaiting_payment` → `confirmed`/`pending_provider_approval`), robusta.
+
+`AMIR_VERSION` → `5.13.4`, `AMIR_DB_VERSION` → `1.41.0`. **150 tests en verde (18 nuevos**: `PendingExpiryTest` — cálculo del plazo, tope al día del tour, `release()`—, `BookingManagerPaymentFailureTest` — un fallo nunca cancela, plazo de gracia, pago tardío recuperado/reembolsado/sin doble proceso, depósito, tours `group`). `FakeWpdb` ampliado (`booking_rows`, historial de `query()`, etc.). Bundle del widget reconstruido (`react-src/` → `assets/`). Manual actualizado: capítulos 10 (nueva sección), 15, 16, 17 e `INSTALL.md`. **Sin probar en vivo** — pendiente en el sandbox: (a) pagar con la tarjeta de prueba de rechazo de Stripe (`4000 0000 0000 0002`), verificar que la reserva sigue `pending`, que llega el email y que reintentar con `4242…` confirma; (b) con el plazo de gracia en 1 h, dejar vencer y ver "Vencida (sin pago)"; (c) que el webhook de Stripe tenga suscripto `payment_intent.payment_failed`. Limitación conocida: si el cliente vuelve atrás y confirma de nuevo, se crea una segunda reserva `pending` (la primera vence sola por el mismo mecanismo).
+
+### 16.103 v5.13.5 — asunto de los emails de contacto con la marca del operador
+
+Bug real encontrado al montar el frontend headless de Visit Sicily Experiences (`visitsicily-experiences-web`): `ContactController` (`POST /amir/v1/contact` y `/groups-inquiry`) tenía el asunto fijo `[Caliafarm] …`, heredado de cuando se construyó para `caliafarm-web` (§ 16.99). Cualquier otra instalación recibía los emails con la marca de otro operador.
+
+- Nuevo `ContactController::subject_prefix()`: `[amir_company_name]`, con fallback al nombre del sitio (`get_bloginfo('name')`).
+- `/contact` acepta un `subject` opcional (texto, máx. 120 caracteres): el frontend nombra el tipo de consulta ("Private tour request", "Luxury tour request") y el asunto queda `[Empresa] <subject> from <nombre>`. Sin `subject`, igual que antes: "New contact message". El mismo texto pasa al título de la notificación del Dashboard.
+- Los `error_log` dicen "TourFlow" en vez de "Caliafarm".
+- Sin cambios de esquema, de widget ni de respuesta de la API (compatible hacia atrás).
+- ZIPs armados parcheando los de v5.13.4 (Docker no disponible en esa sesión): mismo listado de archivos, solo cambian `class-contact-controller.php` y la versión en `amir-booking.php`; `php -l` limpio. `build-editions-5.13.5.sh` queda para reproducirlo con el pipeline normal. **Sin probar en vivo.**
+
 ## 17. Independencia total de WordPress — análisis pedido por el cliente (2026-07-31), solo para documentar, no construir
 
 El cliente pidió evaluar qué haría falta para **eliminar la dependencia de WordPress por completo** (no solo el frontend público, que ya tiene su propio spec en [SPEC-HEADLESS.md](SPEC-HEADLESS.md) — acá el alcance es el producto entero, incluido el panel de operación). **Pedido explícito: solo análisis, nada para construir todavía.**

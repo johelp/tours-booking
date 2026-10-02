@@ -20,7 +20,11 @@ async function request( path, options = {} ) {
 
   if ( ! resp.ok ) {
     const msg = data && typeof data === 'object' ? ( data.message ?? data.error ) : null;
-    throw new Error( typeof msg === 'string' && msg !== '' ? msg : `HTTP ${resp.status}` );
+    const err = new Error( typeof msg === 'string' && msg !== '' ? msg : `HTTP ${resp.status}` );
+    // Código de máquina del backend (ej. 'payment_expired_refunded') — el
+    // frontend decide el texto/acción según esto, no según el mensaje.
+    err.code = data && typeof data === 'object' && typeof data.code === 'string' ? data.code : '';
+    throw err;
   }
   return data;
 }
@@ -52,6 +56,29 @@ export function cartConfirmPayment( cartGroupId, paymentIntentId ) {
     method: 'POST',
     body: JSON.stringify( { payment_intent_id: paymentIntentId } ),
   } );
+}
+
+/**
+ * Confirma el pago del carrito SIN fingir éxito (auditoría del flujo de pago
+ * rechazado, 2026-09-28): antes cada paso de pago tragaba cualquier error de
+ * este endpoint y mostraba "¡Reservado!" igual — incluso si el pago había
+ * llegado tarde, sin cupo, y ya se había reembolsado. Reintenta una vez ante
+ * errores transitorios (red/5xx); una respuesta definitiva del servidor (trae
+ * `code`) no se reintenta.
+ * @returns {Promise<{ok:true,data:object}|{ok:false,code:string,message:string}>}
+ */
+export async function confirmCartPaymentSafe( cartGroupId, paymentIntentId ) {
+  let last = null;
+  for ( let attempt = 0; attempt < 2; attempt++ ) {
+    try {
+      const data = await cartConfirmPayment( cartGroupId, paymentIntentId );
+      return { ok: true, data };
+    } catch ( e ) {
+      last = e;
+      if ( e && e.code ) break;
+    }
+  }
+  return { ok: false, code: last?.code ?? '', message: last?.message ?? '' };
 }
 
 // Voucher general (PDF+QR único por cart_group_id) — mismo criterio de

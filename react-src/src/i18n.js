@@ -108,6 +108,8 @@ const translations = {
     payment_confirming_title: 'Tu pago fue recibido',
     payment_confirming_sub:   'Estamos terminando de confirmar tu reserva — puede tardar unos segundos. Si no se resuelve solo, tocá el botón para reintentar. De todas formas te llega la confirmación por email en cuanto quede lista.',
     payment_confirming_retry: 'Reintentar verificación',
+    payment_refunded_title:   'Tu reserva venció y te reembolsamos el pago',
+    payment_refunded_sub:     'El pago se completó cuando la reserva ya había vencido y el cupo dejó de estar disponible, así que devolvimos el importe completo a tu tarjeta. Podés volver a intentar la reserva.',
 
     // Confirmation
     confirmed_title:  '¡Tu reserva está confirmada!',
@@ -274,6 +276,8 @@ const translations = {
     payment_confirming_title: 'Your payment was received',
     payment_confirming_sub:   "We're finishing up your booking — this can take a few seconds. If it doesn't resolve on its own, tap the button to retry. Either way, you'll get the confirmation by email as soon as it's ready.",
     payment_confirming_retry: 'Retry verification',
+    payment_refunded_title:   'Your reservation expired and we refunded your payment',
+    payment_refunded_sub:     'The payment went through after the reservation had expired and the spot was no longer available, so we refunded the full amount to your card. You can try booking again.',
 
     confirmed_title:  'Your booking is confirmed!',
     confirmed_sub:    'We have sent all the details to your email.',

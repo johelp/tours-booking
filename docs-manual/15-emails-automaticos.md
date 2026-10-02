@@ -15,6 +15,7 @@ Todos los emails que manda TourFlow usan tu identidad de marca (logo, color, nom
 | **Reprogramación** | Cuando cambiás la fecha/horario de una reserva confirmada, para avisarle al cliente los datos nuevos. |
 | **"Tu tour ya está disponible"** | Al publicar y notificar un tour que estaba en lista de interés (ver capítulo [8](08-lista-de-interes.md)) — le llega a cada anotado con el botón para pagar. |
 | **Link de pago (reserva manual)** | Cuando cargás una reserva a mano y elegís "el cliente todavía no pagó" — le llega el mismo tipo de email con el botón de pago. |
+| **Pago rechazado: actualizar tarjeta** | La primera vez que falla un intento de cobro de una reserva (tarjeta mal cargada, sin fondos, rechazo del banco). Le avisa al cliente hasta cuándo se le guarda el lugar y le da un botón para actualizar la tarjeta y pagar (ver capítulo [10](10-pasarelas-de-pago.md)). Se manda una sola vez por reserva. |
 | **Aviso interno de mínimo de pasajeros** | Te llega a vos si un tour de mañana o pasado mañana no alcanza el mínimo de pasajeros configurado — para que decidas si lo operás igual o lo cancelás. |
 
 ## Qué podés editar vos y qué es fijo

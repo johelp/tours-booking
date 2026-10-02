@@ -1343,8 +1343,13 @@ export function StepPayment({ t, goBack, goNext, setBookingRef, bookingId, booki
   // fondo — esto es solo para no mentirle al cliente mientras tanto.
   const [ pendingIntentId, setPendingIntentId ] = useState( '' );
   const [ retrying,        setRetrying        ] = useState( false );
+  const [ refunded,        setRefunded        ] = useState( false );
 
-  /** true si el backend confirmó — false si hay que reintentar/avisar. */
+  /**
+   * 'ok' si el backend confirmó, 'refunded' si el pago llegó tarde, sin cupo,
+   * y ya se reembolsó (respuesta definitiva del servidor — no se reintenta),
+   * 'retry' para cualquier otro fallo (hay que reintentar/avisar).
+   */
   const tryConfirm = async ( piId ) => {
     try {
       const base = window.amirBooking?.apiUrl ?? '/wp-json/amir/v1/';
@@ -1359,11 +1364,12 @@ export function StepPayment({ t, goBack, goNext, setBookingRef, bookingId, booki
       if ( resp.ok ) {
         const data = await resp.json();
         if ( data.booking_ref ) setBookingRef( data.booking_ref );
-        return true;
+        return 'ok';
       }
-      return false;
+      const data = await resp.json().catch( () => ( {} ) );
+      return data?.code === 'payment_expired_refunded' ? 'refunded' : 'retry';
     } catch {
-      return false;
+      return 'retry';
     }
   };
 
@@ -1388,10 +1394,13 @@ export function StepPayment({ t, goBack, goNext, setBookingRef, bookingId, booki
       // finalizar la reserva de nuestro lado. Un primer reintento inmediato
       // cubre el caso más común (hiccup momentáneo de red/servidor); si
       // ese también falla, se corta y se avisa en vez de simular éxito.
-      const ok = await tryConfirm( paymentIntent.id ) || await tryConfirm( paymentIntent.id );
+      let outcome = await tryConfirm( paymentIntent.id );
+      if ( outcome === 'retry' ) outcome = await tryConfirm( paymentIntent.id );
       setProcessing( false );
-      if ( ok ) {
+      if ( outcome === 'ok' ) {
         goNext();
+      } else if ( outcome === 'refunded' ) {
+        setRefunded( true );
       } else {
         setPendingIntentId( paymentIntent.id );
       }
@@ -1402,10 +1411,24 @@ export function StepPayment({ t, goBack, goNext, setBookingRef, bookingId, booki
 
   const handleRetryConfirm = async () => {
     setRetrying( true );
-    const ok = await tryConfirm( pendingIntentId );
+    const outcome = await tryConfirm( pendingIntentId );
     setRetrying( false );
-    if ( ok ) goNext();
+    if ( outcome === 'ok' ) goNext();
+    else if ( outcome === 'refunded' ) setRefunded( true );
   };
+
+  // El pago se completó DESPUÉS de que la reserva venció y el cupo ya no
+  // estaba disponible — el backend lo reembolsó solo. Nunca mostrar acá
+  // "¡Reservado!" ni "pago recibido, confirmando".
+  if ( refunded ) {
+    return (
+      <div className="ab-panel" style={{textAlign:'center'}}>
+        <div className="ab-confirm-icon">↩</div>
+        <h2 className="ab-confirm-title">{t('payment_refunded_title')}</h2>
+        <p className="ab-confirm-sub">{t('payment_refunded_sub')}</p>
+      </div>
+    );
+  }
 
   if ( pendingIntentId ) {
     return (

@@ -103,16 +103,18 @@ class Rest {
 		// en vez de tocar amir_bookings con SQL propio, así los hooks de
 		// ciclo de vida (email, voucher, Google Calendar) siguen andando
 		// igual que con Stripe/MP normal (§ 5 GUIA-PLUGINS-SATELITE-TOURFLOW.md).
-		if ( $event->type === \AmirBooking\Payments\PaymentEvent::SUCCEEDED && $booking->status === 'pending' ) {
+		if ( $event->type === \AmirBooking\Payments\PaymentEvent::SUCCEEDED
+			&& in_array( $booking->status, [ 'pending', 'payment_expired' ], true )
+		) {
+			// 'payment_expired': pago que llega después de vencer la reserva
+			// (ej. medio offline) — confirm() la recupera o la reembolsa.
 			( new \AmirBooking\Core\BookingManager() )->confirm( (int) $booking->id, $event->charge_reference );
-		} elseif ( $event->type === \AmirBooking\Payments\PaymentEvent::FAILED && $booking->status === 'pending' ) {
-			$wpdb->update(
-				"{$wpdb->prefix}amir_bookings",
-				[ 'status' => 'cancelled_client', 'internal_notes' => 'Pago fallido (split): ' . $event->reason ],
-				[ 'id' => $booking->id ],
-				[ '%s', '%s' ],
-				[ '%d' ]
-			);
+		} elseif ( $event->type === \AmirBooking\Payments\PaymentEvent::FAILED ) {
+			// Un intento fallido NO cancela la reserva (auditoría del flujo
+			// de pago rechazado del núcleo, 2026-09-28) — abre el plazo de
+			// gracia y avisa al cliente; si abandona, PendingExpiry libera
+			// el cupo.
+			( new \AmirBooking\Core\BookingManager() )->record_payment_failure( (int) $booking->id, (string) $event->reason );
 		}
 
 		return new \WP_REST_Response( [ 'received' => true ], 200 );

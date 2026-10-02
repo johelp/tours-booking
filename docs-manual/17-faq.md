@@ -17,6 +17,10 @@ Revisá, en este orden: (1) que la fecha elegida no esté bloqueada por una regl
 
 Andá a **TourFlow → Log de pagos** y buscá por la referencia de la reserva — ahí vas a ver qué pasó realmente con el cobro (si el aviso automático de la pasarela llegó o no, y por qué). Si confirmás con el panel de Stripe/Mercado Pago que el pago sí se hizo, podés confirmar la reserva manualmente desde su detalle en **TourFlow → Reservas** ("Confirmar reserva manualmente").
 
+### A un cliente le rechazaron la tarjeta — ¿qué pasa con su reserva?
+
+No se cancela. La reserva queda **pendiente y le sigue guardando el lugar** durante el **plazo de gracia** (6 horas por defecto, configurable en **Configuración → ⚙ General → "Plazo de gracia tras un pago rechazado"**). El cliente puede reintentar con otra tarjeta en el mismo formulario, y si se va le llega un email con un botón para actualizar la tarjeta y pagar. Si no lo hace a tiempo, la reserva pasa a **"Vencida (sin pago)"** y el cupo se libera solo. El motivo de cada rechazo lo ves en las notas internas de la reserva y en **TourFlow → Log de pagos**. Detalle completo en el capítulo [10](10-pasarelas-de-pago.md).
+
 ### Configuré Mercado Pago (o Stripe) pero las reservas nuevas no cobran nada
 
 En **Configuración → 🔀 Pasarela de pago**, confirmá cuál está marcada como "activa" — solo esa es la que se usa para cobrar. Si la activa es, por ejemplo, Mercado Pago pero solo cargaste las claves de Stripe, las reservas van a fallar al cobrar. La misma pantalla te avisa si la pasarela activa no tiene credenciales cargadas para su modo actual (test/live).

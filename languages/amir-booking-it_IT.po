@@ -576,3 +576,5 @@ msgstr "La nuova data non ti va bene? Scrivici e lo risolviamo."
 msgid "🔄 Tu reserva fue reprogramada — %s"
 msgstr "🔄 La tua prenotazione è stata riprogrammata — %s"
 
+msgid "Pago no completado"
+msgstr "Pagamento non completato"

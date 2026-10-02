@@ -499,6 +499,7 @@ class DashboardPage {
         .ab-status-chip.confirmed { background:#e1f5ee; color:var(--ab-teal-dark, #0F6E56); }
         .ab-status-chip.pending   { background:#fff8e7; color:#BA7517; }
         .ab-status-chip.cancelled_client,.ab-status-chip.cancellation_requested { background:#fef2f2; color:#e24b4a; }
+        .ab-status-chip.payment_expired { background:#f3f4f6; color:#6b7280; }
 
         .ab-source-chip { font-size:10px; padding:2px 6px; border-radius:8px; background:#f3f4f6; color:#5a7068; font-weight:600; text-transform:uppercase; }
         .ab-source-chip.partner { background:#fef3c7; color:#92400e; }

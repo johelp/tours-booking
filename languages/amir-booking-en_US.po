@@ -1593,3 +1593,6 @@ msgid "%d site necesita actualización de base de datos."
 msgid_plural "%d sites necesitan actualización de base de datos."
 msgstr[0] "%d site needs a database update."
 msgstr[1] "%d sites need a database update."
+
+msgid "Pago no completado"
+msgstr "Payment not completed"

@@ -51,6 +51,15 @@ class CalendarPage {
     public function render( string $base_url = '', string $bookings_base_url = '' ): void {
         $this->base_url          = $base_url;
         $this->bookings_base_url = $bookings_base_url;
+
+        // Hallazgo de auditoría de seguridad, 2026-09-24: esta pantalla no
+        // tenía NINGÚN chequeo de capability propio — dependía solo del gate
+        // del menú de quien la invoca (AdminMenu/ManagerPanel). Mismo guard
+        // que ya usan todas las demás pantallas del admin.
+        if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
+            wp_die( esc_html( $this->tt( 'No tienes permisos suficientes para acceder a esta página.', 'You do not have sufficient permissions to access this page.' ) ) );
+        }
+
         $month_param = sanitize_text_field( $_GET['month'] ?? '' );
         $month_ts    = $month_param && preg_match( '/^\d{4}-\d{2}$/', $month_param )
             ? strtotime( $month_param . '-01' )

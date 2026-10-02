@@ -16,7 +16,23 @@ Thumbs.db
 # Configuración local de Claude Code
 .claude/settings.local.json
 
+# Worktrees de Claude Code — cada uno trae su propio .git anidado; commitear
+# esto por accidente (ej. un `git add -A` sin revisar) mete un repo git
+# completo dentro de este repo. Hallazgo de auditoría de seguridad,
+# 2026-09-24: .claude/settings.local.json ya estuvo commiteado en el pasado
+# (después removido) precisamente porque solo ESE archivo puntual estaba acá
+# — el resto de .claude/ nunca tuvo cobertura.
+.claude/worktrees/
+
+# Archivos temporales de trabajo — nunca deben terminar en un ZIP de
+# distribución (hallazgo de auditoría de seguridad, 2026-09-24: se filtraba
+# vacía al ZIP porque los scripts de build no la excluían del rsync).
+/scratch/
+
 # Artefactos de build de los 3 ZIPs de edición (build-editions-*.sh) — se
 # regeneran cada vez, nunca se versionan (ver CLAUDE.md § reglas críticas).
 /.build-stage/
 /dist-zips/
+
+# Caché de Python de tools/
+__pycache__/

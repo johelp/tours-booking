@@ -56,21 +56,21 @@ class Rest {
 
 		switch ( $event->type ) {
 			case PaymentEvent::SUCCEEDED:
-				if ( $booking->status === 'pending' ) {
+				// 'payment_expired': pago que llega después de vencer la
+				// reserva — confirm() la recupera o la reembolsa (núcleo).
+				if ( in_array( $booking->status, [ 'pending', 'payment_expired' ], true ) ) {
 					( new \AmirBooking\Core\BookingManager() )->confirm( (int) $booking->id, $event->charge_reference );
 				}
 				break;
 
 			case PaymentEvent::FAILED:
-				if ( $booking->status === 'pending' ) {
-					$wpdb->update(
-						"{$wpdb->prefix}amir_bookings",
-						[ 'status' => 'cancelled_client', 'internal_notes' => 'Pago fallido (Redsys): ' . $event->reason ],
-						[ 'id' => $booking->id ],
-						[ '%s', '%s' ],
-						[ '%d' ]
-					);
-				}
+				// Un intento fallido NO cancela la reserva (auditoría del
+				// flujo de pago rechazado del núcleo, 2026-09-28): el cliente
+				// puede reintentar, y un pago exitoso posterior sobre una
+				// reserva ya cancelada quedaba cobrado sin reserva. Si
+				// abandona, el vencimiento normal (PendingExpiry) libera el
+				// cupo. El motivo queda en el Log de pagos y en las notas.
+				( new \AmirBooking\Core\BookingManager() )->record_payment_failure( (int) $booking->id, (string) $event->reason );
 				break;
 
 			case PaymentEvent::REFUNDED:

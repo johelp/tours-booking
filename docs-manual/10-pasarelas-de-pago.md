@@ -35,11 +35,31 @@ La misma pantalla de Configuración tiene una guía colapsable **"💡 Guía rá
 
 ## Qué pasa si el cliente no termina de pagar
 
-Cuando alguien empieza una reserva, esta queda en estado **"pendiente"** de inmediato y **le reserva el cupo** — nadie más puede tomar ese lugar mientras tanto. Si no completa el pago dentro de un plazo (configurable en **Configuración → ⚙ General → "Minutos para expirar reserva pending"**, entre 5 y 60 minutos, **15 por defecto**), el sistema la cancela sola y libera el cupo automáticamente.
+Cuando alguien empieza una reserva, esta queda en estado **"pendiente"** de inmediato y **le reserva el cupo** — nadie más puede tomar ese lugar mientras tanto. Si no completa el pago dentro de un plazo (configurable en **Configuración → ⚙ General → "Minutos para expirar reserva pending"**, entre 5 y 60 minutos, **15 por defecto**), la reserva pasa a **"Vencida (sin pago)"** y el cupo se libera solo.
 
-En la práctica, la revisión de reservas vencidas corre **una vez por hora** en segundo plano, así que una reserva que venció a los 15 minutos puede tardar hasta la próxima corrida horaria en liberarse del todo — no es instantáneo al segundo exacto.
+Ese estado es distinto de "Cancelada": una reserva vencida por falta de pago **nunca tuvo un pago exitoso**, así que no hay nada que reembolsar. Al vencer, además, se **devuelve el uso del cupón** que la reserva había consumido (un cupón de un solo uso no queda "gastado" por una compra que nunca se pagó). Las habitaciones también se liberan — antes las fechas de una habitación con reserva vencida o cancelada podían quedar bloqueadas.
+
+El cupo se libera **apenas vence el plazo** (el sistema lo revisa cada vez que alguien consulta disponibilidad o reserva, como máximo una vez por minuto), sin esperar a la revisión horaria de fondo.
 
 Las reservas de **lista de interés** (ver capítulo [8](08-lista-de-interes.md)) son distintas: no bloquean cupo ni tienen este plazo, porque corresponden a tours que ni siquiera están abiertos todavía.
+
+## Qué pasa si el pago es rechazado (tarjeta mal cargada, sin fondos, rechazo del banco)
+
+Un pago rechazado **no cancela la reserva**. Es el mismo criterio de plataformas como Vrbo o Booking cuando una tarjeta es inválida: no se asume ninguna obligación de pago, pero se **congela el lugar durante un plazo de gracia** para que el cliente corrija los datos.
+
+1. El cliente ve el mensaje de error de la pasarela en pantalla y puede **reintentar con otra tarjeta en el mismo formulario** — si el reintento sale bien, la reserva se confirma normalmente.
+2. Si se va sin pagar, le llega un **email "No pudimos procesar tu pago"** con el plazo hasta el que se le guarda el lugar y un botón **"Actualizar mi tarjeta y pagar"** que lo lleva a completar el pago. El texto se puede editar en **TourFlow → ✉️ Emails → Editar textos** ("Pago rechazado: actualizar tarjeta").
+3. El plazo de gracia se configura en **Configuración → ⚙ General → "Plazo de gracia tras un pago rechazado"**: **6 horas por defecto**, con opciones de 1, 2, 4, 6, 12 y 24 horas, o "Sin plazo" para usar solo el vencimiento normal de arriba.
+4. Pasado el plazo, la reserva pasa a **"Vencida (sin pago)"** y el cupo vuelve a estar disponible.
+
+Reglas para no congelar cupo de más: el plazo de gracia **solo se abre con el primer intento fallido** (los siguientes no lo estiran), **no aplica a salidas del mismo día**, y **nunca se extiende hasta el día del tour** — como máximo se guarda el lugar hasta las 00:00 de ese día. Cada intento fallido queda anotado en las notas internas de la reserva y en el **Log de pagos** con su motivo.
+
+### Si el pago llega tarde
+
+Puede pasar que el pago se complete **después** de que la reserva ya venció (el cliente tardó, o un medio offline como efectivo/transferencia de Mercado Pago se acredita horas después). El sistema nunca deja plata cobrada sin reserva:
+
+- Si el **cupo sigue libre**, la reserva se **recupera y se confirma** normalmente.
+- Si el cupo **ya lo tomó otra persona**, el pago se **reembolsa automáticamente** (por la misma pasarela con la que se cobró), la reserva queda cancelada con el monto reembolsado, al cliente se le explica en pantalla lo que pasó y a vos te llega una **notificación en el Dashboard** ("Pago tardío reembolsado") para que verifiques el reembolso en el Log de pagos.
 
 ## Log de pagos: diagnosticar problemas de un cliente
 

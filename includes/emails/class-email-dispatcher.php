@@ -46,6 +46,12 @@ class EmailDispatcher {
         // el saldo restante (link enviado aparte por el operador). Recibo
         // corto, no la confirmación completa (la reserva ya estaba confirmada).
         add_action( 'amir_booking_balance_paid', [ $this, 'notify_client_balance_paid' ], 10, 1 );
+
+        // Pago rechazado (tarjeta mal cargada, fondos, rechazo del banco): la
+        // reserva sigue reteniendo el cupo durante un plazo de gracia y el
+        // cliente recibe un link para actualizar los datos y pagar — ver
+        // BookingManager::record_payment_failure().
+        add_action( 'amir_booking_payment_failed', [ $this, 'send_payment_failed_notice' ], 10, 1 );
     }
 
     public function notify_client_balance_paid( int $booking_id ): void {
@@ -69,6 +75,38 @@ class EmailDispatcher {
         $mailer  = new BalancePaymentLinkEmail( $booking );
         $success = $mailer->send();
         return [ 'success' => $success, 'error' => $success ? '' : $mailer->get_last_error() ];
+    }
+
+    /**
+     * Aviso al cliente de que su pago fue rechazado, con el link para
+     * actualizar los datos y el plazo hasta el que se le guarda el lugar.
+     * Tours (JOIN con amir_tours) y también habitaciones/productos — esos
+     * no tienen tour, así que se arma el nombre desde flow_rooms / la propia
+     * reserva.
+     */
+    public function send_payment_failed_notice( int $booking_id ): void {
+        global $wpdb;
+
+        $booking = $this->get_booking_with_tour( $booking_id );
+        if ( ! $booking ) {
+            $booking = $wpdb->get_row( $wpdb->prepare(
+                "SELECT b.*, r.name_es AS room_name_es, r.name_en AS room_name_en
+                 FROM {$wpdb->prefix}amir_bookings b
+                 LEFT JOIN {$wpdb->prefix}flow_rooms r ON r.id = b.room_id
+                 WHERE b.id = %d",
+                $booking_id
+            ) );
+            if ( ! $booking ) {
+                return;
+            }
+            $en   = ( $booking->lang ?? 'es' ) === 'en';
+            $name = $en
+                ? ( $booking->room_name_en ?: $booking->room_name_es )
+                : ( $booking->room_name_es ?: $booking->room_name_en );
+            $booking->tour_name = $name ?: $booking->booking_ref;
+        }
+
+        ( new PaymentFailedEmail( $booking ) )->send();
     }
 
     public function send_provider_awaiting_payment_link( int $booking_id ): void {
@@ -1277,6 +1315,63 @@ class PaymentLinkEmail extends BaseEmail {
         return $intro . $ref_box . $custom_note . '<p style="text-align:center;margin-top:24px;">'
              . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html( $this->t('pay_now') ) . '</a>'
              . '</p>';
+    }
+}
+
+// ── Email: pago rechazado — actualizá tu tarjeta ────────────────────────────
+// Se envía UNA vez, en el primer intento de pago fallido de una reserva
+// (BookingManager::record_payment_failure()). La reserva sigue guardada hasta
+// `{deadline}` (PendingExpiry::hold_deadline()) — mismo criterio de las
+// plataformas de alquiler vacacional con una tarjeta inválida: no se asume
+// ninguna obligación de pago, pero se congela el lugar un rato para que el
+// cliente corrija los datos.
+
+class PaymentFailedEmail extends BaseEmail {
+
+    protected static function type_key(): string {
+        return 'payment_failed';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'No pudimos procesar tu pago — {ref}', 'en' => "We couldn't process your payment — {ref}" ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Tu pago no se pudo completar', 'en' => "Your payment couldn't be completed" ],
+            'intro_body'  => [ 'label' => self::field_label( 'Mensaje', 'Message' ), 'es' => 'Hola <strong>{name}</strong>,<br>Intentamos cobrar tu reserva de <strong>{tour}</strong> para el {date} pero el pago fue rechazado (datos de la tarjeta incorrectos, fondos insuficientes o rechazo del banco).<br><br>No pasa nada: <strong>te guardamos el lugar hasta el {deadline}</strong>. Revisá los datos o usá otra tarjeta y completá el pago desde el botón de abajo.', 'en' => "Hello <strong>{name}</strong>,<br>We tried to charge your booking for <strong>{tour}</strong> on {date} but the payment was declined (incorrect card details, insufficient funds or a bank refusal).<br><br>No worries: <strong>we're holding your spot until {deadline}</strong>. Check your details or use another card and complete the payment with the button below." ],
+            'button'      => [ 'label' => self::field_label( 'Botón', 'Button' ), 'es' => 'Actualizar mi tarjeta y pagar', 'en' => 'Update my card and pay' ],
+            'footer_note' => [ 'label' => self::field_label( 'Aviso de vencimiento', 'Expiry notice' ), 'es' => 'Pasado ese plazo la reserva se cancela sola y el lugar vuelve a estar disponible para otras personas.', 'en' => 'After that time the booking is cancelled automatically and the spot becomes available to other people again.' ],
+        ];
+    }
+
+    protected function get_subject(): string {
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
+    }
+
+    /** Fecha/hora límite del plazo de gracia, en la hora local del sitio. */
+    private function deadline_label(): string {
+        $ts = \AmirBooking\Core\PendingExpiry::hold_deadline( $this->booking );
+        return $this->lang === 'en' ? gmdate( 'M j, Y g:i A', $ts ) : gmdate( 'd/m/Y H:i', $ts ) . ' h';
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [
+                   'name'     => esc_html( $b->customer_name ),
+                   'tour'     => esc_html( $b->tour_name ),
+                   'date'     => esc_html( $this->fmt_date( $b->tour_date ) ),
+                   'deadline' => esc_html( $this->deadline_label() ),
+               ] ) . '</p>';
+
+        $ref_box = '<div class="ref-box">
+          <div class="ref-label">' . $this->t('booking_ref') . '</div>
+          <div class="ref-value">' . esc_html( $b->booking_ref ) . '</div>
+        </div>';
+
+        return $intro . $ref_box . '<p style="text-align:center;margin-top:24px;">'
+             . '<a href="' . esc_url( $this->verify_url() ) . '" class="btn">' . esc_html( $this->text( 'button' ) ) . '</a>'
+             . '</p>'
+             . '<p style="text-align:center;font-size:12px;color:#5a7068;">' . $this->text( 'footer_note' ) . '</p>';
     }
 }
 

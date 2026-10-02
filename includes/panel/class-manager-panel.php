@@ -40,14 +40,23 @@ defined( 'ABSPATH' ) || exit;
  * solo dura lo que dura ESTA request — la llamada `fetch()` del escaneo es
  * una request HTTP nueva y separada, donde el gestor vuelve a verse como
  * anónimo. Por eso `determine_current_user` (el filtro que WordPress usa
- * para resolver "quién sos" en CUALQUIER request — page load, admin-ajax.php,
- * REST) se engancha acá de forma global: si nadie más resolvió un usuario
+ * para resolver "quién sos" al arrancar cualquier request — page load,
+ * admin-ajax.php, REST) se engancha acá: si nadie más resolvió un usuario
  * real (prioridad 20, después del chequeo normal de cookie de wp-admin) y
- * la cookie propia del panel es válida, se usa ese `user_id`. Con esto,
- * `is_user_logged_in()`/`current_user_can()`/nonces funcionan igual en
- * CUALQUIER request que lleve la cookie del panel, sin tocar
- * `FieldPage::ajax_scan_lookup()` para nada — su `current_user_can()` de
- * siempre ya alcanza.
+ * la cookie propia del panel es válida, se usa ese `user_id`.
+ *
+ * **Acotado a propósito** (hallazgo de auditoría de seguridad, 2026-09-24):
+ * antes esto corría sin ninguna condición, así que una cookie del panel
+ * robada/reusada valía como "logueado" contra CUALQUIER request autenticado
+ * del sitio (cualquier AJAX/REST de TourFlow o de cualquier otro plugin
+ * instalado), no solo contra el escaneo de QR para el que se pensó — no es
+ * una escalación de privilegios (`ManagerAuth::verify_token()` revalida la
+ * capability real en cada request de todos modos), pero ensanchaba
+ * innecesariamente el radio de una cookie filtrada. `request_needs_panel_auth()`
+ * limita el filtro a los dos únicos casos reales que lo necesitan: la
+ * llamada AJAX de Modo Campo, y cualquier request al panel mismo (`/gestor/`
+ * con pretty permalinks, o `?tourflow_manager_page=...` si el sitio usa
+ * permalinks planos — ver `url()` más abajo).
  */
 class ManagerPanel {
 
@@ -66,16 +75,38 @@ class ManagerPanel {
 	/**
 	 * Nunca pisa una resolución real (prioridad 20, corre después de que
 	 * WordPress ya intentó su propia cookie de auth) — si `$user_id` ya
-	 * viene con algo, se devuelve tal cual. Alcance real: cualquier request
-	 * al sitio con la cookie del panel puesta queda "logueada" para
-	 * capabilities/nonces/AJAX/REST — nunca abre wp-admin (no se emite
-	 * ninguna cookie de sesión real de WP acá).
+	 * viene con algo, se devuelve tal cual. Acotado a los requests que
+	 * realmente lo necesitan, ver `request_needs_panel_auth()` — nunca abre
+	 * wp-admin (no se emite ninguna cookie de sesión real de WP acá).
 	 */
 	public static function maybe_authenticate_from_cookie( $user_id ) {
-		if ( $user_id ) {
+		if ( $user_id || ! self::request_needs_panel_auth() ) {
 			return $user_id;
 		}
 		return ManagerAuth::current_user_id() ?: $user_id;
+	}
+
+	/**
+	 * true solo para los dos casos que de verdad necesitan que la cookie del
+	 * panel cuente como "logueado" fuera de `maybe_render()` (que ya hace su
+	 * propio `wp_set_current_user()` para la request de la página del panel
+	 * en sí — este chequeo cubre además esa MISMA request, antes de que
+	 * `template_redirect` llegue a `maybe_render()`, y la request AJAX
+	 * separada del escaneo de QR). Se apoya en `$_SERVER`/`$_GET` crudos (no
+	 * en `get_query_var()`) porque `determine_current_user` puede disparar
+	 * antes de que WordPress termine de parsear la request actual.
+	 */
+	private static function request_needs_panel_auth(): bool {
+		if ( wp_doing_ajax() && ( $_REQUEST['action'] ?? '' ) === 'amir_field_scan_lookup' ) {
+			return true;
+		}
+
+		if ( ! empty( $_GET[ self::QUERY_VAR ] ) ) {
+			return true;
+		}
+
+		$path = parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH ) ?: '';
+		return (bool) preg_match( '#(^|/)gestor(/|$)#', $path );
 	}
 
 	public static function add_rewrite_rules(): void {

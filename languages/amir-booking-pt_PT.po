@@ -576,3 +576,5 @@ msgstr "A nova data não é conveniente? Escreva para nós e resolvemos."
 msgid "🔄 Tu reserva fue reprogramada — %s"
 msgstr "🔄 Sua reserva foi reagendada — %s"
 
+msgid "Pago no completado"
+msgstr "Pagamento não concluído"

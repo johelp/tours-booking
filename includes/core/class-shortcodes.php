@@ -368,6 +368,7 @@ class Shortcodes {
                 'awaiting_payment'       => array( 'label' => __( 'Lista para pagar',        'amir-booking' ), 'color' => '#BA7517', 'bg' => '#fef9ec', 'icon' => '💳' ),
                 'date_requested'         => array( 'label' => __( 'Solicitud recibida',      'amir-booking' ), 'color' => '#1a6fa8', 'bg' => '#e8f4ff', 'icon' => '📅' ),
                 'date_request_rejected'  => array( 'label' => __( 'Solicitud no confirmada',  'amir-booking' ), 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '❌' ),
+                'payment_expired'        => array( 'label' => __( 'Pago no completado',      'amir-booking' ), 'color' => '#6b7280', 'bg' => '#f3f4f6', 'icon' => '⌛' ),
                 'cancelled_client'       => array( 'label' => __( 'Cancelada',               'amir-booking' ), 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '❌' ),
                 'cancelled_weather'      => array( 'label' => __( 'Cancelada (clima)',       'amir-booking' ), 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '🌧' ),
                 'cancelled_min_pax'      => array( 'label' => __( 'Cancelada (cupo)',        'amir-booking' ), 'color' => '#dc2626', 'bg' => '#fef2f2', 'icon' => '❌' ),

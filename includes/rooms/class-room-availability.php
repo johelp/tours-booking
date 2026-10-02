@@ -56,12 +56,25 @@ final class RoomAvailability {
 
 		global $wpdb;
 
-		$sql  = "SELECT check_in_date, check_out_date FROM {$wpdb->prefix}flow_room_bookings
-		          WHERE room_id = %d AND status IN ('pending','confirmed')";
+		// Cupo de reservas impagas ya vencidas: liberarlo acá (máx. 1 vez por
+		// minuto) en vez de esperar al cron horario — ver PendingExpiry.
+		\AmirBooking\Core\PendingExpiry::release( true );
+
+		// El estado que manda es el de la reserva (amir_bookings.status), NO
+		// el de flow_room_bookings.status: esa fila se crea 'pending' y nadie
+		// la actualiza nunca — antes, una reserva de habitación cancelada,
+		// vencida o con el pago rechazado dejaba las fechas bloqueadas para
+		// siempre. Se cuentan solo las reservas que de verdad retienen la
+		// habitación.
+		$sql  = "SELECT frb.check_in_date, frb.check_out_date
+		           FROM {$wpdb->prefix}flow_room_bookings frb
+		           INNER JOIN {$wpdb->prefix}amir_bookings b ON b.id = frb.booking_id
+		          WHERE frb.room_id = %d
+		            AND b.status IN ('pending','confirmed','awaiting_payment','cancellation_requested','completed')";
 		$args = [ $room_id ];
 
 		if ( $exclude_booking_id !== null ) {
-			$sql   .= ' AND booking_id != %d';
+			$sql   .= ' AND frb.booking_id != %d';
 			$args[] = $exclude_booking_id;
 		}
 

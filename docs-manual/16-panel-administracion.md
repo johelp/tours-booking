@@ -46,8 +46,9 @@ Ves toda la información en tarjetas: tour reservado, datos del cliente (con bot
 
 Las acciones disponibles cambian según el estado de la reserva:
 
-- **Pendiente**: podés confirmarla manualmente (por si el aviso automático de la pasarela no llegó) o reenviar el email de confirmación.
+- **Pendiente**: si el cliente tuvo un pago rechazado, en las notas internas queda cada intento con su motivo. Podés confirmarla manualmente (por si el aviso automático de la pasarela no llegó) o reenviar el email de confirmación.
 - **Esperando pago**: reenviar el link de pago.
+- **Vencida (sin pago)**: la reserva no se pagó a tiempo (o el pago fue rechazado y se agotó el plazo de gracia) y el cupo ya se liberó. No hay nada que reembolsar. Si el cliente igual llega a pagar más tarde, el sistema la recupera solo si el cupo sigue libre, o reembolsa el pago (ver capítulo [10](10-pasarelas-de-pago.md)).
 - **Solicitud de cancelación**: el sistema te muestra la política de reembolso calculada según los días de anticipación, y podés **aprobar** (con una nota opcional) o **rechazar** la solicitud.
 - **Confirmada**: podés cancelarla por clima o por mínimo de pasajeros no alcanzado (con reembolso completo y aviso automático al cliente), reprogramarla a otra fecha/horario del mismo tour, o descargar su voucher en PDF.
 

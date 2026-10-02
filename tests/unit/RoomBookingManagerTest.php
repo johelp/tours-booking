@@ -110,6 +110,53 @@ final class RoomBookingManagerTest extends TestCase {
 		$this->assertTrue( $result->success );
 	}
 
+	// ── Cupones (hallazgo de auditoría de seguridad, 2026-09-24) ────────────
+	// mark_used() ahora es atómico y se llama DENTRO de la transacción, antes
+	// del COMMIT — si el cupón se agotó justo antes (ganado por otra request
+	// concurrente), la reserva completa se revierte en vez de quedar
+	// confirmada con un descuento que ya no correspondía.
+
+	private function coupon_row( array $overrides = [] ): object {
+		return (object) array_merge( [
+			'id'           => 7,
+			'code'         => 'PROMO1',
+			'active'       => 1,
+			'valid_from'   => null,
+			'valid_until'  => null,
+			'usage_limit'  => 1,
+			'times_used'   => 0,
+			'tour_id'      => null,
+			'room_id'      => null,
+			'discount_type'  => 'fixed',
+			'discount_value' => 50.0,
+		], $overrides );
+	}
+
+	public function test_applies_a_valid_coupon_and_marks_it_used(): void {
+		$GLOBALS['wpdb']->room_row   = $this->activeRoom();
+		$GLOBALS['wpdb']->coupon_row = $this->coupon_row();
+
+		$result = ( new RoomBookingManager() )->create_pending( $this->validData( [ 'coupon_code' => 'promo1' ] ) );
+
+		$this->assertTrue( $result->success );
+		$this->assertSame( 250.00, $result->total_mxn ); // 300 - 50 de descuento
+	}
+
+	public function test_rolls_back_the_whole_booking_when_the_coupon_limit_was_exhausted_by_a_concurrent_request(): void {
+		$GLOBALS['wpdb']->room_row                        = $this->activeRoom();
+		$GLOBALS['wpdb']->coupon_row                      = $this->coupon_row(); // usage_limit=1, times_used=0: pasa validate()
+		$GLOBALS['wpdb']->coupon_mark_used_rows_affected  = 0; // pero otra request ya lo usó justo antes del commit
+
+		$result = ( new RoomBookingManager() )->create_pending( $this->validData( [ 'coupon_code' => 'promo1' ] ) );
+
+		$this->assertFalse( $result->success );
+		$this->assertStringContainsString( 'límite', $result->error );
+
+		// La reserva no debe quedar confirmada/comprometida — se revirtió.
+		$this->assertContains( 'ROLLBACK', $GLOBALS['wpdb']->queries );
+		$this->assertNotContains( 'COMMIT', $GLOBALS['wpdb']->queries );
+	}
+
 	public function test_requires_policy_and_terms_acceptance(): void {
 		$GLOBALS['wpdb']->room_row = $this->activeRoom();
 

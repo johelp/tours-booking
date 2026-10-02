@@ -28,6 +28,10 @@ class AvailabilityEngine {
      * Verifica disponibilidad de una fecha + horario específico.
      */
     public function check( int $tour_id, string $date, int $schedule_id ): AvailabilityResult {
+        // Cupo de reservas impagas ya vencidas: liberarlo acá (máx. 1 vez por
+        // minuto) en vez de esperar al cron horario — ver PendingExpiry.
+        PendingExpiry::release( true );
+
         $tour = $this->get_tour( $tour_id );
         if ( ! $tour ) {
             return AvailabilityResult::unavailable( 'Tour no encontrado', 0 );
@@ -87,6 +91,8 @@ class AvailabilityEngine {
      * Retorna array [ 'YYYY-MM-DD' => [ 'available' => bool, 'slots' => int ] ]
      */
     public function get_month_availability( int $tour_id, int $year, int $month ): array {
+        PendingExpiry::release( true );
+
         $tour = $this->get_tour( $tour_id );
         if ( ! $tour ) {
             return [];

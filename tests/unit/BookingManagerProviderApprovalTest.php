@@ -129,8 +129,39 @@ final class BookingManagerProviderApprovalTest extends TestCase {
         $ok      = $manager->confirm( 1, 'ch_balance_123' );
 
         $this->assertTrue( $ok );
-        $this->assertArrayHasKey( 'balance_paid_at', $fake->last_update_data );
+        // Query atómica condicionada a balance_paid_at IS NULL (hallazgo de
+        // auditoría de seguridad, 2026-09-24, ver class-coupon-engine.php/
+        // class-booking-manager.php) — $wpdb->update() no puede expresar
+        // "IS NULL" en el WHERE, por eso no pasa por last_update_data.
+        $sql = $fake->queries[0] ?? '';
+        $this->assertStringContainsString( 'balance_paid_at', $sql );
+        $this->assertStringContainsString( 'IS NULL', $sql );
         $this->assertArrayNotHasKey( 'status', $fake->last_update_data );
+    }
+
+    /**
+     * confirm() puede llegar dos veces casi simultáneas para la misma
+     * reserva — el webhook de la pasarela y el POST /confirm-payment que
+     * dispara el propio cliente al ver éxito en el navegador son caminos
+     * redundantes A PROPÓSITO (hallazgo de auditoría de seguridad,
+     * 2026-09-24). El UPDATE que fija stripe_charge_id/gateway_charge_id
+     * ahora está condicionado al status leído al principio de la función —
+     * si otro proceso ya movió la reserva (0 filas afectadas), confirm()
+     * debe abortar sin ejecutar finalize_confirmation() ni disparar
+     * amir_provider_booking_approved/amir_booking_confirmed una segunda vez
+     * (evita duplicar la fila de liquidación en amir_provider_payouts/
+     * amir_partner_payouts).
+     */
+    public function test_confirm_aborts_when_another_concurrent_call_already_won_the_race(): void {
+        $fake                          = $GLOBALS['wpdb'];
+        $fake->booking_row             = $this->booking_row(); // status 'pending'
+        $fake->var_result              = 0; // sin proveedor activo
+        $fake->next_update_rows_affected = 0; // otra llamada a confirm() ya ganó la carrera
+
+        $manager = new BookingManager();
+        $ok      = $manager->confirm( 1, 'ch_123' );
+
+        $this->assertFalse( $ok );
     }
 
     // ── provider_approve() / provider_reject(): idempotencia ───────────────

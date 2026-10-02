@@ -194,6 +194,7 @@ chmod 755 wp-content/uploads/amir-booking/
 | `amir_admin_email` | Email para alertas del operador | admin WP |
 | `amir_wa_phone` | Número WhatsApp (solo dígitos) | `5219831649541` |
 | `amir_pending_expire_mins` | Minutos para expirar pending | `15` |
+| `amir_payment_grace_mins` | Plazo de gracia (min) tras un pago rechazado: mantiene el cupo y el cliente recibe un email para actualizar la tarjeta. `0` = sin plazo | `360` |
 | `amir_review_delay_days` | Días post-tour para email reseña | `1` |
 | `amir_usd_rate_mode` | `auto` o `manual` | `auto` |
 | `amir_usd_rate_manual` | Tipo de cambio manual USD→MXN | `17` |

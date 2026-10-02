@@ -270,6 +270,29 @@ class SettingsPage {
                 <input type="number" name="amir_pending_expire_mins" value="<?php echo esc_attr(get_option('amir_pending_expire_mins','15')); ?>" min="5" max="60" />
               </div>
               <div class="ab-field">
+                <label><?php echo esc_html( $this->tt( 'Plazo de gracia tras un pago rechazado', 'Grace period after a declined payment' ) ); ?></label>
+                <?php $grace_now = (int) get_option( 'amir_payment_grace_mins', 360 ); ?>
+                <select name="amir_payment_grace_mins">
+                  <?php foreach ( [
+                      0    => $this->tt( 'Sin plazo (usar el vencimiento normal)', 'None (use the normal expiry)' ),
+                      60   => $this->tt( '1 hora', '1 hour' ),
+                      120  => $this->tt( '2 horas', '2 hours' ),
+                      240  => $this->tt( '4 horas', '4 hours' ),
+                      360  => $this->tt( '6 horas', '6 hours' ),
+                      720  => $this->tt( '12 horas', '12 hours' ),
+                      1440 => $this->tt( '24 horas', '24 hours' ),
+                  ] as $mins => $label ) : ?>
+                    <option value="<?php echo (int) $mins; ?>" <?php selected( $grace_now, $mins ); ?>><?php echo esc_html( $label ); ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <p class="description"><?php echo esc_html( $this->tt(
+                    'Si el pago de una reserva es rechazado (tarjeta mal cargada, fondos, banco), se le guarda el lugar este tiempo y el cliente recibe un email con un link para actualizar la tarjeta — como hacen Vrbo o Booking. No aplica a salidas del mismo día, y nunca se extiende hasta el día del tour.',
+                    'If a booking\'s payment is declined (wrong card details, funds, bank), its spot is held this long and the customer gets an email with a link to update the card — like Vrbo or Booking. It does not apply to same-day departures and never extends into the tour day.'
+                ) ); ?></p>
+              </div>
+            </div>
+            <div class="ab-field-row">
+              <div class="ab-field">
                 <label><?php echo esc_html( $this->tt( 'Días post-tour para email de reseña', 'Days after tour for review email' ) ); ?></label>
                 <input type="number" name="amir_review_delay_days" value="<?php echo esc_attr(get_option('amir_review_delay_days','1')); ?>" min="1" max="7" />
               </div>
@@ -782,6 +805,7 @@ class SettingsPage {
             'amir_admin_email'             => 'sanitize_email',
             'amir_wa_phone'                => 'sanitize_text_field',
             'amir_pending_expire_mins'     => 'absint',
+            'amir_payment_grace_mins'      => 'absint',
             'amir_review_delay_days'       => 'absint',
             'amir_usd_rate_mode'           => 'sanitize_key',
             'amir_usd_rate_manual'         => 'floatval',
