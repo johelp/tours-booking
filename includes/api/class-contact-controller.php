@@ -37,6 +37,17 @@ class ContactController {
 		return (string) get_option( 'amir_admin_email', get_option( 'admin_email' ) );
 	}
 
+	/**
+	 * Prefijo del asunto con el nombre de la empresa configurado
+	 * (amir_company_name) — antes estaba fijo "[Caliafarm]", así que
+	 * cualquier otra instalación (ej. Visit Sicily Experiences) recibía los
+	 * emails con la marca de otro operador.
+	 */
+	private function subject_prefix(): string {
+		$company = trim( (string) get_option( 'amir_company_name', '' ) );
+		return '[' . ( $company !== '' ? $company : get_bloginfo( 'name' ) ) . ']';
+	}
+
 	private function reply_to( string $name, string $email ): array {
 		return [ 'Reply-To: ' . $name . ' <' . $email . '>' ];
 	}
@@ -73,6 +84,9 @@ class ContactController {
 		$email   = sanitize_email( $request->get_param( 'email' ) ?? '' );
 		$phone   = sanitize_text_field( $request->get_param( 'phone' ) ?? '' );
 		$message = sanitize_textarea_field( $request->get_param( 'message' ) ?? '' );
+		// Opcional: el frontend puede nombrar qué tipo de consulta es (ej.
+		// "Private tour request"), para que el equipo la reconozca en la bandeja.
+		$topic   = mb_substr( sanitize_text_field( $request->get_param( 'subject' ) ?? '' ), 0, 120 );
 
 		if ( ! $name || ! is_email( $email ) || ! $message ) {
 			return new \WP_REST_Response( [ 'error' => 'missing_fields' ], 422 );
@@ -83,7 +97,7 @@ class ContactController {
 			return new \WP_REST_Response( [ 'error' => 'not_configured' ], 500 );
 		}
 
-		$subject = sprintf( '[Caliafarm] New contact message from %s', $name );
+		$subject = sprintf( '%s %s from %s', $this->subject_prefix(), $topic !== '' ? $topic : 'New contact message', $name );
 		$body    = sprintf(
 			"Name: %s\nEmail: %s\nPhone: %s\n\nMessage:\n%s",
 			$name, $email, $phone ?: '—', $message
@@ -93,13 +107,13 @@ class ContactController {
 
 		$this->log_inquiry(
 			'contact_inquiry',
-			'New contact message',
+			$topic !== '' ? $topic : 'New contact message',
 			sprintf( '%s (%s): %s', $name, $email, mb_substr( $message, 0, 140 ) ),
 			[ 'name' => $name, 'email' => $email, 'phone' => $phone, 'message' => $message, 'email_sent' => $sent ]
 		);
 
 		if ( ! $sent ) {
-			error_log( 'Caliafarm contact form: wp_mail() failed to send to ' . $to );
+			error_log( 'TourFlow contact form: wp_mail() failed to send to ' . $to );
 			return new \WP_REST_Response( [ 'error' => 'send_failed' ], 502 );
 		}
 
@@ -128,7 +142,7 @@ class ContactController {
 			return new \WP_REST_Response( [ 'error' => 'not_configured' ], 500 );
 		}
 
-		$subject = sprintf( '[Caliafarm] Private group inquiry from %s (%s people)', $name, $group_size );
+		$subject = sprintf( '%s Private group inquiry from %s (%s people)', $this->subject_prefix(), $name, $group_size );
 		$body    = sprintf(
 			"Name: %s\nEmail: %s\nPhone: %s\nGroup size: %s\nPreferred date: %s\nAlternative date: %s\n\nNotes:\n%s",
 			$name, $email, $phone ?: '—', $group_size, $preferred_date, $alternative_date ?: '—', $notes ?: '—'
@@ -153,7 +167,7 @@ class ContactController {
 		);
 
 		if ( ! $sent ) {
-			error_log( 'Caliafarm groups inquiry: wp_mail() failed to send to ' . $to );
+			error_log( 'TourFlow groups inquiry: wp_mail() failed to send to ' . $to );
 			return new \WP_REST_Response( [ 'error' => 'send_failed' ], 502 );
 		}
 
