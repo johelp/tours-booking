@@ -39,7 +39,7 @@ class ElementorIntegration {
 
     public function add_category( $elements_manager ): void {
         $elements_manager->add_category( 'amir-booking', [
-            'title' => __( 'Amir Adventours', 'amir-booking' ),
+            'title' => __( 'TourFlow', 'amir-booking' ),
             'icon'  => 'eicon-calendar',
         ] );
     }
@@ -58,6 +58,13 @@ class ElementorIntegration {
         $dynamic_tags_manager->register( new DynamicTagNameEn() );
         $dynamic_tags_manager->register( new DynamicTagMinAge() );
         $dynamic_tags_manager->register( new DynamicTagGallery() );
+        $dynamic_tags_manager->register( new DynamicTagName() );
+        $dynamic_tags_manager->register( new DynamicTagDescription() );
+        $dynamic_tags_manager->register( new DynamicTagWhatToExpect() );
+        $dynamic_tags_manager->register( new DynamicTagMeetingPoint() );
+        $dynamic_tags_manager->register( new DynamicTagIncludes() );
+        $dynamic_tags_manager->register( new DynamicTagExcludes() );
+        $dynamic_tags_manager->register( new DynamicTagItinerary() );
     }
 
     public function loop_query_args( array $query_args, $widget ): array {

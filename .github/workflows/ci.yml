@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: [ '8.1', '8.2' ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Instalar dependencias (composer)
+        run: composer install --prefer-dist --no-progress
+
+      - name: Lint de sintaxis PHP (includes/)
+        run: |
+          find includes amir-booking.php -name "*.php" -print0 \
+            | xargs -0 -n1 php -l
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit

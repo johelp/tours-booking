@@ -28,6 +28,8 @@ class CronManager {
     public function run_hourly_tasks(): void {
         $this->release_expired_pending();
         $this->refresh_exchange_rate();
+        $this->send_provider_reminders();
+        $this->expire_provider_pending();
     }
 
     // ── Tareas diarias ────────────────────────────────────────────────────
@@ -128,7 +130,7 @@ class CronManager {
         if ( $admin_email ) {
             wp_mail(
                 $admin_email,
-                sprintf( '[Amir Booking] Alerta mínimo pax: %s el %s', $tour->name_es, $date ),
+                sprintf( '[TourFlow] Alerta mínimo pax: %s el %s', $tour->name_es, $date ),
                 sprintf(
                     "El tour '%s' el %s tiene %d de %d pasajeros mínimos.\n\nRevisar en el panel: %s",
                     $tour->name_es,
@@ -215,5 +217,66 @@ class CronManager {
     private function mark_completed_bookings(): void {
         $manager = new BookingManager();
         $manager->mark_completed_bookings();
+    }
+
+    // ── Marketplace de proveedores (§ 11 CONTRIBUTING.md) ──────────────────
+    // Ambas corren en el hook horario (no el diario, demasiado grosero para
+    // un SLA medido en horas) — molde de send_tour_reminders() (flag
+    // "_sent_at" para no reenviar) y release_expired_pending().
+
+    /**
+     * Recordatorio al proveedor a las N horas (amir_provider_reminder_hours,
+     * default 24) sin respuesta — mismo email, mismo token (no se regenera).
+     */
+    private function send_provider_reminders(): void {
+        global $wpdb;
+
+        $reminder_hours = (int) get_option( 'amir_provider_reminder_hours', 24 );
+        $cutoff         = date( 'Y-m-d H:i:s', current_time( 'timestamp' ) - ( $reminder_hours * HOUR_IN_SECONDS ) );
+
+        $ids = $wpdb->get_col( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}amir_bookings
+             WHERE status = 'pending_provider_approval'
+               AND provider_reminder_sent_at IS NULL
+               AND provider_notified_at < %s",
+            $cutoff
+        ) );
+
+        foreach ( $ids as $id ) {
+            do_action( 'amir_send_provider_reminder_email', (int) $id );
+
+            $wpdb->update(
+                "{$wpdb->prefix}amir_bookings",
+                [ 'provider_reminder_sent_at' => current_time( 'mysql' ) ],
+                [ 'id' => (int) $id ],
+                [ '%s' ],
+                [ '%d' ]
+            );
+        }
+    }
+
+    /**
+     * Auto-cancelación a las N horas (amir_provider_response_hours, default
+     * 48) sin respuesta del proveedor — a diferencia de release_expired_pending()
+     * no puede ser un UPDATE crudo: cada reserva necesita reembolso + email,
+     * así que se procesa una por una vía BookingManager::provider_reject().
+     */
+    private function expire_provider_pending(): void {
+        global $wpdb;
+
+        $response_hours = (int) get_option( 'amir_provider_response_hours', 48 );
+        $cutoff         = date( 'Y-m-d H:i:s', current_time( 'timestamp' ) - ( $response_hours * HOUR_IN_SECONDS ) );
+
+        $ids = $wpdb->get_col( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}amir_bookings
+             WHERE status = 'pending_provider_approval'
+               AND provider_notified_at < %s",
+            $cutoff
+        ) );
+
+        $manager = new BookingManager();
+        foreach ( $ids as $id ) {
+            $manager->provider_reject( (int) $id, 'provider_expired' );
+        }
     }
 }

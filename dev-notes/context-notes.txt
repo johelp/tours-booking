@@ -1,0 +1,85 @@
+## Contexto de proyecto — Amir Booking Plugin (WordPress)
+
+Eres un asistente de desarrollo PHP/WordPress. Continuamos el desarrollo de un plugin de reservas de tours llamado **Amir Booking**.
+
+### Ubicación del código
+- Ruta local: `C:\Users\Rentalmotion Sierra\Downloads\amir-booking-v1.0.14\amir-booking\`
+- Versión actual del código: **1.0.24**
+- ZIP instalable más reciente: `C:\Users\Rentalmotion Sierra\Downloads\amir-booking-v1.0.24.zip`
+
+### Stack técnico
+- PHP **7.4** mínimo (sin union types, sin nullsafe operator `?->`, sin named arguments)
+- WordPress 6.0+
+- Namespace raíz: `AmirBooking\`
+- REST API en `/wp-json/amir/v1/`
+- Frontend booking: React (buildeado en `assets/js/booking-widget.js`)
+- DB version: `1.1.0` (constante `AMIR_DB_VERSION`)
+- Compatible con PHP 7.4 — IMPORTANTE: no usar sintaxis PHP 8.0+
+
+### Estructura de archivos clave
+```
+amir-booking/
+├── amir-booking.php                          ← Entry point, constantes
+├── includes/
+│   ├── core/
+│   │   ├── class-plugin.php                  ← Singleton, registra todo
+│   │   ├── class-installer.php               ← Tablas DB, activación
+│   │   ├── class-booking-manager.php         ← Lógica de reservas
+│   │   ├── class-voucher-generator.php       ← PDF/HTML voucher
+│   │   ├── class-shortcodes.php              ← [amir_booking], [amir_verify_booking]
+│   │   └── class-license-manager.php        ← PENDIENTE CREAR (stub SaaS)
+│   ├── admin/
+│   │   ├── class-admin-menu.php
+│   │   ├── class-settings-page.php           ← Brand logo, color, company name, recs
+│   │   ├── class-bookings-page.php
+│   │   ├── class-dashboard-page.php
+│   │   └── class-reports-page.php
+│   ├── api/
+│   │   ├── class-booking-controller.php
+│   │   ├── class-availability-controller.php
+│   │   ├── class-tours-controller.php
+│   │   └── class-prices-controller.php
+│   ├── emails/
+│   │   └── class-email-dispatcher.php        ← wrap_template usa brand options
+│   └── partners/
+│       └── class-partner-tracker.php
+```
+
+### Tablas DB (prefijo: `{$wpdb->prefix}amir_`)
+- `amir_tours`, `amir_tour_schedules`, `amir_prices`
+- `amir_availability_rules`, `amir_partners`, `amir_bookings`, `amir_notifications`
+
+### Opciones WordPress relevantes
+- `amir_brand_logo_url`, `amir_brand_logo_id`, `amir_brand_color`
+- `amir_company_name`, `amir_company_tagline_es/en`
+- `amir_email_recs_es/en`, `amir_voucher_recs_es/en`
+- `amir_stripe_mode`, `amir_stripe_pk/sk_test/live`
+- `amir_currency`, `amir_admin_email`, `amir_wa_phone`
+- `amir_verify_page_id`
+
+### Roles y capacidades
+- `manage_options` → Administrador WordPress (acceso total)
+- `manage_amir_booking` → Tour Manager (reservas, disponibilidad, partners)
+- PENDIENTE: rol `Operador/Business Manager` con `manage_amir_operator` (crear tours, withdraws, reportes financieros)
+
+### Decisiones de arquitectura ya tomadas
+- Modelo comercial: **SaaS gestionado** (WordPress Multisite propio). Dejar hooks para licenciamiento futuro.
+- Domain mapping: dominios personalizados por cliente via WordPress Multisite nativo + Caddy/Let's Encrypt
+- PHP 7.4 compat estricta — en sesiones anteriores se corrigieron union types y nullsafe operators
+- ZIP se construye con .NET ZipArchive (forward slashes) — script en `Downloads\build-zip2.ps1`
+- El script `build-zip2.ps1` excluye: `.claude`, `node_modules`, `.git`, `react-src`
+
+### Tarea de esta sesión: **WordPress Multisite Support**
+
+Objetivo: adaptar el plugin para funcionar correctamente en red Multisite sin romper instalaciones de sitio simple.
+
+Cambios principales a implementar:
+1. **`class-installer.php`** — `activate()` debe detectar si es Multisite y crear tablas para cada site o solo el actual. Usar `is_multisite()` y `switch_to_blog()` si aplica.
+2. **Opciones** — Migrar todas las opciones de plugin de `get_option()` a `get_blog_option( get_current_blog_id(), ... )` donde corresponda, para que cada site tenga su propia configuración.
+3. **Network activation** — Hook `wpmu_new_blog` para crear tablas cuando se añade un nuevo site a la red.
+4. **`LicenseManager` stub** — Crear `includes/core/class-license-manager.php` con `is_active()` → `true`, `get_plan()` → `'pro'`, `get_site_key()` → `'saas-managed'`.
+5. **Network Admin page** — Página en el panel de red para ver todos los sites activos, plan asignado (stub), y activar/desactivar el plugin por site.
+6. **Compatibilidad backward** — Todo debe seguir funcionando en instalación de sitio simple (sin Multisite).
+7. **Bump versión** → `1.0.25`, `AMIR_DB_VERSION` → `1.2.0` si hay cambios de schema.
+
+Comenzar leyendo `includes/core/class-installer.php` y `amir-booking.php` para entender el estado actual antes de proponer cambios.

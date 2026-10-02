@@ -15,6 +15,13 @@ class NotificationBadge {
     }
 
     public function get_notifications(): void {
+        // Mismo nonce 'wp_rest' que ya localiza AdminMenu::enqueue_admin_assets()
+        // como amirAdminData.nonce — este endpoint admin-ajax.php se mantiene
+        // solo por compatibilidad con bundles viejos (el actual ya usa REST,
+        // ver class-notifications-controller.php), pero le faltaba CSRF.
+        if ( ! check_ajax_referer( 'wp_rest', 'nonce', false ) ) {
+            wp_send_json_error( 'Invalid nonce', 403 );
+        }
         if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
             wp_send_json_error( 'Unauthorized', 403 );
         }
@@ -34,6 +41,9 @@ class NotificationBadge {
     }
 
     public function mark_read(): void {
+        if ( ! check_ajax_referer( 'wp_rest', 'nonce', false ) ) {
+            wp_send_json_error( 'Invalid nonce', 403 );
+        }
         if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_amir_booking' ) ) {
             wp_send_json_error( 'Unauthorized', 403 );
         }

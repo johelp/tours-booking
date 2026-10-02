@@ -96,12 +96,15 @@ class AvailabilityController {
         $pricing = new \AmirBooking\Core\PricingEngine();
         $result  = [];
 
+        $lang = sanitize_key( $request->get_param( 'lang' ) ?: 'es' );
+
         foreach ( $schedules as $schedule ) {
             $check    = $engine->check( $tour_id, $date, (int) $schedule->id );
             $result[] = [
-                'schedule_id'    => (int) $schedule->id,
+                'id'             => (int) $schedule->id,
                 'time_start'     => $schedule->time_start,
                 'time_end'       => $schedule->time_end,
+                'label'          => $lang === 'en' ? $schedule->label_en : $schedule->label_es,
                 'label_es'       => $schedule->label_es,
                 'label_en'       => $schedule->label_en,
                 'available'      => $check->available,

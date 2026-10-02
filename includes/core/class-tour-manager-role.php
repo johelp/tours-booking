@@ -4,12 +4,16 @@ namespace AmirBooking\Core;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Rol "Tour Manager" para Amir Adventours.
+ * Rol "Tour Manager" (gestor de tienda) para TourFlow.
  *
  * Permisos:
- *  - Gestión completa de amir_tour (CPT)
- *  - Acceso al panel de Amir Booking (reservas, partners, disponibilidad)
- *  - SIN acceso a posts, páginas, usuarios, plugins, opciones de WP
+ *  - Gestión completa de amir_tour (CPT) y de posts de blog — ambos
+ *    comparten capacidades (capability_type='post' en TourPostType), así
+ *    que no hay forma de separarlas sin re-registrar el CPT con un
+ *    capability_type propio; ver nota en get_capabilities().
+ *  - Acceso al panel de TourFlow (reservas, partners, disponibilidad)
+ *  - SIN acceso a Configuración/Personalización (solo-admin, ver
+ *    AdminMenu::add_menus()), páginas, usuarios, plugins, opciones de WP
  *
  * Al hacer login, redirige directo al dashboard del plugin.
  */
@@ -38,7 +42,17 @@ class TourManagerRole {
             'read'                       => true,
             'upload_files'               => true,   // Para galería de fotos
 
-            // CPT amir_tour usa capability_type='post' → caps estándar de WordPress
+            // CPT amir_tour usa capability_type='post' → estas son las MISMAS
+            // capacidades que WordPress usa para posts de blog normales, no
+            // hay forma de dárselas para tours sin dárselas también para el
+            // blog. Antes había una clave 'edit_posts' duplicada (true acá,
+            // false más abajo en "denegados") — en un array literal de PHP la
+            // última gana, así que el Tour Manager terminaba SIN poder editar
+            // tours en absoluto, su función principal. Nadie lo notó porque
+            // se probó siempre con la cuenta de Administrador. Ahora se
+            // resuelve a `true` a propósito: el gestor de tienda puede
+            // gestionar tours Y cargar posts de blog con el menú "Entradas"
+            // normal de WordPress (pedido explícito del cliente).
             'edit_posts'                 => true,
             'edit_others_posts'          => true,
             'publish_posts'              => true,
@@ -46,7 +60,6 @@ class TourManagerRole {
             'delete_posts'               => true,
             'delete_published_posts'     => true,
             'edit_published_posts'       => true,
-            'upload_files'               => true,
 
             // Taxonomías del CPT
             'manage_amir_tour_category'  => true,
@@ -57,8 +70,9 @@ class TourManagerRole {
             'view_amir_reports'          => true,
             'manage_amir_partners'       => true,
 
-            // Denegados explícitamente
-            'edit_posts'                 => false,
+            // Denegados explícitamente — Configuración/Personalización quedan
+            // afuera vía manage_options (AdminMenu::add_menus() ya no usa el
+            // capability compartido para esos dos submenús puntuales).
             'edit_pages'                 => false,
             'manage_options'             => false,
             'install_plugins'            => false,
@@ -69,6 +83,19 @@ class TourManagerRole {
 
     // ── Hooks de comportamiento ───────────────────────────────────────────
 
+    // Bug real corregido 2026-08-04 ("Sorry, you are not allowed to access
+    // this page" al entrar a Tours, reportado probando en vivo en
+    // caliafarm.com): esta clase registraba SU PROPIA copia del submenú
+    // Tours/Nuevo tour (add_tour_submenu(), ya eliminado) apuntando al mismo
+    // slug edit.php?post_type=amir_tour que AdminMenu::add_menus() ya
+    // registra — pero con la capacidad 'edit_amir_tours', que nunca se le
+    // otorga a NINGÚN rol (ni siquiera Administrador; get_capabilities() de
+    // acá abajo usa 'edit_posts', no 'edit_amir_tours' — quedó de alguna
+    // versión anterior del rol y nadie lo notó porque WordPress, al tener
+    // dos registros para el mismo slug, a veces resuelve el acceso contra
+    // el que tiene la capacidad rota). AdminMenu::add_menus() ya cubre
+    // Tours/Nuevo tour para todos los roles (Tour Manager incluido, vía
+    // 'manage_amir_booking') — este duplicado no hacía falta.
     public static function register_hooks(): void {
         // Redirigir al login exitoso
         add_filter( 'login_redirect',     [ __CLASS__, 'redirect_after_login'  ], 10, 3 );
@@ -76,8 +103,6 @@ class TourManagerRole {
         add_action( 'admin_init',         [ __CLASS__, 'redirect_from_wp_admin' ] );
         // Ocultar menús innecesarios
         add_action( 'admin_menu',         [ __CLASS__, 'hide_unrelated_menus'  ], 999 );
-        // Mostrar el CPT dentro de nuestro menú
-        add_action( 'admin_menu',         [ __CLASS__, 'add_tour_submenu'      ], 10 );
         // Quitar "Ver el sitio" y noticias de WP del adminbar
         add_action( 'admin_bar_menu',     [ __CLASS__, 'clean_admin_bar'       ], 999 );
         // Capacidades dinámicas para el CPT
@@ -104,18 +129,22 @@ class TourManagerRole {
         $page      = $_GET['page'] ?? '';
         $post_type = $_GET['post_type'] ?? ( $screen ? $screen->post_type : '' );
 
-        // Permitir: páginas del plugin + CPT amir_tour + media
+        // Permitir: páginas del plugin + CPT amir_tour + posts de blog + media.
+        // 'amir-settings'/'amir-personalization' quedan afuera a propósito —
+        // son solo-admin (ver AdminMenu::add_menus()), un gestor de tienda no
+        // debe ni llegar a esas pantallas.
         $allowed_pages = [
             'amir-booking', 'amir-bookings-list', 'amir-availability',
-            'amir-partners', 'amir-reports', 'amir-settings',
+            'amir-partners', 'amir-reports',
         ];
 
         $allowed_screens = [ 'amir_tour', 'upload', 'media' ];
+        $allowed_post_types = [ 'amir_tour', 'post' ];
 
         if (
             ! empty($page) && in_array( $page, $allowed_pages, true ) ||
-            ! empty($post_type) && $post_type === 'amir_tour' ||
-            $screen && in_array( $screen->base, [ 'post', 'edit', 'media', 'upload' ], true ) && $post_type === 'amir_tour' ||
+            ! empty($post_type) && in_array( $post_type, $allowed_post_types, true ) ||
+            $screen && in_array( $screen->base, [ 'post', 'edit', 'media', 'upload' ], true ) && in_array( $post_type, $allowed_post_types, true ) ||
             $screen && in_array( $screen->id, $allowed_screens, true )
         ) {
             return; // Está en una página permitida
@@ -137,7 +166,8 @@ class TourManagerRole {
 
         $remove = [
             'index.php',           // Dashboard WP
-            'edit.php',            // Posts
+            // 'edit.php' (Posts) queda visible a propósito — el gestor de
+            // tienda puede cargar posts de blog (pedido explícito del cliente).
             'upload.php',          // Media (lo dejamos accesible via URL, solo ocultamos del menú)
             'edit.php?post_type=page',
             'edit-comments.php',
@@ -152,26 +182,6 @@ class TourManagerRole {
         foreach ( $remove as $item ) {
             remove_menu_page( $item );
         }
-    }
-
-    // ── Agregar CPT al menú del plugin ────────────────────────────────────
-
-    public static function add_tour_submenu(): void {
-        // El CPT se registró con show_in_menu=false, lo colocamos bajo nuestro menú
-        add_submenu_page(
-            'amir-booking',
-            __( 'Tours', 'amir-booking' ),
-            __( 'Tours (editar)', 'amir-booking' ),
-            'edit_amir_tours',
-            'edit.php?post_type=amir_tour'
-        );
-        add_submenu_page(
-            'amir-booking',
-            __( 'Nuevo tour', 'amir-booking' ),
-            __( '+ Nuevo tour', 'amir-booking' ),
-            'edit_amir_tours',
-            'post-new.php?post_type=amir_tour'
-        );
     }
 
     // ── Limpiar admin bar ─────────────────────────────────────────────────

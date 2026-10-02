@@ -1,0 +1,241 @@
+{
+  "tours": [
+    {
+      "name_es": "Snorkel al amanecer en la Bahía",
+      "name_en": "Sunrise Snorkeling in the Bay",
+      "slug": "snorkel-amanecer-bahia",
+      "price_model": "percapita",
+      "description_es": "Salida en lancha antes de que salga el sol para bucear con snorkel en los arrecifes de la bahía, cuando el agua está más calma y transparente. Incluye equipo completo y guía certificado.",
+      "description_en": "Boat departure before sunrise to snorkel the bay's reefs, when the water is calmest and clearest. Full gear and a certified guide included.",
+      "what_to_expect_es": "Recorrido de tres paradas de snorkel con distinta profundidad, apto para principiantes. El guía señala peces, tortugas y formaciones de coral en cada parada.",
+      "what_to_expect_en": "Three snorkel stops at different depths, beginner-friendly. The guide points out fish, turtles and coral formations at each stop.",
+      "highlights_es": ["Agua calma al amanecer", "Equipo incluido", "Guía certificado", "Grupos reducidos"],
+      "highlights_en": ["Calm sunrise water", "Gear included", "Certified guide", "Small groups"],
+      "includes_es": ["Equipo de snorkel", "Guía certificado", "Agua embotellada", "Fruta fresca"],
+      "includes_en": ["Snorkel gear", "Certified guide", "Bottled water", "Fresh fruit"],
+      "excludes_es": ["Transporte al muelle", "Fotos profesionales"],
+      "excludes_en": ["Transport to the dock", "Professional photos"],
+      "itinerary_stops": [
+        { "title_es": "Salida del muelle", "title_en": "Dock departure", "desc_es": "Encuentro en el muelle municipal, breve inducción de seguridad.", "desc_en": "Meet at the municipal dock, brief safety briefing.", "image_url": "", "is_start": true },
+        { "title_es": "Primer arrecife", "title_en": "First reef", "desc_es": "Parada de 30 minutos en aguas poco profundas.", "desc_en": "30-minute stop in shallow water.", "image_url": "", "is_start": false },
+        { "title_es": "Arrecife profundo", "title_en": "Deep reef", "desc_es": "Segunda parada, más profunda, para nadadores con experiencia.", "desc_en": "Second, deeper stop for experienced swimmers.", "image_url": "", "is_start": false }
+      ],
+      "detail_facts": [
+        { "icon": "🗣️", "label_es": "Idioma", "label_en": "Language", "value_es": "Español, English", "value_en": "Español, English" },
+        { "icon": "👥", "label_es": "Grupo", "label_en": "Group size", "value_es": "Hasta 12", "value_en": "Up to 12" },
+        { "icon": "⏱️", "label_es": "Duración", "label_en": "Duration", "value_es": "3 horas", "value_en": "3 hours" }
+      ],
+      "meeting_point_es": "Muelle municipal, frente a la farmacia",
+      "meeting_point_en": "Municipal dock, across from the pharmacy",
+      "meeting_lat": null, "meeting_lng": null,
+      "duration_minutes": 180,
+      "min_age": 6,
+      "allow_children": true, "allow_babies": true, "min_age_child": 6,
+      "max_capacity": 12, "min_passengers": 4,
+      "languages": ["Español", "English"],
+      "gallery_images": [
+        "https://picsum.photos/id/1015/1200/800.jpg",
+        "https://picsum.photos/id/1080/1200/800.jpg"
+      ],
+      "active_weekdays": [0, 1, 2, 3, 4, 5, 6],
+      "schedules": [
+        { "time_start": "06:00", "time_end": "09:00", "label_es": "Salida amanecer", "label_en": "Sunrise departure" },
+        { "time_start": "09:30", "time_end": "12:30", "label_es": "Salida media mañana", "label_en": "Mid-morning departure" }
+      ],
+      "prices": { "adult": 650, "child": 450, "baby": 0 }
+    },
+
+    {
+      "name_es": "Bici y cenote secreto",
+      "name_en": "Bike Ride to a Hidden Cenote",
+      "slug": "bici-cenote-secreto",
+      "price_model": "percapita",
+      "description_es": "Recorrido en bicicleta por caminos de selva hasta un cenote poco conocido, con tiempo libre para nadar. Solo para adultos por el terreno y la distancia.",
+      "description_en": "A jungle-trail bike ride to a lesser-known cenote, with free time to swim. Adults only due to terrain and distance.",
+      "what_to_expect_es": "Unos 8 km de pedaleo a ritmo moderado, con paradas para descansar. El cenote tiene escalera de acceso y área de sombra.",
+      "what_to_expect_en": "About 8 km of moderate-pace riding, with rest stops. The cenote has stair access and a shaded area.",
+      "highlights_es": ["Cenote poco turístico", "Bicicletas incluidas", "Solo grupos chicos"],
+      "highlights_en": ["Off-the-beaten-path cenote", "Bikes included", "Small groups only"],
+      "includes_es": ["Bicicleta y casco", "Guía", "Acceso al cenote"],
+      "includes_en": ["Bike and helmet", "Guide", "Cenote access"],
+      "excludes_es": ["Comida", "Toallas"],
+      "excludes_en": ["Food", "Towels"],
+      "itinerary_stops": [],
+      "detail_facts": [
+        { "icon": "🚲", "label_es": "Nivel", "label_en": "Level", "value_es": "Moderado", "value_en": "Moderate" },
+        { "icon": "🔞", "label_es": "Edad mínima", "label_en": "Min. age", "value_es": "18+", "value_en": "18+" }
+      ],
+      "meeting_point_es": "Plaza central, junto al kiosco",
+      "meeting_point_en": "Central square, by the kiosk",
+      "meeting_lat": null, "meeting_lng": null,
+      "duration_minutes": 240,
+      "min_age": 18,
+      "allow_children": false, "allow_babies": false, "min_age_child": 18,
+      "max_capacity": 8, "min_passengers": 2,
+      "languages": ["Español", "English"],
+      "gallery_images": [
+        "https://picsum.photos/id/1043/1200/800.jpg",
+        "https://picsum.photos/id/1069/1200/800.jpg"
+      ],
+      "active_weekdays": [2, 4, 6],
+      "schedules": [
+        { "time_start": "08:00", "time_end": "12:00", "label_es": "Salida única", "label_en": "Single departure" }
+      ],
+      "prices": { "adult": 890, "child": 0, "baby": 0 }
+    },
+
+    {
+      "name_es": "Cena privada en el muelle",
+      "name_en": "Private Dinner on the Dock",
+      "slug": "cena-privada-muelle",
+      "price_model": "group",
+      "description_es": "Mesa privada al final del muelle, con menú de cinco tiempos y música en vivo — pensada para aniversarios y ocasiones especiales. Evento único, cupo limitado a una sola reserva por noche.",
+      "description_en": "A private table at the end of the dock, five-course menu and live music — built for anniversaries and special occasions. One-time event, limited to a single booking per night.",
+      "what_to_expect_es": "Menú de mar y tierra con maridaje opcional, mesa decorada, y un músico acústico durante toda la cena.",
+      "what_to_expect_en": "Surf-and-turf menu with optional wine pairing, decorated table, and live acoustic music throughout dinner.",
+      "highlights_es": ["Mesa exclusiva", "Menú de 5 tiempos", "Música en vivo"],
+      "highlights_en": ["Exclusive table", "5-course menu", "Live music"],
+      "includes_es": ["Cena completa", "Decoración", "Música en vivo"],
+      "includes_en": ["Full dinner", "Decoration", "Live music"],
+      "excludes_es": ["Bebidas alcohólicas", "Transporte"],
+      "excludes_en": ["Alcoholic drinks", "Transport"],
+      "itinerary_stops": [],
+      "detail_facts": [
+        { "icon": "🍽️", "label_es": "Tiempos", "label_en": "Courses", "value_es": "5", "value_en": "5" },
+        { "icon": "🎻", "label_es": "Ambiente", "label_en": "Ambience", "value_es": "Música en vivo", "value_en": "Live music" }
+      ],
+      "meeting_point_es": "Extremo del muelle municipal",
+      "meeting_point_en": "End of the municipal dock",
+      "meeting_lat": null, "meeting_lng": null,
+      "duration_minutes": 150,
+      "min_age": 0,
+      "allow_children": true, "allow_babies": true, "min_age_child": 4,
+      "max_capacity": 6, "min_passengers": 2,
+      "languages": ["Español", "English"],
+      "gallery_images": [
+        "https://picsum.photos/id/292/1200/800.jpg",
+        "https://picsum.photos/id/366/1200/800.jpg"
+      ],
+      "fixed_date": "2026-09-20",
+      "schedules": [
+        { "time_start": "19:00", "time_end": "21:30", "label_es": "Turno noche", "label_en": "Evening seating" }
+      ],
+      "prices_group": [3200, 4500, 5600]
+    },
+
+    {
+      "name_es": "Laguna privada a pedido",
+      "name_en": "Private Lagoon, On Request",
+      "slug": "laguna-privada-pedido",
+      "price_model": "percapita",
+      "description_es": "Excursión a una laguna de acceso restringido que solo se opera cuando el nivel del agua y las condiciones del operador local lo permiten — por eso cada reserva se confirma a mano antes de cobrar.",
+      "description_en": "A trip to a lagoon with restricted access, only operated when water levels and the local operator's conditions allow — every booking is manually confirmed before charging.",
+      "what_to_expect_es": "Paseo en kayak por la laguna con tiempo de observación de aves, sujeto a la confirmación del operador local antes de cada salida.",
+      "what_to_expect_en": "Kayak tour of the lagoon with bird-watching time, subject to the local operator's confirmation before each departure.",
+      "highlights_es": ["Acceso restringido", "Observación de aves", "Grupos muy chicos"],
+      "highlights_en": ["Restricted access", "Bird watching", "Very small groups"],
+      "includes_es": ["Kayak", "Guía local", "Chaleco salvavidas"],
+      "includes_en": ["Kayak", "Local guide", "Life vest"],
+      "excludes_es": ["Transporte hasta el punto de encuentro"],
+      "excludes_en": ["Transport to the meeting point"],
+      "itinerary_stops": [],
+      "detail_facts": [
+        { "icon": "🦆", "label_es": "Enfoque", "label_en": "Focus", "value_es": "Observación de aves", "value_en": "Bird watching" },
+        { "icon": "✅", "label_es": "Confirmación", "label_en": "Confirmation", "value_es": "Manual, antes de cobrar", "value_en": "Manual, before charging" }
+      ],
+      "meeting_point_es": "Acceso norte de la laguna",
+      "meeting_point_en": "North lagoon access point",
+      "meeting_lat": null, "meeting_lng": null,
+      "duration_minutes": 150,
+      "min_age": 8,
+      "allow_children": true, "allow_babies": false, "min_age_child": 8,
+      "max_capacity": 6, "min_passengers": 2,
+      "languages": ["Español", "English"],
+      "gallery_images": [
+        "https://picsum.photos/id/1018/1200/800.jpg",
+        "https://picsum.photos/id/1050/1200/800.jpg"
+      ],
+      "request_only": true,
+      "active_weekdays": [0, 1, 2, 3, 4, 5, 6],
+      "schedules": [
+        { "time_start": "07:00", "time_end": "09:30", "label_es": "Salida temprano", "label_en": "Early departure" },
+        { "time_start": "16:00", "time_end": "18:30", "label_es": "Salida tarde", "label_en": "Late afternoon departure" }
+      ],
+      "prices": { "adult": 780, "child": 520, "baby": 0 }
+    },
+
+    {
+      "name_es": "Kayak grupal por el manglar",
+      "name_en": "Group Kayaking Through the Mangrove",
+      "slug": "kayak-grupal-manglar",
+      "price_model": "group",
+      "description_es": "Salida en kayaks dobles y triples por los canales del manglar, pensada para grupos grandes (familias, empresas). Se cobra por embarcación completa, no por persona.",
+      "description_en": "A trip through the mangrove channels in double and triple kayaks, built for large groups (families, companies). Priced per boat, not per person.",
+      "what_to_expect_es": "Recorrido guiado de dos horas por los canales, con una parada para observar fauna típica del manglar.",
+      "what_to_expect_en": "A guided two-hour route through the channels, with one stop to observe typical mangrove wildlife.",
+      "highlights_es": ["Ideal para grupos grandes", "Sin horario fijo", "Precio por embarcación"],
+      "highlights_en": ["Great for large groups", "No fixed time slot", "Priced per boat"],
+      "includes_es": ["Kayak", "Chaleco salvavidas", "Guía"],
+      "includes_en": ["Kayak", "Life vest", "Guide"],
+      "excludes_es": ["Repelente de insectos"],
+      "excludes_en": ["Insect repellent"],
+      "itinerary_stops": [],
+      "detail_facts": [
+        { "icon": "👨‍👩‍👧‍👦", "label_es": "Ideal para", "label_en": "Great for", "value_es": "Grupos y familias", "value_en": "Groups and families" }
+      ],
+      "meeting_point_es": "Embarcadero del manglar",
+      "meeting_point_en": "Mangrove boat launch",
+      "meeting_lat": null, "meeting_lng": null,
+      "duration_minutes": 120,
+      "min_age": 0,
+      "allow_children": true, "allow_babies": true, "min_age_child": 5,
+      "max_capacity": 10, "min_passengers": 3,
+      "languages": ["Español"],
+      "gallery_images": [
+        "https://picsum.photos/id/1074/1200/800.jpg",
+        "https://picsum.photos/id/401/1200/800.jpg"
+      ],
+      "active_weekdays": [0, 1, 2, 3, 4, 5, 6],
+      "schedules": [],
+      "prices_group": [900, 1250, 1900]
+    },
+
+    {
+      "name_es": "Avistamiento de ballenas (temporada)",
+      "name_en": "Whale Watching (Seasonal)",
+      "slug": "avistamiento-ballenas-temporada",
+      "price_model": "percapita",
+      "description_es": "Tour de temporada para ver ballenas migrando frente a la costa — todavía no tenemos fecha exacta de apertura este año. Dejá tu lugar en la lista de interés y te avisamos apenas se confirme, con el link de pago listo.",
+      "description_en": "Seasonal whale-watching tour off the coast — we don't have an exact opening date yet this year. Join the interest list and we'll notify you as soon as it's confirmed, with the payment link ready.",
+      "what_to_expect_es": "Salida en lancha con guía especializado, avistamiento no garantizado (depende de la fauna), pero con alta probabilidad en temporada.",
+      "what_to_expect_en": "Boat trip with a specialized guide, sighting not guaranteed (depends on wildlife), but highly likely in season.",
+      "highlights_es": ["Guía especializado", "Temporada limitada", "Alta probabilidad de avistamiento"],
+      "highlights_en": ["Specialized guide", "Limited season", "High sighting probability"],
+      "includes_es": ["Guía especializado", "Chaleco salvavidas", "Agua"],
+      "includes_en": ["Specialized guide", "Life vest", "Water"],
+      "excludes_es": ["Transporte al muelle"],
+      "excludes_en": ["Transport to the dock"],
+      "itinerary_stops": [],
+      "detail_facts": [
+        { "icon": "🐋", "label_es": "Temporada", "label_en": "Season", "value_es": "Limitada", "value_en": "Limited" }
+      ],
+      "meeting_point_es": "Muelle municipal",
+      "meeting_point_en": "Municipal dock",
+      "meeting_lat": null, "meeting_lng": null,
+      "duration_minutes": 210,
+      "min_age": 5,
+      "allow_children": true, "allow_babies": false, "min_age_child": 5,
+      "max_capacity": 14, "min_passengers": 6,
+      "languages": ["Español", "English"],
+      "gallery_images": [
+        "https://picsum.photos/id/1084/1200/800.jpg",
+        "https://picsum.photos/id/1016/1200/800.jpg"
+      ],
+      "status": "draft",
+      "wishlist_enabled": true,
+      "wishlist_threshold": 8,
+      "wishlist_date": "2026-10-15",
+      "prices": { "adult": 1100, "child": 750, "baby": 0 }
+    }
+  ]
+}

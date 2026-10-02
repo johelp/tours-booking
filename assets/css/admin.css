@@ -1,7 +1,75 @@
-/* ── Amir Booking Admin CSS ─────────────────────────────────────────────── */
-/* Estilos globales del panel de administración                               */
-/* La mayoría del styling está inline en cada página PHP (más rápido de     */
-/* iterar, sin compilar). Este archivo cubre solo los elementos persistentes  */
+/* ── TourFlow Admin CSS ─────────────────────────────────────────────────── */
+/* Estilos globales del panel de administración.                             */
+/* Cada página sigue teniendo su <style> inline para su layout puntual (más  */
+/* rápido de iterar, sin compilar) — pero la paleta y los componentes        */
+/* repetidos en todas (cards, badges, botones, tablas) viven acá, en         */
+/* variables/clases .ab-*, para que un cambio de color no requiera tocar     */
+/* 15 archivos. Las páginas nuevas deberían usar estas clases en vez de      */
+/* repetir los valores hex a mano. */
+
+:root {
+  --ab-teal:        #1D9E75;
+  --ab-teal-dark:   #0F6E56;
+  --ab-teal-light:  #f0faf6;
+  --ab-text:        #1a2e24;
+  --ab-muted:       #5a7068;
+  --ab-border:      #e1f5ee;
+  --ab-border-input:#c3d9d0;
+  --ab-bg-subtle:   #f8fdfb;
+  --ab-danger:      #e24b4a;
+  --ab-danger-bg:   #fef2f2;
+  --ab-danger-border:#fecaca;
+  --ab-warning:     #92400e;
+  --ab-warning-bg:  #fff8e7;
+  --ab-warning-border:#fde68a;
+  --ab-info:        #1a6fa8;
+  --ab-info-bg:     #eef4ff;
+  --ab-radius:      10px;
+  --ab-radius-sm:   6px;
+}
+
+/* Card genérica — fondo blanco, borde suave, esquinas redondeadas. La
+   mayoría de las pantallas del admin arman esto a mano con inline style;
+   usar esta clase en vez de repetirlo. */
+.ab-card {
+  background: #fff;
+  border: 1px solid var(--ab-border);
+  border-radius: var(--ab-radius);
+  padding: 20px 24px;
+}
+
+/* Botones — mismo aspecto en todas las pantallas, más allá del .button de WP */
+.ab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--ab-radius-sm);
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  min-height: 38px;
+  box-sizing: border-box;
+}
+.ab-btn-primary { background: var(--ab-teal); color: #fff; }
+.ab-btn-primary:hover { background: var(--ab-teal-dark); color: #fff; }
+.ab-btn-danger  { background: var(--ab-danger-bg); color: var(--ab-danger); }
+.ab-btn-outline { background: transparent; color: var(--ab-teal); border: 1px solid var(--ab-teal); }
+
+/* Badges/pills de estado — mismo criterio de color en todas las tablas */
+.ab-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
+.ab-badge-success { background: var(--ab-teal-light); color: var(--ab-teal-dark); }
+.ab-badge-warning { background: var(--ab-warning-bg); color: var(--ab-warning); }
+.ab-badge-danger  { background: var(--ab-danger-bg);  color: var(--ab-danger); }
+.ab-badge-info    { background: var(--ab-info-bg);    color: var(--ab-info); }
+.ab-badge-neutral { background: #f3f4f6; color: var(--ab-muted); }
+
+/* Tablas — encabezado/celda consistente (ya varias pantallas usan .ab-th/.ab-td) */
+.ab-th { font-size: 11px; font-weight: 700; color: var(--ab-muted); text-transform: uppercase; letter-spacing: .4px; padding: 10px 12px; text-align: left; }
+.ab-td { font-size: 13px; padding: 10px 12px; vertical-align: middle; }
 
 /* Badge en el menú lateral */
 #adminmenu .amir-badge {
