@@ -1035,6 +1035,16 @@ class BookingController {
 
         switch ( $event->type ) {
             case \AmirBooking\Payments\PaymentEvent::SUCCEEDED:
+                // Carrito multi-ítem (solo Pro Max): TODAS sus reservas pagables
+                // comparten esta referencia de pago, pero la consulta de arriba
+                // devuelve una sola — confirmar solo esa dejaba el resto del
+                // carrito cobrado y sin confirmar si el cliente cerraba la
+                // pestaña antes de que su navegador llamara a /confirm-payment.
+                if ( ! empty( $booking->cart_group_id ) && class_exists( '\TourFlow\Cart\CartController' ) ) {
+                    \TourFlow\Cart\CartController::confirm_group( (string) $booking->cart_group_id, (string) $event->charge_reference );
+                    break;
+                }
+
                 // 'payment_expired': pago que llega después de vencer la
                 // reserva — confirm() lo recupera o lo reembolsa.
                 if ( in_array( $booking->status, [ 'pending', 'payment_expired' ], true ) ) {

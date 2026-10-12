@@ -42,6 +42,15 @@ class EmailDispatcher {
         // pago real al cliente.
         add_action( 'amir_provider_awaiting_payment', [ $this, 'send_provider_awaiting_payment_link' ], 10, 1 );
 
+        // "¿Cuándo ve el proveedor los datos del cliente?" = 'approval'
+        // (2026-10, GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md) — el email inicial
+        // (send_provider_notice) ya los ocultó; recién ahora, con la reserva
+        // confirmada de verdad, se los mandamos aparte. Mismo hook que usa el
+        // ledger de liquidación (class-plugin.php) — dispara exactamente
+        // cuando el proveedor aprueba, en cualquiera de los dos modos de
+        // cobro.
+        add_action( 'amir_provider_booking_approved', [ $this, 'send_provider_client_details_reveal' ], 10, 1 );
+
         // Depósito parcial ("Depósito parcial por tour") — el cliente pagó
         // el saldo restante (link enviado aparte por el operador). Recibo
         // corto, no la confirmación completa (la reserva ya estaba confirmada).
@@ -55,7 +64,13 @@ class EmailDispatcher {
     }
 
     public function notify_client_balance_paid( int $booking_id ): void {
-        $booking = $this->get_booking_with_tour( $booking_id );
+        // get_booking_with_provider_context() en vez de get_booking_with_tour()
+        // (bug real corregido 2026-10, mismo patrón que send_cancellation() más
+        // abajo): el depósito parcial ya se soporta en habitaciones
+        // (GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md) — con el JOIN interno
+        // anterior, marcar el saldo cobrado de una habitación nunca avisaba
+        // al cliente, sin ningún error visible.
+        $booking = $this->get_booking_with_provider_context( $booking_id );
         if ( ! $booking ) {
             return;
         }
@@ -123,7 +138,7 @@ class EmailDispatcher {
      * @return array{success:bool,error:string}
      */
     public function send_provider_notice( int $booking_id ): array {
-        $booking = $this->get_booking_with_tour( $booking_id );
+        $booking = $this->get_booking_with_provider_context( $booking_id );
         if ( ! $booking || empty( $booking->provider_email ) ) {
             return [ 'success' => false, 'error' => 'El proveedor no tiene email configurado.' ];
         }
@@ -137,10 +152,38 @@ class EmailDispatcher {
         $this->send_provider_notice( $booking_id );
     }
 
+    /**
+     * Revela los datos de contacto del cliente al proveedor recién cuando
+     * confirma — solo corre si `amir_provider_reveal_client_at` = 'approval'
+     * (2026-10, GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md). Con la opción
+     * default ('request') el email inicial ya los mostró, así que mandar
+     * esto de nuevo sería ruido — no hace nada en ese caso.
+     */
+    public function send_provider_client_details_reveal( int $booking_id ): void {
+        if ( get_option( 'amir_provider_reveal_client_at', 'request' ) !== 'approval' ) {
+            return;
+        }
+        $booking = $this->get_booking_with_provider_context( $booking_id );
+        if ( ! $booking || empty( $booking->provider_email ) ) {
+            return;
+        }
+        ( new ProviderClientDetailsEmail( $booking, $booking->provider_email ) )->send();
+    }
+
     /** Aviso al cliente de que su pago ya se procesó y se está confirmando disponibilidad — sin nombrar al proveedor. */
     public function send_provider_pending_notice( int $booking_id ): void {
-        $booking = $this->get_booking_with_tour( $booking_id );
+        $booking = $this->get_booking_with_provider_context( $booking_id );
         if ( ! $booking ) {
+            return;
+        }
+        // Reserva de un carrito ya pagado (modo "inmediato"): el email del
+        // carrito (CartConfirmationEmail, lo dispara CartController::confirm_group()
+        // justo después) ya lista este ítem marcado como pendiente, con su
+        // nombre, fecha y precio — mandar además este aviso genérico sería un
+        // segundo mensaje sin más detalle. En modo "al aprobar" el hook corre al
+        // CREAR la reserva, cuando cart_group_id todavía no está asignado, así
+        // que ese caso sigue avisando acá como siempre.
+        if ( ! empty( $booking->cart_group_id ) ) {
             return;
         }
         ( new ProviderPendingNoticeEmail( $booking ) )->send();
@@ -237,12 +280,20 @@ class EmailDispatcher {
         // — mandarle además esta confirmación individual por cada tour
         // duplicaba avisos para una sola compra (pedido del cliente 2026-08-04:
         // "si reservan varios tours o productos llegan varios email separados,
-        // hacer que llegue la reserva toda junta"). Standalone (widget
-        // individual de un tour, sin carrito) sigue mandando esta confirmación
-        // como siempre — y una reserva pendiente de aprobación de proveedor
-        // (§ 11) nunca pasa por acá: dispara amir_booking_pending_provider_approval
-        // en su lugar, con sus propios emails, sin tocar.
-        if ( empty( $booking->cart_group_id ) ) {
+        // hacer que llegue la reserva toda junta").
+        //
+        // EXCEPCIÓN (bug real corregido 2026-10, GUIA-CIRCUITO-PROVEEDORES-
+        // EXTERNOS.md § "carrito mixto"): un ítem que nació pending_provider_
+        // approval SÍ tiene cart_group_id desde el carrito, pero se confirma
+        // MÁS TARDE que el resto — cuando el proveedor aprueba, horas o días
+        // después del checkout. El voucher general ya se mandó ANTES, sin
+        // incluirlo (todavía estaba pendiente), así que suprimir también este
+        // email dejaba al cliente sin NINGÚN aviso de que su reserva quedó
+        // confirmada. `provider_responded_at` distingue los dos casos: si
+        // está seteado, esta confirmación vino de provider_approve() (o del
+        // pago tardío de un cobro diferido), no del checkout original del
+        // carrito, y el cliente necesita enterarse igual.
+        if ( empty( $booking->cart_group_id ) || ! empty( $booking->provider_responded_at ) ) {
             $mailer = new ConfirmationEmail( $booking );
             $mailer->send();
         }
@@ -268,7 +319,19 @@ class EmailDispatcher {
     // ── Cancelación ───────────────────────────────────────────────────────
 
     public function send_cancellation( int $booking_id, string $reason_type ): void {
-        $booking = $this->get_booking_with_tour( $booking_id );
+        // get_booking_with_provider_context() en vez de get_booking_with_tour()
+        // — bug real corregido 2026-10 (GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md,
+        // revisión pedida por el cliente sobre el carrito mixto). cancel()
+        // dispara amir_booking_cancelled para CUALQUIER tipo de reserva —
+        // tours, habitaciones y productos. Con el JOIN interno anterior, el
+        // cliente nunca se enteraba de que su habitación de proveedor externo
+        // fue rechazada/venció y se reembolsó: este listener simplemente no
+        // encontraba la fila (tour_id es NULL en una reserva de habitación) y
+        // salía sin avisar, sin ningún error visible. CancellationEmail no usa
+        // ningún campo específico de tour (solo booking_ref/customer_name/
+        // cancellation_policy_pct/provider_reject_reason, todos columnas
+        // planas de amir_bookings), así que el fix es solo de resolución.
+        $booking = $this->get_booking_with_provider_context( $booking_id );
         if ( ! $booking ) {
             return;
         }
@@ -334,7 +397,7 @@ class EmailDispatcher {
             return;
         }
 
-        $booking = $this->get_booking_with_tour( $booking_id );
+        $booking = $this->get_booking_with_provider_context( $booking_id );
         if ( ! $booking ) {
             return;
         }
@@ -450,6 +513,69 @@ class EmailDispatcher {
         if ( $booking ) {
             // El nombre del tour en el idioma de la reserva — antes se
             // resolvía en SQL con un CASE WHEN que solo conocía es/en.
+            $booking->tour_name = \AmirBooking\Core\Languages::tour_field( $booking, 'name', $booking->lang ?? 'es' );
+        }
+
+        return $booking;
+    }
+
+    /**
+     * Mismo propósito que get_booking_with_tour() pero para los 3 emails del
+     * circuito de aprobación de proveedor (send_provider_notice/
+     * send_provider_pending_notice/send_provider_reminder) — esos SÍ tienen
+     * que funcionar para una reserva de habitación. get_booking_with_tour()
+     * usa un INNER JOIN contra amir_tours: para una reserva con tour_id NULL
+     * (item_type='room') esa query no devuelve NADA, así que esos 3 métodos
+     * fallaban en silencio — el proveedor de una habitación nunca recibía el
+     * aviso, sin ningún error visible en ningún lado (2026-10,
+     * GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md).
+     */
+    public function get_booking_with_provider_context( int $booking_id ): ?object {
+        global $wpdb;
+
+        $item_type = $wpdb->get_var( $wpdb->prepare(
+            "SELECT item_type FROM {$wpdb->prefix}amir_bookings WHERE id = %d", $booking_id
+        ) );
+
+        if ( $item_type !== 'room' ) {
+            $booking = $this->get_booking_with_tour( $booking_id );
+            if ( $booking ) {
+                return $booking;
+            }
+            // Ni tour_id ni room_id resuelven (item_type='product', o
+            // cualquier tipo futuro sin su propio JOIN acá) — se usó
+            // send_cancellation() como motivo real para agregar esto: un
+            // producto digital también puede cancelarse, y antes de este
+            // fallback el cliente no recibía ningún aviso. Sin tour_name real
+            // (no hay de dónde sacarlo), pero la reserva existe y los emails
+            // que no dependen de ese campo (CancellationEmail) funcionan igual.
+            $booking = $wpdb->get_row( $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}amir_bookings WHERE id = %d", $booking_id
+            ) );
+            if ( $booking ) {
+                $booking->tour_name = $booking->booking_ref;
+            }
+            return $booking;
+        }
+
+        $booking = $wpdb->get_row( $wpdb->prepare(
+            "SELECT b.*,
+                    r.name_es, r.name_en, r.content_i18n,
+                    r.provider_id,
+                    p.business_name AS provider_business_name,
+                    p.contact_name  AS provider_contact_name,
+                    p.email         AS provider_email
+             FROM {$wpdb->prefix}amir_bookings b
+             JOIN {$wpdb->prefix}flow_rooms r ON r.id = b.room_id
+             LEFT JOIN {$wpdb->prefix}amir_providers p ON p.id = r.provider_id
+             WHERE b.id = %d",
+            $booking_id
+        ) );
+
+        if ( $booking ) {
+            // Mismo nombre de propiedad que usa get_booking_with_tour() —
+            // ProviderNoticeEmail/ProviderPendingNoticeEmail leen $b->tour_name
+            // sin importar si la reserva es de tour o de habitación.
             $booking->tour_name = \AmirBooking\Core\Languages::tour_field( $booking, 'name', $booking->lang ?? 'es' );
         }
 
@@ -665,6 +791,11 @@ abstract class BaseEmail {
     protected function verify_url(): string {
         $page_id = (int) get_option( 'amir_verify_page_id', 0 );
         $base    = $page_id ? get_permalink( $page_id ) : false;
+        // Headless (v5.13.12): un frontend externo configurado gana sobre la
+        // página de WordPress del backend (ver Voucher::verify_page_url()).
+        if ( trim( (string) get_option( 'amir_public_site_url', '' ) ) !== '' ) {
+            $base = false;
+        }
         $base    = $base ?: ( \AmirBooking\Core\FrontendUrl::base() . '/verificar-reserva/' );
 
         return add_query_arg(
@@ -781,6 +912,9 @@ abstract class BaseEmail {
             'contact'         => [ 'es' => 'Contacto',                                 'en' => 'Contact' ],
             'approve'         => [ 'es' => 'Aprobar',                                  'en' => 'Approve' ],
             'reject'          => [ 'es' => 'Rechazar',                                 'en' => 'Reject' ],
+            'check_in'        => [ 'es' => 'Check-in',                                 'en' => 'Check-in' ],
+            'check_out'       => [ 'es' => 'Check-out',                                'en' => 'Check-out' ],
+            'guests'          => [ 'es' => 'Huéspedes',                                'en' => 'Guests' ],
         ];
         $entry = $dict[ $key ] ?? null;
         if ( ! $entry ) {
@@ -1431,6 +1565,7 @@ class ProviderNoticeEmail extends BaseEmail {
             'intro_title'   => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Nueva reserva para confirmar disponibilidad', 'en' => 'New booking to confirm availability' ],
             'intro_body'    => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola {name},<br>Recibiste una nueva reserva desde TourFlow para <strong>{tour}</strong>. Por favor confirmá si tenés disponibilidad.', 'en' => 'Hello {name},<br>You received a new booking from TourFlow for <strong>{tour}</strong>. Please confirm whether you have availability.' ],
             'deadline_note' => [ 'label' => self::field_label( 'Aviso de vencimiento', 'Expiration notice' ), 'es' => 'Si no respondés dentro de {hours} horas, la reserva se cancelará automáticamente y se reembolsará al cliente.', 'en' => "If you don't respond within {hours} hours, the booking will be automatically cancelled and refunded to the client." ],
+            'hidden_client_note' => [ 'label' => self::field_label( 'Aviso de datos ocultos', 'Hidden details notice' ), 'es' => 'Los datos de contacto del cliente te los mandamos apenas confirmes.', 'en' => "We'll send you the customer's contact details as soon as you confirm." ],
         ];
     }
 
@@ -1445,19 +1580,47 @@ class ProviderNoticeEmail extends BaseEmail {
         $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
                . '<p>' . $this->text( 'intro_body', [ 'name' => esc_html( $greeting_name ), 'tour' => esc_html( $b->tour_name ) ] ) . '</p>';
 
+        // Cuándo ve el proveedor los datos de contacto del cliente — opción
+        // configurable (2026-10, pedido del cliente, GUIA-CIRCUITO-
+        // PROVEEDORES-EXTERNOS.md): 'approval' oculta nombre/email/teléfono/
+        // pedidos especiales en ESTE primer email — se le mandan aparte recién
+        // si confirma (ver ProviderClientDetailsEmail, disparada por
+        // amir_provider_booking_approved). 'request' (default) es el
+        // comportamiento de siempre.
+        $reveal_now = get_option( 'amir_provider_reveal_client_at', 'request' ) !== 'approval';
+
         $special = '';
-        if ( ! empty( $b->special_requests ) ) {
+        if ( $reveal_now && ! empty( $b->special_requests ) ) {
             $special = '<tr><td>' . $this->t('special_requests') . '</td><td>' . nl2br( esc_html( $b->special_requests ) ) . '</td></tr>';
         }
 
-        $details = '
-        <table class="info-table">
-          <tr><td>' . $this->t('reference') . '</td><td>' . esc_html( $b->booking_ref ) . '</td></tr>
+        // Habitación (2026-10, GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md): no hay
+        // horario/schedule_id como un tour — check-in/check-out en su lugar,
+        // "huéspedes" en vez de adultos/niños/bebés (una reserva de
+        // habitación siempre guarda todo en `adults`, ver RoomBookingManager).
+        if ( $b->item_type === 'room' ) {
+            $stay_rows = '
+          <tr><td>' . $this->t('check_in') . '</td><td>' . $this->fmt_date( $b->tour_date ) . '</td></tr>
+          <tr><td>' . $this->t('check_out') . '</td><td>' . $this->fmt_date( $b->check_out_date ) . '</td></tr>
+          <tr><td>' . $this->t('guests') . '</td><td>' . (int) $b->adults . '</td></tr>';
+        } else {
+            $stay_rows = '
           <tr><td>' . $this->t('date') . '</td><td>' . $this->fmt_date( $b->tour_date ) . '</td></tr>
           <tr><td>' . $this->t('time') . '</td><td>' . ( $b->time_start ? $this->fmt_time( $b->time_start ) : '—' ) . '</td></tr>
-          <tr><td>' . $this->t('people') . '</td><td>' . $this->pax_summary() . '</td></tr>
+          <tr><td>' . $this->t('people') . '</td><td>' . $this->pax_summary() . '</td></tr>';
+        }
+
+        $client_rows = $reveal_now
+            ? '
           <tr><td>' . $this->t('client') . '</td><td>' . esc_html( $b->customer_name ) . '</td></tr>
           <tr><td>' . $this->t('contact') . '</td><td>' . esc_html( $b->customer_email ) . ( $b->customer_phone ? ' / ' . esc_html( $b->customer_phone ) : '' ) . '</td></tr>'
+            : '
+          <tr><td>' . $this->t('client') . '</td><td style="color:#5a7068;font-style:italic;">' . esc_html( $this->text( 'hidden_client_note' ) ) . '</td></tr>';
+
+        $details = '
+        <table class="info-table">
+          <tr><td>' . $this->t('reference') . '</td><td>' . esc_html( $b->booking_ref ) . '</td></tr>'
+          . $stay_rows . $client_rows
           . $special . '
         </table>';
 
@@ -1494,6 +1657,53 @@ class ProviderNoticeEmail extends BaseEmail {
     }
 }
 
+// ── Email: datos de contacto del cliente, revelados recién al confirmar ──────
+// Solo se envía cuando amir_provider_reveal_client_at='approval' — el primer
+// email (ProviderNoticeEmail) ocultó nombre/email/teléfono/pedidos especiales
+// a propósito; este es el complemento que los entrega una vez que el
+// proveedor ya se comprometió. 2026-10, GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md.
+
+class ProviderClientDetailsEmail extends BaseEmail {
+
+    protected static function type_key(): string {
+        return 'provider_client_details';
+    }
+
+    public static function text_fields(): array {
+        return [
+            'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Datos de contacto del cliente — {ref}', 'en' => 'Customer contact details — {ref}' ],
+            'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => '¡Gracias por confirmar!', 'en' => 'Thanks for confirming!' ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola {name},<br>Acá tenés los datos de contacto del cliente de la reserva {ref}.', 'en' => 'Hello {name},<br>Here are the customer\'s contact details for booking {ref}.' ],
+        ];
+    }
+
+    protected function get_subject(): string {
+        return $this->text( 'subject', [ 'ref' => $this->booking->booking_ref ] );
+    }
+
+    protected function get_body_content(): string {
+        $b = $this->booking;
+        $greeting_name = $b->provider_contact_name ?: $b->provider_business_name;
+
+        $intro = '<h1>' . $this->text( 'intro_title' ) . '</h1>'
+               . '<p>' . $this->text( 'intro_body', [ 'name' => esc_html( $greeting_name ), 'ref' => esc_html( $b->booking_ref ) ] ) . '</p>';
+
+        $special = '';
+        if ( ! empty( $b->special_requests ) ) {
+            $special = '<tr><td>' . $this->t('special_requests') . '</td><td>' . nl2br( esc_html( $b->special_requests ) ) . '</td></tr>';
+        }
+
+        $details = '
+        <table class="info-table">
+          <tr><td>' . $this->t('client') . '</td><td>' . esc_html( $b->customer_name ) . '</td></tr>
+          <tr><td>' . $this->t('contact') . '</td><td>' . esc_html( $b->customer_email ) . ( $b->customer_phone ? ' / ' . esc_html( $b->customer_phone ) : '' ) . '</td></tr>'
+          . $special . '
+        </table>';
+
+        return $intro . $details;
+    }
+}
+
 // ── Email: aviso interino al cliente mientras se confirma con el proveedor ──
 // Su pago ya se procesó — este correo evita que se pregunte por qué no
 // recibió la confirmación habitual. No nombra al proveedor (aviso discreto,
@@ -1509,7 +1719,7 @@ class ProviderPendingNoticeEmail extends BaseEmail {
         return [
             'subject'     => [ 'label' => self::field_label( 'Asunto', 'Subject' ), 'es' => 'Estamos confirmando tu reserva — {ref}', 'en' => "We're confirming your booking — {ref}" ],
             'intro_title' => [ 'label' => self::field_label( 'Título', 'Title' ), 'es' => 'Tu reserva fue recibida', 'en' => 'Your booking was received' ],
-            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Tu pago se procesó correctamente. Estamos confirmando disponibilidad con el operador local para tu tour del {date} — te avisamos en cuanto quede confirmada.', 'en' => "Hello <strong>{name}</strong>,<br>Your payment was processed successfully. We're confirming availability with the local operator for your tour on {date} — we'll let you know as soon as it's confirmed." ],
+            'intro_body'  => [ 'label' => self::field_label( 'Saludo', 'Greeting' ), 'es' => 'Hola <strong>{name}</strong>,<br>Tu pago se procesó correctamente. Estamos confirmando disponibilidad con el operador local para tu reserva del {date} — te avisamos en cuanto quede confirmada.', 'en' => "Hello <strong>{name}</strong>,<br>Your payment was processed successfully. We're confirming availability with the local operator for your booking on {date} — we'll let you know as soon as it's confirmed." ],
         ];
     }
 

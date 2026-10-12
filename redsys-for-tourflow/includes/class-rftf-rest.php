@@ -56,6 +56,15 @@ class Rest {
 
 		switch ( $event->type ) {
 			case PaymentEvent::SUCCEEDED:
+				// Compra de carrito (varios ítems, un solo cobro): se confirma
+				// el grupo entero, no solo la reserva que lleva el
+				// gateway_reference — mismo criterio que el webhook del
+				// núcleo (CartController::confirm_group(), v5.13.7+). Sin
+				// esto los demás ítems quedaban 'pending' hasta vencer.
+				if ( ! empty( $booking->cart_group_id ) && class_exists( '\TourFlow\Cart\CartController' ) ) {
+					\TourFlow\Cart\CartController::confirm_group( (string) $booking->cart_group_id, (string) $event->charge_reference );
+					break;
+				}
 				// 'payment_expired': pago que llega después de vencer la
 				// reserva — confirm() la recupera o la reembolsa (núcleo).
 				if ( in_array( $booking->status, [ 'pending', 'payment_expired' ], true ) ) {

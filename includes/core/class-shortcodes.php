@@ -622,6 +622,13 @@ class Shortcodes {
         );
         $date_fmt = (int) $date_parts[2] . ' ' . $months[ (int) $date_parts[1] - 1 ] . ' ' . $date_parts[0];
 
+        // Habitación: también mostrar el check-out (GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md).
+        $checkout_fmt = '';
+        if ( $b->item_type === 'room' && ! empty( $b->check_out_date ) ) {
+            $co_parts     = explode( '-', $b->check_out_date );
+            $checkout_fmt = (int) $co_parts[2] . ' ' . $months[ (int) $co_parts[1] - 1 ] . ' ' . $co_parts[0];
+        }
+
         $pax_parts = array();
         if ( $b->adults )   $pax_parts[] = $b->adults   . ' ' . __( 'adultos', 'amir-booking' );
         if ( $b->children ) $pax_parts[] = $b->children . ' ' . __( 'niños', 'amir-booking' );
@@ -644,7 +651,9 @@ class Shortcodes {
              . '<div style="background:#fff;padding:24px;">'
              . '<div style="background:#f3f4f6;border-radius:10px;padding:16px;font-size:14px;color:#1a2e24;margin-bottom:16px;">'
              . '<strong>' . esc_html( $b->booking_ref ) . '</strong><br>'
-             . esc_html( $date_fmt ) . ' · ' . esc_html( $pax ) . '<br>'
+             . esc_html( $date_fmt )
+             . ( $checkout_fmt !== '' ? ' → ' . esc_html( $checkout_fmt ) : '' )
+             . ' · ' . esc_html( $pax ) . '<br>'
              . esc_html( $b->customer_name )
              . '</div>'
              . '<form method="post">'

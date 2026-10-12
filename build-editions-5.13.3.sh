@@ -1,0 +1,107 @@
+#!/bin/bash
+# Build de las 3 ediciones de TourFlow (Lite / Pro / Pro Max) — v5.13.3
+# Mismo pipeline de siempre: rsync del código fuente a una carpeta de stage
+# por edición, exclusiones específicas, composer install --no-dev dentro del
+# contenedor Docker (no hay PHP en el host), php -l recursivo, zip final.
+#
+# v5.13.3 — auditoría de seguridad completa + corrección de TODOS los
+# hallazgos alto/medio (cupón+carrera → reservas gratis, rate limiter
+# evadible, confirm() no atómico → payout duplicado, sobreventa de tours
+# "grupo" bajo carrera + bug lateral de disponibilidad, 2 pantallas admin
+# sin current_user_can() propio, cookie del panel /gestor/ con alcance
+# demasiado amplio, cancelación por email endurecida a solo access_token) +
+# 4 hallazgos bajos de higiene. AMIR_DB_VERSION → 1.40.0 (UNIQUE KEY nueva en
+# amir_provider_payouts/amir_partner_payouts). Ver CONTRIBUTING.md § 16.101
+# para el detalle completo con evidencia archivo:línea. 132 tests en verde
+# (20 nuevos). Ningún cambio de UI/UX esta ronda — todo el trabajo es
+# server-side, no hace falta rebuildear react-src/.
+#
+# Ver CLAUDE.md "Estado al cierre" para el detalle de v5.13.0-5.13.2
+# (Panel rápido, bloque HTML de emails) incluidas en este mismo ZIP.
+set -euo pipefail
+
+VERSION="5.13.3"
+SRC="$(cd "$(dirname "$0")" && pwd)"
+OUT="$SRC/dist-zips"
+STAGE="$SRC/.build-stage"
+
+rm -rf "$STAGE" "$OUT"
+mkdir -p "$STAGE" "$OUT"
+
+# ── Archivos/carpetas 100% propios de Pro Max — excluidos de Lite Y de Pro ──
+PROMAX_ONLY=(
+  "includes/rooms"
+  "includes/cart"
+  "includes/discovery"
+  "includes/admin/class-global-addons-page.php"
+  "templates/single-flow_room.php"
+  "templates/archive-flow_room.php"
+  "templates/parts/room-data.php"
+)
+
+# ── Archivos 100% propios de Pro/Pro Max — excluidos solo de Lite (§14.2) ──
+LITE_EXTRA=(
+  "includes/api/class-wishlist-controller.php"
+  "includes/api/class-config-controller.php"
+  "includes/admin/class-wishlist-page.php"
+  "includes/admin/class-providers-page.php"
+  "includes/admin/class-provider-payouts-page.php"
+  "includes/core/class-marketing.php"
+  "templates/single-amir_tour-immersive.php"
+)
+
+build_edition () {
+  local edition="$1"      # lite | pro | pro_max
+  local folder="$2"       # nombre de carpeta interna del plugin (dentro del ZIP)
+  local plugin_name="$3"  # texto del header "Plugin Name:"
+  # stage_root es único por edición aunque $folder se repita entre ediciones
+  # (Pro y Pro Max comparten "amir-booking") — si no, la segunda pisaría a la
+  # primera al escribir en el mismo path de stage.
+  local stage_root="$STAGE/$edition"
+  local dir="$stage_root/$folder"
+
+  echo "== Armando $edition ($folder) =="
+  mkdir -p "$dir"
+
+  rsync -a \
+    --exclude '.git' --exclude '.github' --exclude '.claude' \
+    --exclude '.DS_Store' --exclude '.gitignore' --exclude '.phpunit.result.cache' \
+    --exclude 'node_modules' --exclude 'react-src' --exclude 'tests' \
+    --exclude 'vendor' --exclude 'dev-notes' --exclude 'docs-manual' \
+    --exclude 'redsys-for-tourflow' --exclude 'redsyspur' --exclude 'tourflow-cleaner' \
+    --exclude 'mercadopago-split-tourflow' \
+    --exclude '*.md' --exclude '*.html' --exclude '*.pdf' \
+    --exclude 'phpunit.xml' --exclude 'composer.lock' \
+    --exclude '.build-stage' --exclude 'dist-zips' \
+    --exclude 'build-editions-*.sh' --exclude 'scratch' \
+    "$SRC"/ "$dir"/
+
+  # AMIR_EDITION por defecto + Plugin Name del header
+  sed -i '' "s/define( 'AMIR_EDITION', 'pro' )/define( 'AMIR_EDITION', '$edition' )/" "$dir/amir-booking.php"
+  sed -i '' "s/^ \* Plugin Name:  TourFlow$/ * Plugin Name:  $plugin_name/" "$dir/amir-booking.php"
+
+  if [ "$edition" != "pro_max" ]; then
+    for f in "${PROMAX_ONLY[@]}"; do rm -rf "${dir:?}/$f"; done
+  fi
+  if [ "$edition" = "lite" ]; then
+    for f in "${LITE_EXTRA[@]}"; do rm -f "${dir:?}/$f"; done
+  fi
+
+  # composer install --no-dev dentro del contenedor (no hay PHP en el host)
+  docker run --rm -v "$dir":/app -w /app composer:2 install --no-dev --optimize-autoloader -q
+
+  # php -l recursivo — cualquier error de sintaxis frena el build acá
+  docker run --rm -v "$dir":/app -w /app php:8.1-cli bash -c \
+    'find . -name "*.php" -print0 | xargs -0 -n1 php -l' | grep -v "No syntax errors" || true
+
+  local zipname="tourflow-v${VERSION}-${edition}.zip"
+  ( cd "$stage_root" && zip -rq "$OUT/$zipname" "$folder" -x '*.DS_Store' )
+  echo "$edition -> $(find "$dir" -type f | wc -l | tr -d ' ') archivos -> $OUT/$zipname"
+}
+
+build_edition "lite"    "amir-booking-lite" "TourFlow Lite"
+build_edition "pro"     "amir-booking"      "TourFlow"
+build_edition "pro_max" "amir-booking"      "TourFlow Pro Max"
+
+echo "== Listo =="
+ls -la "$OUT"

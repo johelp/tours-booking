@@ -40,7 +40,7 @@ No hay entorno de staging con despliegue automático. El flujo real usado hasta 
 
 1. Hacer los cambios en el repo local.
 2. Armar un ZIP del plugin (carpeta `amir-booking/` con `includes/`, `assets/`, `templates/`, `amir-booking.php`, `composer.json/lock`, y `vendor/` ya generado con `composer install --no-dev --optimize-autoloader` — sin esto el ZIP no sirve, `vendor/` no se versiona en git).
-3. Subir el ZIP a `amiradventours.com/sandbox/` vía Plugins → Subir (reemplaza la versión activa; los datos viven en las tablas `wp_N_amir_*`, no en los archivos, así que reemplazar no pierde nada).
+3. Subir el ZIP al sandbox (pendiente de definir: `tourflow.johelpastorino.com` o `johelpastorino.com/tourflow`; `amiradventours.com/sandbox/` ya no se usa) vía Plugins → Subir (reemplaza la versión activa; los datos viven en las tablas `wp_N_amir_*`, no en los archivos, así que reemplazar no pierde nada).
 4. Probar ahí — no hay otra forma de ver el resultado real, la carpeta local no corre WordPress.
 5. **Siempre subir `AMIR_VERSION` en `amir-booking.php`** en cualquier cambio a `assets/js/*` o `assets/css/*` — si no, el navegador puede seguir sirviendo la versión cacheada del archivo viejo.
 
@@ -1301,7 +1301,7 @@ Sesión dedicada arrancada con `PROMPT-FLUJO-EXPLORAR.md` (§ 16.45). Dos decisi
 
 **Verificación**: 90 tests en verde, `php -l` limpio en todo `includes/`, `npm run build` limpio (51 módulos, antes 50). Probado interactivamente en un harness HTML local (`fetch` mockeado con datos de prueba, sin WordPress real disponible — mismo criterio que v5.0.4) con **ambos shortcodes montados en la misma página**: sin colisión visual ni de clases CSS (los componentes compartidos usan las mismas reglas `df-*` en los dos flujos, a propósito — no hay dos definiciones divergentes). Flujo de punta a punta confirmado en el harness: búsqueda → filtro client-side (sin request) → detalle de tour con cotización debounced → agregar al carrito → habitación → extra global → checkout → confirmación → voucher → reset. `AMIR_VERSION` → **5.6.0**.
 
-**Pendiente explícito**: no probado contra WordPress real (sin sandbox disponible esta sesión) — falta subir un ZIP a `amiradventours.com/sandbox/` antes de darlo por completamente cerrado. `DiscoveryFlow.jsx` no cambió de comportamiento (verificado por lectura + build + harness), pero sí tiene diff textual por la extracción — ver arriba.
+**Pendiente explícito**: no probado contra WordPress real (sin sandbox disponible esta sesión) — falta subir un ZIP al sandbox nuevo (aún sin crear) antes de darlo por completamente cerrado. `DiscoveryFlow.jsx` no cambió de comportamiento (verificado por lectura + build + harness), pero sí tiene diff textual por la extracción — ver arriba.
 
 **ZIPs v5.6.0 armados en las tres ediciones** (mismo proceso de siempre — staging aparte por edición vía `rsync`, `AMIR_EDITION`/`Plugin Name` pisados en el header, `composer install --no-dev --optimize-autoloader` con Docker `composer:2`, `php -l` sobre el 100% del PHP del paquete, smoke test de autoload real — registra el mismo autoloader de `amir-booking.php` y hace `class_exists()` contra cada clase primaria descubierta por namespace+class de cada archivo, sin necesitar WordPress real): `tourflow-v5.6.0-promax.zip` (468 archivos — 1 más que v5.5.1, exactamente `class-explore-shortcodes.php`; 77 clases probadas / 0 fallidas), `tourflow-v5.6.0-pro.zip` (450 archivos, sin cambio vs. v5.5.1 porque `includes/discovery/` es 100% Pro Max; 62/0), `tourflow-v5.6.0-lite.zip` (443 archivos, sin cambio; 56/0) — los conteos de clases del smoke test cuadran exacto con las listas de exclusión (77−62=15 → 8 de `rooms/` + 3 de `cart/` + 3 de `discovery/` + 1 `class-global-addons-page.php`; 62−56=6 → las 6 clases exclusivas de Lite, el 7º ítem de la lista es una plantilla sin clase). **Ninguno subido a un sandbox real todavía.**
 
@@ -2379,6 +2379,158 @@ Bug real encontrado al montar el frontend headless de Visit Sicily Experiences (
 - Los `error_log` dicen "TourFlow" en vez de "Caliafarm".
 - Sin cambios de esquema, de widget ni de respuesta de la API (compatible hacia atrás).
 - ZIPs armados parcheando los de v5.13.4 (Docker no disponible en esa sesión): mismo listado de archivos, solo cambian `class-contact-controller.php` y la versión en `amir-booking.php`; `php -l` limpio. `build-editions-5.13.5.sh` queda para reproducirlo con el pipeline normal. **Sin probar en vivo.**
+
+### 16.104 Plugin satélite nuevo `tourflow-bot-connector/` — catálogo/disponibilidad/link de reserva para un chatbot externo
+
+Pedido del cliente (2026-10-03): preparar TourFlow para que un chatbot (pensado para Caliafarm y Visit Sicily Experiences — info de Sicilia, sugerir destinos, mostrar productos, y **ofrecer tours**) pueda consultarlo sin que la lógica del bot viva en WordPress. Evaluado primero como cambio al núcleo y descartado explícitamente: el cliente pidió "no complicar TourFlow" — se construyó como **tercer tipo de plugin satélite** (ni hook de notificación ni pasarela de pago, los dos ya documentados), un adaptador de **solo lectura** entre la API pública del núcleo y un consumidor externo. Detalle completo del patrón, con el razonamiento de cada decisión, en `GUIA-PLUGINS-SATELITE-TOURFLOW.md § 4` — acá el resumen de lo construido.
+
+Dos decisiones cerradas con el cliente antes de codear (`AskUserQuestion`):
+- **Autenticación**: API key fija por sitio (no OAuth, no sin-auth) — el bot la manda en el header `X-TFBC-Api-Key`.
+- **"Ofrecer/reservar un tour" desde el bot**: el endpoint de reserva **nunca crea nada** — devuelve el link real al flujo de pago ya auditado (`permalink` del tour + `?date=`, mismo mecanismo que `[flow_tour_dates]`, § 16.58) para que el usuario termine de reservar en el sitio real. Cero riesgo de cupo fantasma, cero lógica de disponibilidad/cupón/precio duplicada.
+
+**Alcance explícitamente acotado**: este satélite solo expone lo que TourFlow administra (tours, habitaciones/productos digitales en Pro Max, disponibilidad, link de reserva). Contenido general (info de Sicilia) o un catálogo de productos no gestionado por TourFlow (ej. productos de granja de Casa Calia, si no viven en `amir_addons`) quedan **afuera** — eso lo resuelve el bot con otra fuente de datos, no es trabajo de este plugin.
+
+**Construido** (`tourflow-bot-connector/`, namespace `TourFlowBotConnector\`, prefijo de opciones `tfbc_`, 5 archivos, `php -l` limpio):
+- `Settings` — pantalla de admin propia ("Bot Connector"): generar/regenerar/revocar la API key (se muestra en texto plano UNA sola vez, al generarla — después solo los últimos 4 caracteres, mismo criterio que el hallazgo de auditoría de seguridad sobre `mercadopago-split-tourflow` § 16.101), toggle para pausar el acceso sin rotar la key, nombre del sitio para que el bot distinga de cuál instalación viene cada respuesta si consulta varias (campo `site` en cada respuesta).
+- `Auth::permission_callback()` — valida el header con `hash_equals()` contra la key guardada, más el throttle del núcleo reusado (`RateLimiter::too_many_attempts()`, no es lógica de negocio propia, es un utility público).
+- `Catalog` — compone cada respuesta llamando a las rutas REST **ya públicas** del núcleo vía `rest_do_request()` (`GET /amir/v1/tours`, `/tours/{id}`, `/availability/day`, `/flow/v1/rooms`, `/rooms/{id}/availability`, `/addons/global`) en vez de volver a consultar `$wpdb` o reimplementar `PricingEngine`/`AvailabilityEngine` — cero lógica de negocio duplicada, el bot ve exactamente lo mismo que vería pegándole directo a esas rutas.
+- `Rest` — 4 endpoints propios bajo `tfbc/v1`, todos protegidos por `Auth`: `GET /catalog` (tours + habitaciones/productos si Pro Max, formato chico y uniforme), `GET /items/{type}/{id}` (detalle completo), `GET /availability` (`date` para tours, `check_in`/`check_out` para habitaciones), `GET /booking-link` (el link real, nunca una reserva creada).
+
+**Huecos reales encontrados en el camino** (documentados también en la guía § 4.4, no corregidos en el núcleo todavía porque no bloquean este satélite): las habitaciones no tienen un `permalink` público en `GET /flow/v1/rooms` (se usa el archive general `flow_room` como mejor esfuerzo); `GET /flow/v1/rooms`/`GET /flow/v1/addons/global` no resuelven idioma server-side igual que `GET /amir/v1/tours` (rooms devuelve `name_es`/`name_en` sueltos) — el satélite normaliza esto él mismo en `Catalog::pick_lang()`.
+
+Build script actualizado (`build-editions-5.13.4.sh`) para excluir `tourflow-bot-connector/` de los 3 ZIPs de edición, mismo criterio que los demás satélites. **Sin probar en vivo** — ninguno de los 4 endpoints pasó por un WordPress real; antes de dar esto por cerrado, instalarlo en el sandbox, generar una key, y confirmar con `curl` (o Postman) que las 4 rutas devuelven lo esperado con y sin el header correcto. El diseño del lado del bot (prompt, cuándo ofrecer un tour vs. solo informar, cómo decide qué sitio consultar si atiende a los dos) queda completamente afuera de este plugin y de esta sesión.
+
+### 16.105 v5.13.6 — MySQL 8 no creaba las tablas + disponibilidad bloqueada por la regla base de días activos
+
+Encontrado al probar el sandbox local del satélite `tourflow-bot-connector` (§ 16.104): dos bugs reales del núcleo, ambos sin relación con el conector.
+
+**1. MySQL 8 — la instalación de TourFlow falla entera.** `amir_tours`, `flow_rooms` y `amir_notifications` declaraban columnas `TEXT DEFAULT '[]'` / `'{}'`. MySQL 8 (modo estricto) rechaza un default literal en TEXT/BLOB (`BLOB, TEXT, GEOMETRY or JSON column ... can't have a default value`), así que `dbDelta()` no creaba la tabla y el resto del plugin fallaba en cascada. MariaDB sí lo acepta, por eso no apareció antes. **Corrección:** las 7 columnas TEXT pasaron a no tener DEFAULT (`Installer::create_tables()`, con comentario explicando por qué). Los lectores ya tienen fallback (`?: '[]'`) y los `INSERT` de `amir_tours` siempre mandan el valor. No hace falta `ALTER` en instalaciones existentes: el DEFAULT anterior sigue ahí y no molesta. `AMIR_DB_VERSION` → `1.42.0`.
+
+**2. La regla base de días activos bloqueaba el calendario entero.** `TourPostType::sync_base_availability_rule()` calcula los días bloqueados (`blocked = días − activos`). Si todos los días están activos, `blocked = []` y el código hacía `UPDATE` a `weekdays = '[]'`. Pero `AvailabilityEngine::rule_applies_to_date()` interpreta un array vacío como **"aplica a todos los días"**, así que la regla `block` bloqueaba todo. El `INSERT` ya lo evitaba (`! empty($blocked)`), el `UPDATE` no. Afectaba al editor (tildar los 7 días sobre un tour que tenía una regla previa) y a la importación. **Corrección:** si no hay días bloqueados, la regla base se borra y se sale.
+
+Verificado en el sandbox local (`localhost:8088` MariaDB 10.11 y `localhost:8089` MySQL 8.0, ambos con WordPress 6.x y PHP 8.1):
+- Instalación limpia sobre MySQL 8: sin errores de DB, 14 tablas `wp_amir*` creadas.
+- Demo de 6 tours: el tour de 7 días responde disponible en cualquier fecha; el de `[0,1,3,5]` bloquea lunes/miércoles/jueves/sábado y deja martes disponible; el de fecha fija (`fixed_date`) bloquea el resto, como debe.
+- `GET /catalog` devuelve 5 items en MySQL 8 (el borrador de ballenas queda fuera, correcto).
+- PHPUnit: 150 tests en verde.
+
+**Hallazgos NO corregidos en esta versión (quedan para otra ronda):**
+- **Reimportar el demo falla con `Duplicate entry '<slug>' for key 'slug'`** en el tour borrador (ballenas). `sync_to_db()` hace INSERT porque no encuentra `_amir_tour_db_id` en el post que el importador ubicó. Hace falta revisar el matching por slug de `TourImporter::import_one()` con borradores. El primer import sí funciona.
+- Ese mismo fallo deja una regla `tour_id = 0` en `amir_availability_rules`: `sync_base_availability_rule()` corre aunque el insert de `amir_tours` haya fallado. Falta un guard (`if (!$tour_db_id) return;`).
+- Los 3 tours de demo sin `active_weekdays` (`cena-privada`, `ballenas`) quedan con regla que bloquea todo. En el caso de fecha fija es correcto; en el de ballenas (borrador en lista de interés) no afecta a nadie hoy. Conviene definir qué significa "sin días activos" en un import.
+
+---
+
+### 16.106 Plugin satélite nuevo `tourflow-automations/` — webhooks firmados para Zapier, Make y n8n (Fase 1)
+
+Pedido del cliente (2026-10-04): compatibilizar con Zapier, Make y **n8n** (este último, más versátil), y documentar cómo aplicar las automatizaciones. Spec base en `PROMPT-ZAPIER-TOURFLOW.md`. Decisión: **un despachador de webhooks salientes genérico**, no una app publicada en un marketplace — cualquier herramienta que reciba un POST sirve, y no depende de la aprobación de ninguna plataforma. La app nativa de Zapier queda como Fase 3, solo si el uso lo justifica.
+
+**Decisiones tomadas por defecto (no confirmadas con el cliente, cambiables):**
+- Nombre: "Automations for TourFlow" (no "Zapier for TourFlow", que prometería una integración oficial que todavía no existe).
+- Alcance: todas las ediciones (los hooks viven en el núcleo compartido).
+- Gratis vs. producto aparte: sin decidir (decisión de negocio, pendiente).
+- Destinos: hasta 10 por instalación, cada uno con sus eventos.
+
+**Qué hace:**
+- Escucha 9 hooks del núcleo (`amir_booking_confirmed`, `flow_room_booking_confirmed`, `amir_booking_pending_provider_approval`, `amir_booking_cancelled`, `amir_booking_date_requested`, `amir_booking_rescheduled`, `flow_room_booking_rescheduled`, `amir_booking_payment_failed`, `amir_booking_balance_paid`).
+- Arma un JSON con **forma fija** para todos los eventos (`includes/class-tfa-payload.php`). Lista blanca de campos: nunca sale `access_token` ni IDs de pasarela.
+- Envía con **firma HMAC-SHA256** sobre `timestamp.cuerpo` (`X-TourFlow-Signature`, `X-TourFlow-Timestamp`) — la firma cubre el timestamp para evitar replays.
+- Envío en **WP-Cron** (`tfa_deliver`), así el checkout del cliente no espera a un servidor de terceros. Reintentos: +1 min y +10 min; después queda `failed`.
+- Log propio (`wp_tfa_log`, últimos 500 envíos) y botón "Enviar prueba" síncrono.
+- URLs: `https://` obligatorio; `http://` solo para `localhost`, `*.localhost` y `*.test`. Usa `wp_safe_remote_post()`, que bloquea IPs privadas y redirecciones.
+- Secreto de firma generado una vez; regenerarlo lo muestra completo una sola vez (mismo criterio que la API key del bot connector).
+
+**Hallazgos durante la prueba (corregidos):**
+- `wp_safe_remote_post()` rechaza puertos que no son 80, 443 ni 8080 (`A valid URL was not provided`). Un receptor en el puerto 8000 falla antes de salir de WordPress.
+- El primer diseño del trim del log usaba un `DELETE` con subconsulta sobre la misma tabla. Se reemplazó por dos consultas simples, porque se comporta distinto en MySQL 8 y MariaDB.
+- El payload usaba `currency => 'MXN'` fijo. Ahora usa `Currency::code()` (`amir_currency`), así que un sitio en ARS o USD lo informa bien. Las claves de dinero pasaron de `total_mxn` / `discount_mxn` a `total` / `discount`, porque la columna de la base se llama así por historia y guarda la moneda configurada. El cambio se hizo antes de que el contrato lo usara nadie.
+
+**Verificado en el sandbox local (WordPress + MariaDB, Docker):**
+- Evento `amir_booking_confirmed` enviado de punta a punta; el receptor independiente (Python) verifica la firma (`firma_ok=True`).
+- Destino que responde 500: reintento a +1 min, luego a +10 min, y queda `failed` con el motivo.
+- Búsqueda del token de acceso en el JSON: no aparece.
+- "Enviar prueba": HTTP 200, registrado en el log como `test_ok`.
+- Pantalla de admin renderiza sin errores.
+- El ZIP se instala y el plugin se activa.
+
+**No probado todavía:** Zapier, Make y n8n con cuentas reales (las instrucciones de la guía están escritas a partir de la documentación de cada herramienta); cron real del servidor; eventos distintos de `confirmed` de punta a punta (solo se construyó su payload). La verificación de firma dentro de Zapier no es confiable, porque el Catch Hook entrega el JSON ya parseado — ver la guía § 5.
+
+**Pendiente (Fase 2, no construida):** la acción inversa (que una herramienta cree una reserva con API key propia, llamando a `BookingManager::create_manual()`) y un hook genérico `amir_booking_created` en el núcleo, si un caso real lo pide.
+
+**Documentación:** `GUIA-AUTOMATIZACIONES-TOURFLOW.md` (cómo conectar cada herramienta, forma del JSON, firma, reintentos, cron, privacidad, qué está probado y qué no).
+
+Ver también `PENDIENTES-VERIFICACION-EN-VIVO.md` — la lista de todo lo construido que todavía no pasó por un WordPress real.
+
+---
+
+### 16.107 v5.13.7 — hueco real en el marketplace de habitaciones: el proveedor externo nunca se enteraba de una reserva
+
+Pedido del cliente pensando en el sitio nuevo de Caliafarm, donde habitaciones y experiencias de proveedores externos van a ser un punto fuerte: revisar que el circuito completo funcione y mejorarlo si hace falta, más un documento explicando el circuito completo (`GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md`).
+
+**Hallazgo**: el circuito de **tours** de proveedor externo (aprobación por email, liquidación, vencimiento automático) estaba completo y bien construido. El de **habitaciones** tenía `flow_rooms.provider_id` desde el día uno, pero **nunca se conectó a nada** — `RoomBookingManager::create_pending()` insertaba `status='pending'` fijo sin leer el proveedor, y `BookingManager::confirm()` solo bifurcaba a `pending_provider_approval` mirando `amir_tours` vía `tour_id` (siempre `NULL` en una reserva de habitación). Una habitación de proveedor externo se cobraba y confirmaba exactamente igual que una propia, sin aviso, sin aprobación y sin ninguna fila en el ledger de liquidación.
+
+**Corregido**:
+- `BookingManager::tour_has_active_provider()` generalizada a `booking_has_active_provider( object $booking )` — resuelve el proveedor por `tour_id` o por `room_id`, según corresponda. Es el único punto donde `confirm()` decide la bifurcación, así que alcanzó con generalizar acá (no hizo falta tocar la creación de la reserva).
+- **Hallazgo más serio en el camino**: `EmailDispatcher::get_booking_with_tour()` (la que arma el booking con los datos de tour+proveedor para los 3 emails del circuito) hace un `JOIN` **interno** contra `amir_tours` — para una reserva de habitación esa consulta no devuelve nada, así que aunque la bifurcación ya funcionara, los 3 emails al proveedor habrían fallado en silencio, sin ningún error. Nueva `get_booking_with_provider_context()`, que resuelve lo mismo contra `flow_rooms` cuando corresponde.
+- `ProviderNoticeEmail` con una rama que muestra check-in/check-out/huéspedes en vez de fecha/horario/pax cuando la reserva es de una habitación.
+- El listener de liquidación (`amir_provider_booking_approved`, `class-plugin.php`) generalizado: `JOIN flow_rooms` + `noches × provider_cost_per_night` cuando la reserva no tiene `tour_id`.
+- Pantalla pública de aprobación del proveedor: muestra también el check-out.
+- 3 columnas nuevas en `flow_rooms` (`AMIR_DB_VERSION` → `1.43.0`): `provider_cost_per_night`, y `deposit_enabled`/`deposit_pct`.
+
+**De paso, pedido del cliente en la misma revisión**: **depósito parcial para habitaciones** — mismo mecanismo que ya tenían los tours (`deposit_enabled`/`deposit_pct`), pensado sobre todo para que el huésped pague solo una parte por TourFlow en una habitación de proveedor externo y arregle el resto directo con el proveedor. `RoomBookingManager::create_pending()` ahora calcula `charge_mxn` separado de `total_mxn`, igual que tours — la pantalla de "Marcar saldo cobrado" del admin ya era genérica, no necesitó cambios.
+
+**Decisiones confirmadas por el cliente** (sin asumir): modo de cobro inmediato (no "al aprobar"), costo del proveedor fijo por noche (no por temporada), mismas horas de recordatorio/vencimiento que tours.
+
+**Fase 2, documentada sin construir**: automatizar la liquidación al proveedor con Stripe Connect (split payments) en vez del ledger manual — viable, más simple que el split de MercadoPago ya evaluado, pero requiere que cada proveedor conecte su propia cuenta de Stripe. El cliente decidió dejarlo para después.
+
+`AMIR_VERSION` → `5.13.7`. **Verificado** (Docker volvió a responder más tarde en la sesión, ver § 16.108): `php -l` limpio, suite completa en verde. Ver `GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md` para el detalle completo con evidencia archivo:línea.
+
+### 16.108 v5.13.8/v5.13.9 — datos del cliente al proveedor configurables, depósito = comisión del operador, dos bugs más de email de habitaciones, y nav del editor de tours en el Panel
+
+Continuación directa de § 16.107, en la misma sesión (Docker tardó en volver a responder). Dos pedidos del cliente: (1) que el proveedor reciba los datos del cliente (días, cantidad de personas), configurable si los ve al pedirle la reserva o recién al confirmarla; (2) revisar **"IMPORTANTE"** que un carrito mixto (propio + proveedor externo) reserve ambos ítems y el cliente reciba el detalle completo marcando el pendiente — y, tras confirmar que un cliente real va a usar proveedores externos activamente, propuso simplificar el riesgo: que el huésped pague **solo el depósito** por TourFlow y arregle el resto **directo con el proveedor** (efectivo o tarjeta).
+
+**Decisión de negocio confirmada con `AskUserQuestion`**: si una reserva de proveedor se paga con depósito, ¿qué le corresponde liquidar al proveedor además? Respuesta del cliente: **nada — el depósito cobrado por TourFlow ES la comisión completa del operador**, el proveedor cobra el resto directo del huésped. Implementado como guard en `class-plugin.php`: si `deposit_pct > 0`, el listener de `amir_provider_booking_approved` no genera fila en `amir_provider_payouts`.
+
+**Dos bugs reales más, mismo patrón de § 16.107** (auditando todos los call sites de `get_booking_with_tour()`, la consulta con `JOIN` interno contra `amir_tours` que devuelve `NULL` para cualquier reserva de habitación): `EmailDispatcher::send_cancellation()` y `notify_client_balance_paid()` también la usaban — el aviso de cancelación+reembolso (rechazo del proveedor, vencimiento del cron) y el de "saldo cobrado" **nunca llegaban al cliente** si la reserva era de una habitación. Exactamente el riesgo que preocupaba al cliente ("luego recibirá la confirmación... o no" — el "o no" pasaba en silencio). Corregidos pasando ambos a `get_booking_with_provider_context()`. `send_payment_failed_notice()` ya tenía su propio fallback de una sesión anterior, sin cambios.
+
+**Timing configurable de los datos del cliente**: nueva opción `amir_provider_reveal_client_at` (`'request'` default | `'approval'`), con UI nueva en `TourFlow → 🤝 Proveedores → ⚙ Configuración del marketplace` (junto a las horas de recordatorio/vencimiento, que tampoco tenían UI propia hasta ahora — otro hueco encontrado de paso). En `'approval'`, `ProviderNoticeEmail` oculta nombre/email/teléfono/solicitudes especiales del cliente (nota en cursiva en su lugar) y una clase nueva, `ProviderClientDetailsEmail`, los revela recién cuando el proveedor aprueba.
+
+**De paso, pedido explícito del cliente sin relación con proveedores** ("revisa la pantalla de gestión de tours para que sea usable y entendible"): el editor de un tour en el Panel de gestión (`/gestor/`) renderiza ~9-11 metaboxes seguidos en una sola página larga sin navegación. Agregada una barra sticky (`includes/panel/class-tours-section.php`, `.tfp-tour-nav`) con un link por metabox + botón "💾 Guardar" duplicado arriba (`form="tfp-tour-form"`, sin JS).
+
+**Archivos tocados**: `includes/core/class-plugin.php`, `includes/emails/class-email-dispatcher.php`, `includes/core/class-installer.php`, `includes/admin/class-providers-page.php`, `includes/panel/class-tours-section.php`, `assets/css/panel.css`. `AMIR_VERSION` 5.13.7 → 5.13.8 → 5.13.9 (sin cambio de `AMIR_DB_VERSION`, son solo `wp_options` nuevas).
+
+**Verificado**: Docker volvió a responder — `php -l` limpio en los 13 archivos tocados de ambas rondas (§ 16.107 + 16.108), **161 tests en verde (315 aserciones)**, plugin sincronizado y activado en el sandbox local (MariaDB) a v5.13.9 sin fatales, opción `amir_provider_reveal_client_at` confirmada con su default correcto. 3 ZIPs de edición armados y verificados (`dist-zips/tourflow-v5.13.9-{lite,pro,pro_max}.zip`). **Sin probar en vivo todavía**: ningún email de esta ronda (cancelación/saldo de habitación, `ProviderClientDetailsEmail`) pasó por un envío real, y el guard de depósito=comisión no se probó contra una aprobación real de proveedor — ver el checklist completo en `GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md § 7`.
+
+**Actualización 2026-10-10/11 — v5.13.9 subido al sitio en vivo de Caliafarm (`book.caliafarm.com`), con confirmación del cliente de que es el sitio en producción real.** Verificado post-instalación: Dashboard y `TourFlow → 🤝 Proveedores` cargan sin fatales, versión y assets (`admin.css`/`admin.js`) en 5.13.9, la sección "⚙ Marketplace settings" (reveal_client_at + horas de recordatorio/vencimiento) renderiza correcta. Se desactivó de paso `TourFlow Cleaner`, que seguía activo en este sitio en producción pese a ser una herramienta interna para antes de lanzar (borra reservas/tours reales). Se armó un tour de prueba en **borrador** (`post=7530`, nunca público) con "Test Provider" + depósito 20% para confirmar que el editor guarda bien esa combinación — persistido correcto tras recargar. **Limitación real encontrada**: el circuito de proveedor+depósito solo se dispara desde el checkout público real (`create_pending()`); `BookingManager::create_manual()` (el formulario "Nueva reserva manual" del admin) inserta directo como `confirmed`, sin pasar por la bifurcación al proveedor ni calcular `deposit_pct` — así que no hay forma de ejercitar el guard del ledger desde el admin sin un pago real por la pasarela en vivo. Decisión explícita del cliente: no forzar un pago real para esta prueba — la cobertura de los 161 tests automatizados (que sí ejercitan `confirm()`/`provider_approve()`/el listener del ledger a nivel de código) se toma como suficiente por ahora. **Sigue pendiente un envío real de email del circuito de proveedor y una aprobación real contra el guard de depósito.**
+
+### 16.109 v5.13.10 — nav rápida con anclas en el editor NATIVO de tours (wp-admin)
+
+Pedido mid-sesión del cliente, navegando el editor en vivo: "si podemos optimizar la pantalla de carga y edición de los tours para que sea más entendible, intuitiva y optimice mejor, si no es mucho trabajo". La § 16.108 ya le había agregado esta misma nav al editor del **Panel de gestión** (`/gestor/`, `ToursSection`) — lo que faltaba era el editor **nativo** de wp-admin, que el operador usa la mayor parte del tiempo, y que confirmado en vivo encadena hasta **11 metaboxes en una sola columna larga** (Configuración, FAQ, Contenido bilingüe, Galería, Precios, Extras, Disponibilidad, Punto de encuentro, Integraciones, Datos destacados, Itinerario — más Categorías/Imagen destacada/Custom Fields/Slug nativos de WP).
+
+Agregado `TourPostType::render_quick_nav()` (hook `edit_form_top`, dispara justo después del campo de título) — barra sticky con un link por metabox, misma estética de píldoras que ya usa `ToursSection` del Panel. Los `id` de cada `<div class="postbox">` los pone WordPress solo (son el primer argumento de `add_meta_box()`), así que los anchors `#amir_tour_x` funcionan sin tocar ningún `meta_box_*()`. Refactor de paso: `add_meta_boxes()` y `render_quick_nav()` ahora leen de una única `metabox_list()` privada, en vez de mantener la lista duplicada (bug de higiene que `ToursSection` ya había tenido que evitar a mano, por ser una clase separada). A diferencia del Panel, acá **no se duplicó el botón de Guardar** — la caja "Publicar/Actualizar" nativa de wp-admin ya vive arriba a la derecha, visible sin scrollear casi nunca.
+
+**Verificado en vivo, en el sitio real de Caliafarm** (`book.caliafarm.com`, sobre el tour de prueba en borrador de la actualización de arriba): la nav salta exacto a cada sección, `scroll-margin-top` evita que el título quede tapado por la barra sticky, scroll horizontal funciona para mobile, sin errores de consola. `AMIR_VERSION` → `5.13.10`, sin cambio de `AMIR_DB_VERSION`. 161 tests en verde, lint limpio, 3 ZIPs armados y subidos — primera vez en esta sesión que un cambio se instala Y se confirma visualmente en el mismo ciclo, no solo "sin probar en vivo todavía".
+
+### 16.110 v5.13.11 / v5.13.12 — descripción y fotos en extras globales, links headless de verificación, satélites revisados (2026-10-12)
+
+Contexto: puesta en marcha del frontend headless de Caliafarm (`caliafarm-web` en Cloudflare Pages + `book.caliafarm.com` como API). Tres frentes.
+
+**v5.13.11 — descripción y fotos extra por extra global (pedido del cliente).** Una guía PDF vendida suelta con solo nombre, precio y portada "no la compra nadie". Columnas nuevas en `amir_addons`: `description_es`, `description_en` (TEXT) y `gallery_ids` (TEXT, JSON de IDs de adjunto, mismo criterio que `image_id`). `AMIR_DB_VERSION` → `1.44.0` (create_tables + ALTER en `maybe_update`). Admin (`GlobalAddonsPage`): dos textareas y selector de varias fotos (wp.media `multiple:'add'`). API `GET /flow/v1/addons/global` ahora devuelve `description` (resuelta por idioma con `Languages::tour_field()`, otros idiomas caen a español) y `gallery` (URLs `large`, ignora adjuntos borrados). Texto plano: línea en blanco = párrafo, `- ` al inicio = viñeta (el frontend lo renderiza sin HTML crudo). Excepción a la pausa de features confirmada por el cliente explícitamente.
+
+**v5.13.12 — bug real: el link "ver/pagar mi reserva" ignoraba el Frontend externo.** `EmailDispatcher::verify_url()` y `VoucherGenerator::verify_page_url()` usaban primero `get_permalink( amir_verify_page_id )`, la página de WordPress de `book.*`, y solo caían a `FrontendUrl::base()` si no existía. En un sitio headless esa página siempre existe (la crea el Installer), así que los clientes aterrizaban en el backend aunque `amir_public_site_url` estuviera cargado. Ahora, con `amir_public_site_url` configurado, gana `FrontendUrl::base() . '/verificar-reserva/'`. **Se dejó a propósito** la página `proveedor-reserva` en WordPress: es la pantalla donde el proveedor aprueba/rechaza por email y el frontend Astro no la tiene.
+
+**Satélites revisados y reempaquetados** (`build-satellites-5.13.11.sh`, lint con el PHP del host y Docker solo de respaldo):
+- `redsys-for-tourflow` 0.1.2 y `mercadopago-split-tourflow` 0.1.2 — su webhook confirmaba **solo la reserva** que llevaba el `gateway_reference`; en un carrito pagado con esas pasarelas el resto de los ítems quedaba `pending` hasta vencer. Ahora usan `CartController::confirm_group()` (el hueco pendiente anotado en § 16.107). Sin probar contra las pasarelas reales.
+- `tourflow-cleaner` 0.1.3 — la categoría "Partners" no incluía `amir_partner_payouts` (ledger de v5.10.6): quedaban liquidaciones huérfanas.
+- `tourflow-bot-connector` 0.1.1 — `short_description` de los productos digitales sale del primer párrafo de la nueva descripción (el detalle ya devolvía todo el ítem).
+- `tourflow-automations` 0.1.0 — sin cambios (lint limpio).
+Los Plugin URI de Amir Adventours que quedaban en cabeceras ya se habían quitado (cambio previo, ahora versionado).
+
+**Verificación**: 161 tests (315 aserciones) en verde con MAMP PHP 8.3, `php -l` limpio en todo lo tocado, ZIPs inspeccionados por dentro. **Sin probar en vivo**: instalar v5.13.12 en `book`, cargar una descripción y comprobar que aparece en `caliafarm-web/guides/` tras el build, y que el link del email de confirmación abre `caliafarm.com/verificar-reserva/`.
+
+Lista completa de lo que falta antes de cambiar el DNS (correo, redirecciones, plugins, datos del sistema viejo): `caliafarm-web/docs/CUTOVER.md`.
+
+---
 
 ## 17. Independencia total de WordPress — análisis pedido por el cliente (2026-07-31), solo para documentar, no construir
 

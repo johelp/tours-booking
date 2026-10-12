@@ -221,7 +221,22 @@ class ToursSection {
 
 		self::render_type_help( $lang );
 
-		echo '<form method="post" enctype="multipart/form-data">';
+		// Navegación rápida (pedido del cliente: "que sea usable y
+		// entendible") — el form de abajo encadena ~9-11 metaboxes en una
+		// sola página larga; sin esto, llegar a una sección puntual (ej.
+		// "Precios") significa scrollear todo, peor en celular. Un link por
+		// sección, mismos íconos/títulos de metabox_list() — cero texto
+		// duplicado, y si se agrega una metabox nueva a esa lista, aparece
+		// acá solo. El botón de guardar de acá arriba apunta al <form> por
+		// `form="tfp-tour-form"` (atributo HTML5 estándar), sin JS.
+		echo '<nav class="tfp-tour-nav">';
+		foreach ( self::metabox_list() as [ $title, $method ] ) {
+			echo '<a href="#' . esc_attr( $method ) . '">' . esc_html( $title ) . '</a>';
+		}
+		echo '<button type="submit" form="tfp-tour-form" class="tfp-tour-save-top">💾 ' . esc_html( self::tt( $lang, 'Guardar', 'Save' ) ) . '</button>';
+		echo '</nav>';
+
+		echo '<form method="post" enctype="multipart/form-data" id="tfp-tour-form">';
 		wp_nonce_field( 'tfp_tour_action' ); // nonce propio del form del panel — el de amir_tour_meta lo trae meta_box_main() más abajo
 		echo '<input type="hidden" name="tfp_tour_action" value="save">'
 			. '<input type="hidden" name="tour_post_id" value="' . (int) $post_id . '">';
@@ -232,7 +247,7 @@ class ToursSection {
 			. '</div>';
 
 		foreach ( self::metabox_list() as [ $title, $method ] ) {
-			echo '<div class="postbox" style="margin-bottom:16px;">'
+			echo '<div class="postbox tfp-tour-section" id="' . esc_attr( $method ) . '" style="margin-bottom:16px;">'
 				. '<h2 class="hndle"><span>' . esc_html( $title ) . '</span></h2>'
 				. '<div class="inside">';
 			$tpt->$method( $post );

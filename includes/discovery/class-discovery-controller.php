@@ -129,7 +129,7 @@ class DiscoveryController {
 
 		global $wpdb;
 		$rows = $wpdb->get_results(
-			"SELECT id, pricing_type, name_es, name_en, content_i18n, price_mxn, image_id
+			"SELECT id, pricing_type, name_es, name_en, content_i18n, price_mxn, image_id, description_es, description_en, gallery_ids
 			 FROM {$wpdb->prefix}amir_addons
 			 WHERE applies_to = 'global' AND active = 1
 			 ORDER BY sort_order ASC, id ASC"
@@ -144,9 +144,31 @@ class DiscoveryController {
 			// todo para [flow_product], una página de venta sin foto del
 			// producto vende peor. 'medium' alcanza para tarjeta/miniatura.
 			'image_url'    => $a->image_id ? ( wp_get_attachment_image_url( (int) $a->image_id, 'medium' ) ?: null ) : null,
+			// Descripción y fotos extra (v5.13.11): sin esto un producto
+			// digital se vende solo con nombre y precio. Texto plano con
+			// saltos de línea; otros idiomas caen en content_i18n y, si no
+			// hay, en español (Languages::tour_field()).
+			'description'  => (string) \AmirBooking\Core\Languages::tour_field( $a, 'description', $lang ),
+			'gallery'      => self::addon_gallery_urls( $a->gallery_ids ?? '' ),
 		], $rows );
 
 		return new \WP_REST_Response( $results, 200 );
+	}
+
+	/** IDs de adjuntos (JSON) → URLs 'large'; ignora los que ya no existen. */
+	private static function addon_gallery_urls( $raw ): array {
+		$ids = json_decode( (string) $raw, true );
+		if ( ! is_array( $ids ) ) {
+			return [];
+		}
+		$urls = [];
+		foreach ( $ids as $id ) {
+			$url = wp_get_attachment_image_url( (int) $id, 'large' );
+			if ( $url ) {
+				$urls[] = $url;
+			}
+		}
+		return $urls;
 	}
 
 	// ── GET /addons/download/{booking_addon_id} ───────────────────────────

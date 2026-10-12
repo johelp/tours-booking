@@ -123,26 +123,70 @@ Con esto, el operador puede elegir "Redsys" en Configuración igual que elegirí
 
 ### 3.3 El webhook es tuyo
 
+> **Si la reserva pertenece a un carrito** (`$booking->cart_group_id` no vacío), confirmá con `\TourFlow\Cart\CartController::confirm_group( $cart_group_id, $charge_reference )` en vez de `BookingManager::confirm()` sobre una sola reserva: un carrito se cobra una vez y tiene varias reservas, y confirmar solo la del `gateway_reference` deja a las demás `pending` hasta que vencen. `confirm_group()` ignora las que ya están confirmadas y dispara el email consolidado una sola vez. Es el cambio que recibieron `redsys-for-tourflow` y `mercadopago-split-tourflow` en sus versiones 0.1.2 (núcleo ≥ 5.13.7).
+
 `PaymentGatewayFactory`/`PaymentGatewayInterface` no incluyen el registro de la ruta REST que recibe la notificación de la pasarela — eso lo registra cada gateway. Tu satélite registra su propia ruta (`register_rest_route`) y, cuando confirma un pago, llama a `BookingManager::confirm( $booking_id, $charge_reference )` o dispara los mismos flujos que ya usan Stripe/MP (`class-booking-controller.php::handle_gateway_webhook()` es un buen modelo a seguir, aunque no es reusable directo porque asume `stripe-signature`/`x-signature` como headers — la lógica de negocio que llama después sí es 100% reusable).
 
-## 4. Pagos manuales — el valor reservado `'manual'`
+## 4. Exponer catálogo/disponibilidad a un consumidor externo (bot, partner, app)
+
+Un tercer tipo de satélite, distinto de los dos de § 1: no reacciona a un evento ni participa de una decisión del núcleo — **lee** datos (catálogo, disponibilidad, un link de reserva) para que algo de afuera de WordPress los use. Ejemplo real: `tourflow-bot-connector/` (construido 2026-10-03, pedido del cliente para que un chatbot externo pueda ofrecer los tours de un sitio sin tocar el núcleo).
+
+### 4.1 La regla de oro: llamar a la ruta REST pública, nunca reimplementar la query
+
+El núcleo ya expone casi todo lo que un consumidor externo necesita vía `amir/v1`/`flow/v1` (`GET /tours`, `/tours/{id}`, `/availability/day`, `/availability/month`, `/rooms`, `/rooms/{id}/availability`, `/addons/global` — todas con `permission_callback => '__return_true'`, pensadas para un frontend sin sesión de WordPress, ver `SPEC-HEADLESS.md`). Un satélite que necesita esos mismos datos **no debe volver a consultar `$wpdb` ni reimplementar `PricingEngine`/`AvailabilityEngine`** — eso duplicaría lógica (prohibido por § 7) y se desincroniza en el primer cambio al núcleo que el satélite no se entera.
+
+La forma correcta es llamar a esas rutas **desde dentro del propio proceso de PHP**, sin red, con `rest_do_request()`:
+
+```php
+<?php
+namespace MiSatelite;
+
+function tours_desde_el_nucleo( string $lang ): array {
+    $request = new \WP_REST_Request( 'GET', '/amir/v1/tours' );
+    $request->set_param( 'lang', $lang );
+    $response = rest_do_request( $request );
+    return $response->is_error() ? [] : (array) $response->get_data();
+}
+```
+
+Por qué esto y no instanciar `ToursController`/`AvailabilityEngine` directo: una ruta REST es el contrato **más estable** que el núcleo ofrece — no cambia de firma tan seguido como un método privado, y así tu satélite ve EXACTAMENTE lo mismo que vería un bot pegándole a esa ruta desde afuera (cero riesgo de que el camino "interno" se desincronice del camino "externo").
+
+### 4.2 Autenticación de un consumidor externo (no humano, sin sesión de WordPress)
+
+A diferencia de una pasarela de pago (que recibe un webhook firmado por el proveedor) o un bot de notificación (que corre dentro del mismo request), un consumidor como un chatbot llama a tu satélite desde su propia infraestructura, en cualquier momento, sin sesión de WordPress ni nonce. El patrón usado en `tourflow-bot-connector/`:
+
+- **Una API key fija por sitio** (no OAuth, no JWT — overkill para este caso), generada en tu propia pantalla de admin, guardada en una opción con tu prefijo (`tfbc_api_key`), nunca en una tabla del núcleo.
+- El consumidor la manda en un header propio (`X-TFBC-Api-Key` en el ejemplo) — tu `permission_callback` la compara con `hash_equals()` contra la guardada, mismo criterio que `BookingManager::authorize_public_access()` del núcleo.
+- La key se muestra en texto plano **una sola vez**, en el momento de generarla — nunca se reimprime en un campo después (hallazgo de auditoría de seguridad del núcleo, 2026-09-24: un secreto en un atributo `value` queda visible en "ver código fuente"). Después de ese momento, la pantalla solo muestra los últimos 4 caracteres.
+- Reusá el throttle del núcleo contra abuso en vez de escribir el tuyo: `\AmirBooking\Core\RateLimiter::too_many_attempts( 'tu_prefijo_' . \AmirBooking\Core\RateLimiter::client_ip(), $max, $window )` — es un utility público, llamarlo no es "duplicar lógica de negocio" (eso aplica a precio/disponibilidad/reembolso, no a un helper de throttling).
+
+### 4.3 Nunca repliques la creación de una reserva
+
+Si tu satélite necesita ofrecer "reservá esto" a su consumidor externo, la respuesta correcta casi siempre es devolver el **link real** al flujo de pago que el núcleo ya tiene auditado (`permalink` del tour + `?date=YYYY-MM-DD`, que el widget clásico y el flujo combinado ya saben preseleccionar, § 16.58 CONTRIBUTING.md) — nunca llamar a `BookingManager::create_pending()`/`RoomBookingManager::create_pending()` desde tu satélite para crear la reserva por tu cuenta. Eso te obligaría a replicar validación de cupo/edad/cupón/política, y cada fix futuro a esa lógica (como los de CONTRIBUTING.md § 16.101/§ 16.102) tendrías que portarlo a mano. Dejá que el usuario final termine la reserva en el flujo real del sitio.
+
+### 4.4 Huecos reales encontrados construyendo este ejemplo
+
+- Las habitaciones (Pro Max) no tienen un `permalink` público en `GET /flow/v1/rooms` — a diferencia de los tours, no hay forma de armar un link directo a la ficha de una habitación puntual desde afuera. `tourflow-bot-connector/` usa el archive general (`get_post_type_archive_link('flow_room')`) como mejor esfuerzo. Si esto importa de verdad, es un `permalink` chico para agregar a `list_rooms()` del núcleo — no algo que un satélite deba resolver por su cuenta con una query a `$wpdb`.
+- `GET /flow/v1/rooms`/`GET /flow/v1/addons/global` no aceptan `lang` de la misma forma que `GET /amir/v1/tours` (rooms ni siquiera resuelve idioma server-side, devuelve `name_es`/`name_en` sueltos) — un satélite que agregue varios tipos de ítem en una sola lista tiene que normalizar esa inconsistencia él mismo.
+
+## 5. Pagos manuales — el valor reservado `'manual'`
 
 Desde v5.6.19, el admin puede marcar una reserva como pagada a mano (transferencia, efectivo, o cualquier cosa que tu satélite no automatice) — la reserva queda con `payment_gateway = 'manual'`. `PaymentGatewayFactory::make('manual')` resuelve a `null` **a propósito** — un reembolso futuro sobre esa reserva no va a intentar llamar a ninguna API (el listener de `amir_process_gateway_refund` ya sabe manejar un gateway `null`: loggea "reembolsar manualmente" en vez de fallar).
 
 **Si tu satélite es una pasarela real, no uses `'manual'` como tu `id()`** — es un valor reservado del núcleo, no una pasarela.
 
-## 5. Cambiar el estado de una reserva desde tu satélite
+## 6. Cambiar el estado de una reserva desde tu satélite
 
 Si tu integración necesita cambiar el estado de una reserva por su cuenta (ej. un sync con un channel manager que cancela una reserva desde el otro lado), llamá directo a los métodos públicos de `BookingManager` (`confirm()`, `cancel()`, `reschedule()`) — todos disparan los hooks de § 2 automáticamente, así que el resto del sistema (emails, voucher, ledger de proveedores) sigue funcionando sin que tu satélite tenga que replicar esa lógica. No actualices la tabla `amir_bookings` directo con SQL propio salvo que sepas exactamente por qué — te salteás los hooks y probablemente el email al cliente.
 
-## 6. Convenciones para no chocar con el núcleo ni con otros satélites
+## 7. Convenciones para no chocar con el núcleo ni con otros satélites
 
 - **`Requires Plugins: amir-booking`** en el docblock de tu plugin (soportado nativo desde WordPress 6.5) — evita que se active sin el plugin principal.
 - **Namespace propio**, nunca `AmirBooking\` ni `TourFlow\` — son del núcleo. Un prefijo con el nombre de tu integración (`RedsysForTourFlow\`, `WhatsappNotifyForTourFlow\`) alcanza.
 - **Prefijo de opciones/tablas propio** si tu satélite guarda configuración — no reuses `amir_*` como prefijo de `wp_options` o de tablas nuevas.
 - **No dupliques lógica de negocio** (cálculo de reembolso, disponibilidad, precio) — llamá a las clases del núcleo (`BookingManager`, `PricingEngine`, `AvailabilityEngine`) en vez de reimplementar la regla. Si esas clases no exponen algo que necesitás como público, es una señal de que falta un punto de extensión — pedilo antes de hackear un workaround.
 
-## 7. Pensado a futuro — lo que todavía no existe
+## 8. Pensado a futuro — lo que todavía no existe
 
 Igual que `GUIA-THEMES-TOURFLOW.md § 6`, esto es una lista honesta de huecos, no algo ya construido:
 
@@ -152,7 +196,7 @@ Igual que `GUIA-THEMES-TOURFLOW.md § 6`, esto es una lista honesta de huecos, n
 
 Ninguno de los tres es un cambio grande si hace falta — son extensiones puntuales sobre el patrón que ya existe (§ 2/§ 3), no una reescritura.
 
-## 8. Checklist — ¿tu plugin satélite está listo?
+## 9. Checklist — ¿tu plugin satélite está listo?
 
 - [ ] `Requires Plugins: amir-booking` en el docblock.
 - [ ] Namespace y prefijo de opciones/tablas propios, nada de `AmirBooking\`/`TourFlow\`/`amir_*`.
@@ -160,3 +204,4 @@ Ninguno de los tres es un cambio grande si hace falta — son extensiones puntua
 - [ ] Si reacciona a eventos: usa los hooks de § 2 en vez de sondear la base de datos por su cuenta.
 - [ ] Si cambia el estado de una reserva: pasa por `BookingManager`, nunca por SQL directo.
 - [ ] No duplica lógica de precio/disponibilidad/reembolso que ya vive en el núcleo.
+- [ ] Si expone datos a un consumidor externo (bot/partner/app, § 4): lee los datos llamando a las rutas REST públicas del núcleo con `rest_do_request()`, nunca con `$wpdb` propio; autentica al consumidor (API key u otro mecanismo propio, nunca sin auth si algo ahí puede mutar algo); y si ofrece "reservar", devuelve el link real al flujo existente en vez de crear la reserva por su cuenta.

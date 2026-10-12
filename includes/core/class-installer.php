@@ -178,6 +178,10 @@ class Installer {
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
+        // Las columnas TEXT/LONGTEXT van SIN DEFAULT a propósito: MySQL 8 (modo
+        // estricto) rechaza `TEXT DEFAULT '[]'` y la tabla no se crea. MariaDB
+        // lo acepta, por eso el bug pasó desapercibido. El valor vacío lo
+        // resuelve la capa PHP (`?: '[]'`) al leer y al escribir.
         // ── amir_tours ────────────────────────────────────────────────────
         dbDelta( "CREATE TABLE {$wpdb->prefix}amir_tours (
             id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -206,11 +210,11 @@ class Installer {
             meeting_point_en   TEXT,
             meeting_lat        DECIMAL(10,8),
             meeting_lng        DECIMAL(11,8),
-            includes_es        TEXT DEFAULT '[]',
-            includes_en        TEXT DEFAULT '[]',
-            excludes_es        TEXT DEFAULT '[]',
-            excludes_en        TEXT DEFAULT '[]',
-            gallery_images     TEXT DEFAULT '[]',
+            includes_es        TEXT,
+            includes_en        TEXT,
+            excludes_es        TEXT,
+            excludes_en        TEXT,
+            gallery_images     TEXT,
             itinerary_es       LONGTEXT,
             itinerary_en       LONGTEXT,
             itinerary_stops    LONGTEXT,
@@ -302,6 +306,9 @@ class Installer {
             price_mxn     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             digital_file_url VARCHAR(500) DEFAULT NULL,
             image_id      INT UNSIGNED DEFAULT NULL,
+            description_es TEXT,
+            description_en TEXT,
+            gallery_ids   TEXT,
             active        TINYINT(1) NOT NULL DEFAULT 1,
             sort_order    TINYINT UNSIGNED NOT NULL DEFAULT 0,
             PRIMARY KEY (id),
@@ -572,7 +579,7 @@ class Installer {
             type        VARCHAR(50) NOT NULL,
             title       VARCHAR(255) NOT NULL DEFAULT '',
             message     TEXT,
-            data        TEXT DEFAULT '{}',
+            data        TEXT,
             is_read     TINYINT(1) NOT NULL DEFAULT 0,
             created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -608,11 +615,14 @@ class Installer {
             price_per_night        DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             default_checkin_time   TIME NOT NULL DEFAULT '15:00:00',
             default_checkout_time  TIME NOT NULL DEFAULT '11:00:00',
-            gallery_images         TEXT DEFAULT '[]',
+            gallery_images         TEXT,
             amenities              LONGTEXT,
             video_url              VARCHAR(500) DEFAULT NULL,
             sort_order             SMALLINT UNSIGNED NOT NULL DEFAULT 0,
             provider_id            INT UNSIGNED DEFAULT NULL,
+            provider_cost_per_night DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            deposit_enabled        TINYINT(1) NOT NULL DEFAULT 0,
+            deposit_pct            TINYINT UNSIGNED NOT NULL DEFAULT 0,
             ical_import_url        VARCHAR(500) DEFAULT NULL,
             created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -698,6 +708,7 @@ class Installer {
         add_option( 'amir_delete_data_on_uninstall', '0' );
         add_option( 'amir_provider_reminder_hours',  '24' );
         add_option( 'amir_provider_response_hours',  '48' );
+        add_option( 'amir_provider_reveal_client_at', 'request' );
 
         self::create_verify_page();
         self::create_provider_action_page();
@@ -873,7 +884,7 @@ class Installer {
             'amir_review_delay_days', 'amir_admin_email',
             'amir_delete_data_on_uninstall', 'amir_verify_page_id', 'amir_provider_page_id',
             'amir_public_site_url',
-            'amir_provider_reminder_hours', 'amir_provider_response_hours',
+            'amir_provider_reminder_hours', 'amir_provider_response_hours', 'amir_provider_reveal_client_at',
             'amir_brand_logo_id', 'amir_brand_logo_url', 'amir_brand_color',
             'amir_company_name', 'amir_company_tagline_es', 'amir_company_tagline_en',
             'amir_email_recs_es', 'amir_email_recs_en',
@@ -1157,6 +1168,7 @@ class Installer {
         ) NOT NULL DEFAULT 'pending'" );
         add_option( 'amir_provider_reminder_hours', '24' );
         add_option( 'amir_provider_response_hours', '48' );
+        add_option( 'amir_provider_reveal_client_at', 'request' );
 
         // 1.9.1: check-in por escaneo de voucher (Modo campo → 📷 Escanear
         // voucher) — el QR ya existente del voucher codifica verify_url()
@@ -1581,6 +1593,45 @@ class Installer {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN payment_failed_at DATETIME DEFAULT NULL AFTER confirmed_at" );
         }
         add_option( 'amir_payment_grace_mins', '360' );
+
+        // 1.42.0 — las columnas TEXT dejan de tener DEFAULT (ver create_tables()).
+        // No hace falta ALTER: en instalaciones existentes el DEFAULT anterior
+        // sigue igual y no rompe nada; create_tables() solo afecta filas nuevas.
+
+        // 1.43.0 (v5.13.7) — revisión del circuito de proveedores externos
+        // para el sitio nuevo de Caliafarm (GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md):
+        // `flow_rooms.provider_id` existía desde el día uno pero nunca se
+        // conectó al resto del mecanismo (aprobación, liquidación) — ahora sí.
+        // Mismos dos ejes que ya tienen los tours: costo del proveedor por
+        // noche (liquidación) y depósito parcial opcional (cobrar solo una
+        // parte, el resto se arregla directo entre huésped y proveedor).
+        $room_cols = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}flow_rooms" );
+        if ( ! in_array( 'provider_cost_per_night', $room_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}flow_rooms ADD COLUMN provider_cost_per_night DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER provider_id" );
+        }
+        if ( ! in_array( 'deposit_enabled', $room_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}flow_rooms ADD COLUMN deposit_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER provider_cost_per_night" );
+        }
+        if ( ! in_array( 'deposit_pct', $room_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}flow_rooms ADD COLUMN deposit_pct TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER deposit_enabled" );
+        }
+
+        // 1.44.0 (v5.13.11) — descripción y fotos extra por extra global
+        // (pedido del cliente 2026-10-12): un producto digital (guía PDF)
+        // vendido suelto sin descripción ni más fotos que la portada no se
+        // vende. description_es/en siguen el patrón de name_es/en (otros
+        // idiomas caen en content_i18n); gallery_ids es un JSON de IDs de
+        // adjuntos, mismo criterio que image_id (la URL se resuelve al leer).
+        $addon_cols_v4 = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_addons" );
+        if ( ! in_array( 'description_es', $addon_cols_v4, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN description_es TEXT AFTER image_id" );
+        }
+        if ( ! in_array( 'description_en', $addon_cols_v4, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN description_en TEXT AFTER description_es" );
+        }
+        if ( ! in_array( 'gallery_ids', $addon_cols_v4, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN gallery_ids TEXT AFTER description_en" );
+        }
 
         self::create_tables();
         self::create_verify_page();

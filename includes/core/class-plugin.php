@@ -269,18 +269,19 @@ final class Plugin {
         // ── Marketplace de proveedores: ledger de liquidación ─────────────
         // BookingManager::provider_approve() dispara esta acción — genera
         // automáticamente la fila 'pending' del ledger (amir_provider_payouts)
-        // con el costo del proveedor para esa reserva, calculado desde
+        // con el costo del proveedor para esa reserva. Tours: calculado desde
         // amir_prices.provider_cost_mxn (mismo criterio de vigencia/horario
         // que el precio de venta, ver PricingEngine::calculate_provider_cost()).
+        // Habitaciones (2026-10, GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md):
+        // noches × flow_rooms.provider_cost_per_night — antes de esta fecha
+        // el listener solo conocía amir_tours, así que una habitación de
+        // proveedor externo nunca generaba nada acá para liquidar.
         add_action( 'amir_provider_booking_approved', function ( int $booking_id ) {
             global $wpdb;
             $booking = $wpdb->get_row( $wpdb->prepare(
-                "SELECT b.*, t.provider_id
-                 FROM {$wpdb->prefix}amir_bookings b
-                 JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
-                 WHERE b.id = %d", $booking_id
+                "SELECT * FROM {$wpdb->prefix}amir_bookings WHERE id = %d", $booking_id
             ) );
-            if ( ! $booking || ! $booking->provider_id ) {
+            if ( ! $booking ) {
                 return;
             }
 
@@ -299,23 +300,56 @@ final class Plugin {
                 return;
             }
 
-            $cost = ( new \AmirBooking\Core\PricingEngine() )->calculate_provider_cost(
-                (int) $booking->tour_id,
-                (int) $booking->schedule_id,
-                $booking->tour_date,
-                (int) $booking->adults,
-                (int) $booking->children,
-                (int) $booking->babies
-            );
+            // Depósito parcial (2026-10, GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md,
+            // decisión confirmada con el cliente): si la reserva se pagó con
+            // depósito, el huésped arregla el resto DIRECTO con el proveedor
+            // (efectivo o tarjeta) — el depósito cobrado por TourFlow ES la
+            // comisión completa del operador. No corresponde liquidarle nada
+            // más al proveedor por esta reserva puntual, así que no se genera
+            // fila en el ledger. Si más adelante se necesita trackear el
+            // monto igual (solo para reportes, sin que nadie tenga que
+            // pagarlo), se puede insertar con status ya 'paid' en vez de
+            // omitirlo — por ahora no hay ese pedido.
+            if ( (int) ( $booking->deposit_pct ?? 0 ) > 0 ) {
+                return;
+            }
 
-            if ( $cost <= 0 ) {
+            $provider_id = 0;
+            $cost        = 0.0;
+
+            if ( ! empty( $booking->tour_id ) ) {
+                $provider_id = (int) $wpdb->get_var( $wpdb->prepare(
+                    "SELECT provider_id FROM {$wpdb->prefix}amir_tours WHERE id = %d", (int) $booking->tour_id
+                ) );
+                if ( $provider_id > 0 ) {
+                    $cost = ( new \AmirBooking\Core\PricingEngine() )->calculate_provider_cost(
+                        (int) $booking->tour_id,
+                        (int) $booking->schedule_id,
+                        $booking->tour_date,
+                        (int) $booking->adults,
+                        (int) $booking->children,
+                        (int) $booking->babies
+                    );
+                }
+            } elseif ( ! empty( $booking->room_id ) ) {
+                $room = $wpdb->get_row( $wpdb->prepare(
+                    "SELECT provider_id, provider_cost_per_night FROM {$wpdb->prefix}flow_rooms WHERE id = %d", (int) $booking->room_id
+                ) );
+                $provider_id = (int) ( $room->provider_id ?? 0 );
+                if ( $provider_id > 0 && ! empty( $booking->check_out_date ) ) {
+                    $nights = (int) round( ( strtotime( $booking->check_out_date ) - strtotime( $booking->tour_date ) ) / DAY_IN_SECONDS );
+                    $cost   = max( 0, $nights ) * (float) ( $room->provider_cost_per_night ?? 0 );
+                }
+            }
+
+            if ( $provider_id <= 0 || $cost <= 0 ) {
                 return;
             }
 
             $wpdb->insert(
                 "{$wpdb->prefix}amir_provider_payouts",
                 [
-                    'provider_id' => (int) $booking->provider_id,
+                    'provider_id' => $provider_id,
                     'booking_id'  => $booking_id,
                     'amount_mxn'  => $cost,
                     'status'      => 'pending',

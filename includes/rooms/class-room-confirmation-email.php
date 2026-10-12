@@ -42,7 +42,16 @@ final class RoomConfirmationEmail extends \AmirBooking\Emails\BaseEmail {
 		// hacer que llegue la reserva toda junta"). Standalone (sin carrito,
 		// ej. reserva manual de una habitación desde el admin) sigue mandando
 		// esta confirmación como siempre.
-		if ( empty( $booking->cart_group_id ) ) {
+		//
+		// EXCEPCIÓN (bug real corregido 2026-10, mismo fix que
+		// EmailDispatcher::send_confirmation() — GUIA-CIRCUITO-PROVEEDORES-
+		// EXTERNOS.md): una habitación de proveedor externo SÍ tiene
+		// cart_group_id, pero se confirma más tarde que el resto del carrito
+		// (cuando el proveedor aprueba). El voucher general ya salió antes
+		// sin incluirla — suprimir también este email dejaba al cliente sin
+		// ningún aviso. `provider_responded_at` distingue "confirmación del
+		// checkout original" de "confirmación tardía por aprobación".
+		if ( empty( $booking->cart_group_id ) || ! empty( $booking->provider_responded_at ) ) {
 			( new self( $booking ) )->send();
 		}
 

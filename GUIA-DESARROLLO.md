@@ -240,7 +240,7 @@ No existe un entorno de staging con deploy automático. El flujo real:
 2. Si tocaste `react-src/`: `cd react-src && npm run build`.
 3. Correr tests: `docker run --rm -v "$PWD":/app -w /app php:8.1-cli vendor/bin/phpunit` (Docker porque no hay PHP instalado directo en el host de desarrollo — puede no ser tu caso, si tenés PHP 8.1 local podés correr `vendor/bin/phpunit` directo).
 4. Armar el ZIP de despliegue: `vendor/` se regenera **sin** dependencias de dev (`composer install --no-dev --optimize-autoloader`) en una copia aparte, excluyendo `react-src/`, `tests/`, `.git`, `node_modules`, docs internas — solo el código que WordPress necesita en runtime.
-5. Subir el ZIP manualmente por WP Admin → Plugins → Subir plugin, en el sitio de pruebas (`amiradventours.com/sandbox/`). Reemplazar el plugin no borra los datos (viven en las tablas `wp_N_amir_*`).
+5. Subir el ZIP manualmente por WP Admin → Plugins → Subir plugin, en el sitio de pruebas (sandbox nuevo, pendiente de crear: `tourflow.johelpastorino.com` o `johelpastorino.com/tourflow`). Reemplazar el plugin no borra los datos (viven en las tablas `wp_N_amir_*`).
 
 **Antes de cualquier ZIP**: subir `AMIR_VERSION` en `amir-booking.php` (constante y docblock) si tocaste algo en `assets/js/*` o `assets/css/*` — si no, el navegador sirve la versión vieja cacheada.
 

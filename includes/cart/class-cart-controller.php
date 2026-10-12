@@ -464,6 +464,63 @@ class CartController {
 		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->prefix}amir_bookings WHERE id IN ({$placeholders})", $booking_ids ) );
 	}
 
+	// ── Confirmación del grupo ───────────────────────────────────────────
+
+	/**
+	 * Confirma TODAS las reservas pagables de un carrito con el mismo cobro y,
+	 * si algo avanzó, manda el email del carrito (`flow_cart_confirmed`).
+	 *
+	 * Lo llaman los dos caminos de confirmación, que son redundantes a
+	 * propósito: el POST /confirm-payment del propio cliente y el webhook de
+	 * la pasarela. Antes el webhook confirmaba UNA sola reserva (la primera
+	 * que encontraba por referencia de pago), así que si el cliente cerraba
+	 * la pestaña antes de volver al sitio, un carrito quedaba a medias: un
+	 * ítem confirmado y el resto cobrado pero 'pending' hasta vencer.
+	 *
+	 * Idempotente: confirm() reclama cada reserva con una transición real de
+	 * estado, así que un segundo llamado (el otro camino) no avanza nada y no
+	 * reenvía el email. Una reserva de proveedor externo termina en
+	 * 'pending_provider_approval' y también cuenta como "avanzó".
+	 *
+	 * @return int cantidad de reservas que cambiaron de estado en esta llamada
+	 */
+	public static function confirm_group( string $cart_group_id, string $charge_reference ): int {
+		global $wpdb;
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, status FROM {$wpdb->prefix}amir_bookings WHERE cart_group_id = %s ORDER BY id ASC",
+			$cart_group_id
+		) );
+		if ( empty( $rows ) ) {
+			return 0;
+		}
+
+		$manager      = new \AmirBooking\Core\BookingManager();
+		$transitioned = 0;
+		foreach ( $rows as $row ) {
+			// 'payment_expired': el pago llegó después de vencer la reserva —
+			// confirm() la recupera si el cupo sigue libre, o la reembolsa.
+			if ( in_array( $row->status, [ 'pending', 'payment_expired' ], true )
+				&& $manager->confirm( (int) $row->id, $charge_reference ) ) {
+				$transitioned++;
+			}
+		}
+
+		if ( $transitioned > 0 ) {
+			// Si todo se reembolsó por falta de cupo no hay nada que resumir.
+			$alive = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->prefix}amir_bookings
+				 WHERE cart_group_id = %s AND status IN ('confirmed','pending_provider_approval')",
+				$cart_group_id
+			) );
+			if ( $alive > 0 ) {
+				do_action( 'flow_cart_confirmed', $cart_group_id );
+			}
+		}
+
+		return $transitioned;
+	}
+
 	// ── POST /cart/{cart_group_id}/confirm-payment ───────────────────────
 
 	public function confirm_payment( \WP_REST_Request $request ): \WP_REST_Response {
@@ -521,13 +578,8 @@ class CartController {
 		// releer el estado real después de confirm() para no mentirle al
 		// cliente ("tu reserva está confirmada" para algo que en realidad
 		// quedó esperando al proveedor).
-		$manager = new \AmirBooking\Core\BookingManager();
+		self::confirm_group( $cart_group_id, $status->charge_reference );
 		foreach ( $bookings as $b ) {
-			// 'payment_expired': el pago llegó después de vencer la reserva —
-			// confirm() la recupera si el cupo sigue libre, o la reembolsa.
-			if ( in_array( $b->status, [ 'pending', 'payment_expired' ], true ) ) {
-				$manager->confirm( (int) $b->id, $status->charge_reference );
-			}
 			\AmirBooking\Payments\PaymentEventLogger::log( (int) $b->id, $gateway->id(), 'succeeded', '', [ 'charge_reference' => $status->charge_reference, 'cart_group_id' => $cart_group_id ] );
 		}
 
@@ -541,14 +593,10 @@ class CartController {
 		$confirmed_refs       = wp_list_pluck( array_filter( $final, fn( $b ) => $b->status === 'confirmed' ), 'booking_ref' );
 		$pending_provider_refs = wp_list_pluck( array_filter( $final, fn( $b ) => $b->status === 'pending_provider_approval' ), 'booking_ref' );
 
-		// El "voucher general" (§ 16.15 CONTRIBUTING.md) es un complemento de
-		// los emails por ítem, no un reemplazo — si ningún ítem terminó
-		// realmente 'confirmed' (ej. el único tour del carrito era de un
-		// proveedor externo), no hay nada confirmado que resumir todavía; el
-		// aviso interino de ese ítem (ProviderPendingNoticeEmail) ya avisó.
-		if ( ! empty( $confirmed_refs ) ) {
-			do_action( 'flow_cart_confirmed', $cart_group_id );
-		}
+		// El email del carrito (CartConfirmationEmail) ya lo dispara
+		// confirm_group() — una sola vez por compra, venga el aviso del
+		// webhook o de este endpoint — y lista TODOS los ítems, marcando los
+		// que siguen esperando al proveedor. Acá solo se arma la respuesta.
 
 		// Ningún ítem quedó confirmado ni esperando al proveedor: el pago
 		// llegó tarde y no había cupo (ya se reembolsó), o no se pudo

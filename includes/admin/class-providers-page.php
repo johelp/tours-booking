@@ -66,6 +66,8 @@ class ProvidersPage {
           <div class="notice notice-success is-dismissible"><p><?php echo esc_html( $message ); ?></p></div>
         <?php endif; ?>
 
+        <?php $this->render_marketplace_settings(); ?>
+
         <div id="amir-new-provider-form" style="display:none;background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:20px;margin-bottom:24px;">
           <h3 style="margin:0 0 16px;color:#1D9E75;"><?php echo esc_html( $this->tt( 'Nuevo proveedor', 'New provider' ) ); ?></h3>
           <form method="post">
@@ -194,6 +196,62 @@ class ProvidersPage {
         <?php
     }
 
+    /**
+     * Pedido del cliente (2026-10): poder elegir si el proveedor ve los
+     * datos de contacto del cliente apenas se le pide que confirme, o recién
+     * cuando confirma de verdad (menos riesgo de que contacte al cliente
+     * directo antes de comprometerse). De paso: `amir_provider_reminder_hours`/
+     * `amir_provider_response_hours` ya existían como opción desde v5.6.9,
+     * pero nunca tuvieron ningún campo en ningún admin — el operador no podía
+     * cambiarlas sin tocar la base de datos a mano. Las tres viven juntas acá
+     * por ser la misma decisión de negocio: cómo se comporta el circuito de
+     * aprobación del proveedor.
+     */
+    private function render_marketplace_settings(): void {
+        $reveal   = get_option( 'amir_provider_reveal_client_at', 'request' );
+        $reminder = (int) get_option( 'amir_provider_reminder_hours', 24 );
+        $response = (int) get_option( 'amir_provider_response_hours', 48 );
+        ?>
+        <details class="amir-collapsible" style="background:#fff;border:1px solid #e1f5ee;border-radius:10px;padding:4px 20px;margin-bottom:20px;">
+          <summary><?php echo esc_html( $this->tt( '⚙ Configuración del marketplace', '⚙ Marketplace settings' ) ); ?></summary>
+          <form method="post" style="padding:4px 0 18px;">
+            <?php wp_nonce_field( 'amir_provider_action' ); ?>
+            <input type="hidden" name="amir_action" value="save_marketplace_settings" />
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:760px;">
+              <div>
+                <label style="display:block;font-weight:600;font-size:12px;margin-bottom:5px;"><?php echo esc_html( $this->tt( '¿Cuándo ve el proveedor los datos del cliente?', 'When does the provider see the customer\'s details?' ) ); ?></label>
+                <select name="amir_provider_reveal_client_at" style="width:100%;">
+                  <option value="request" <?php selected( $reveal, 'request' ); ?>><?php echo esc_html( $this->tt( 'Al pedirle que confirme (recomendado)', 'When asked to confirm (recommended)' ) ); ?></option>
+                  <option value="approval" <?php selected( $reveal, 'approval' ); ?>><?php echo esc_html( $this->tt( 'Recién cuando confirma la reserva', 'Only once they confirm the booking' ) ); ?></option>
+                </select>
+                <p class="description" style="font-size:11px;"><?php echo esc_html( $this->tt(
+                  'Con la segunda opción, el primer email solo muestra fechas y cantidad de personas — el nombre, email y teléfono del cliente se le mandan en un email aparte recién cuando confirma.',
+                  "With the second option, the first email only shows dates and headcount — the customer's name, email and phone are sent in a separate email only once they confirm."
+                ) ); ?></p>
+              </div>
+              <div>
+                <label style="display:block;font-weight:600;font-size:12px;margin-bottom:5px;"><?php echo esc_html( $this->tt( 'Recordatorio al proveedor', 'Reminder to the provider' ) ); ?></label>
+                <select name="amir_provider_reminder_hours" style="width:100%;">
+                  <?php foreach ( [ 6, 12, 24, 48 ] as $h ) : ?>
+                    <option value="<?php echo (int) $h; ?>" <?php selected( $reminder, $h ); ?>><?php echo (int) $h; ?> <?php echo esc_html( $this->tt( 'horas', 'hours' ) ); ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;font-weight:600;font-size:12px;margin-bottom:5px;"><?php echo esc_html( $this->tt( 'Vencimiento automático (cancela y reembolsa)', 'Automatic expiration (cancels and refunds)' ) ); ?></label>
+                <select name="amir_provider_response_hours" style="width:100%;">
+                  <?php foreach ( [ 12, 24, 48, 72 ] as $h ) : ?>
+                    <option value="<?php echo (int) $h; ?>" <?php selected( $response, $h ); ?>><?php echo (int) $h; ?> <?php echo esc_html( $this->tt( 'horas', 'hours' ) ); ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+            </div>
+            <?php submit_button( $this->tt( 'Guardar configuración', 'Save settings' ), 'secondary', 'submit', false ); ?>
+          </form>
+        </details>
+        <?php
+    }
+
     private function handle_actions(): void {
         if ( empty( $_POST['amir_action'] ) || ! wp_verify_nonce( $_POST['_wpnonce'] ?? '', 'amir_provider_action' ) ) {
             return;
@@ -201,6 +259,15 @@ class ProvidersPage {
 
         global $wpdb;
         $action = sanitize_key( $_POST['amir_action'] );
+
+        if ( $action === 'save_marketplace_settings' ) {
+            $reveal = sanitize_key( $_POST['amir_provider_reveal_client_at'] ?? 'request' );
+            update_option( 'amir_provider_reveal_client_at', in_array( $reveal, [ 'request', 'approval' ], true ) ? $reveal : 'request' );
+            update_option( 'amir_provider_reminder_hours', max( 1, absint( $_POST['amir_provider_reminder_hours'] ?? 24 ) ) );
+            update_option( 'amir_provider_response_hours', max( 1, absint( $_POST['amir_provider_response_hours'] ?? 48 ) ) );
+            set_transient( 'amir_provider_message', $this->tt( 'Configuración guardada.', 'Settings saved.' ), 30 );
+            return;
+        }
 
         if ( $action === 'create_provider' ) {
             $business_name = sanitize_text_field( wp_unslash( $_POST['business_name'] ?? '' ) );
@@ -290,6 +357,10 @@ class ProvidersPage {
         .ab-th{font-size:11px;font-weight:700;color:#5a7068;text-transform:uppercase;letter-spacing:.4px;padding:10px 12px;text-align:left}
         .ab-td{font-size:13px;padding:10px 12px;vertical-align:middle}
         .ab-label{display:block;font-size:12px;font-weight:700;color:#1a2e24;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+        .amir-collapsible summary{cursor:pointer;list-style:none;font-size:13px;font-weight:700;color:var(--ab-teal,#1D9E75);padding:14px 0;display:flex;align-items:center;gap:7px}
+        .amir-collapsible summary::-webkit-details-marker{display:none}
+        .amir-collapsible summary::before{content:"▸";display:inline-block;transition:transform .15s;font-size:11px}
+        .amir-collapsible[open] summary::before{transform:rotate(90deg)}
         </style>';
     }
 }

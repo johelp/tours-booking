@@ -1,9 +1,8 @@
 <?php
 /**
  * Plugin Name:  Mercado Pago Split for TourFlow
- * Plugin URI:   https://amiradventours.com
  * Description:  Split payment 1:1 de Mercado Pago para proveedores externos del marketplace de TourFlow — plugin satélite, no toca el núcleo. Opcional por proveedor: sin cuenta conectada, sigue el flujo manual de siempre. Ver PROMPT-MERCADOPAGO-SPLIT.md del núcleo.
- * Version:      0.1.0
+ * Version:      0.1.2
  * Author:       TourFlow
  * Text Domain:  mercadopago-split-tourflow
  * Requires PHP: 8.1
@@ -15,7 +14,7 @@ namespace MercadoPagoSplitForTourFlow;
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'MPSTF_VERSION',    '0.1.0' );
+define( 'MPSTF_VERSION',    '0.1.2' );
 define( 'MPSTF_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 
 require_once MPSTF_PLUGIN_DIR . 'includes/class-mpstf-installer.php';

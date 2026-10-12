@@ -30,6 +30,14 @@ class TourPostType {
         add_action( 'created_' . self::TAXONOMY, [ $this, 'save_category_en_name' ] );
         add_action( 'edited_' . self::TAXONOMY,  [ $this, 'save_category_en_name' ] );
         add_action( 'add_meta_boxes',          [ $this, 'add_meta_boxes'     ] );
+        // Nav rápida pegajosa (pedido del cliente: "optimizar la pantalla de
+        // carga y edición de tours para que sea más entendible, intuitiva"),
+        // mismo patrón ya probado en el editor del Panel de gestión
+        // (ToursSection::metabox_list(), 2026-10) — acá para el editor
+        // NATIVO de wp-admin, que es el que usa el operador la mayoría del
+        // tiempo. edit_form_top dispara justo después del campo de título,
+        // antes del editor principal y las metaboxes.
+        add_action( 'edit_form_top',           [ $this, 'render_quick_nav'   ] );
         add_action( 'save_post_' . self::POST_TYPE, [ $this, 'save_meta'   ], 10, 2 );
         add_action( 'rest_api_init',           [ $this, 'register_rest_fields' ] );
         add_filter( 'enter_title_here',        [ $this, 'title_placeholder' ] );
@@ -246,7 +254,14 @@ class TourPostType {
 
     // ── Meta Boxes ────────────────────────────────────────────────────────
 
-    public function add_meta_boxes(): void {
+    /**
+     * Fuente única de la lista de metaboxes — usada por add_meta_boxes()
+     * (registro real) y render_quick_nav() (nav de anclas), para que agregar
+     * una metabox nueva no implique mantener dos listas sincronizadas a
+     * mano (bug de higiene ya evitado una vez en ToursSection::metabox_list(),
+     * la versión equivalente del Panel de gestión).
+     */
+    private function metabox_list(): array {
         $boxes = [
             [ 'amir_tour_main',    __( '⚙ Configuración del tour',    'amir-booking' ), [ $this, 'meta_box_main'      ] ],
             [ 'amir_tour_content', __( '📝 Contenido bilingüe (EN)',   'amir-booking' ), [ $this, 'meta_box_content'   ] ],
@@ -270,9 +285,61 @@ class TourPostType {
             $boxes[] = [ 'amir_tour_itinerary', __( '🗺 Itinerario (timeline)',   'amir-booking' ), [ $this, 'meta_box_itinerary' ] ];
         }
 
-        foreach ( $boxes as [ $id, $title, $cb ] ) {
+        return $boxes;
+    }
+
+    public function add_meta_boxes(): void {
+        foreach ( $this->metabox_list() as [ $id, $title, $cb ] ) {
             add_meta_box( $id, $title, $cb, self::POST_TYPE, 'normal', 'high' );
         }
+    }
+
+    /**
+     * Barra de navegación pegajosa con un link por metabox, pedido explícito
+     * del cliente probando el editor en vivo ("optimizar la pantalla de
+     * carga y edición de tours para que sea más entendible, intuitiva") —
+     * el editor encadena hasta 11 metaboxes en una sola columna larga, sin
+     * forma de saltar a una sección puntual (ej. "Precios") sin scrollear
+     * todo. Los `id` de cada <div class="postbox"> los pone WordPress solo
+     * (son el primer argumento de add_meta_box()), así que los anchors
+     * `#amir_tour_x` funcionan sin tocar ningún meta_box_*() — mismo
+     * criterio ya probado en ToursSection del Panel de gestión (2026-10).
+     * No duplica el botón de guardar: a diferencia del Panel (un <form>
+     * propio sin nada nativo de WP), acá la caja "Publicar/Actualizar" de
+     * wp-admin ya vive arriba a la derecha, visible sin scrollear casi
+     * nunca.
+     */
+    public function render_quick_nav( \WP_Post $post ): void {
+        if ( $post->post_type !== self::POST_TYPE ) {
+            return;
+        }
+        echo '<nav class="amir-tour-quicknav"><span class="amir-tour-quicknav-label">'
+            . esc_html__( 'Ir a:', 'amir-booking' ) . '</span>';
+        foreach ( $this->metabox_list() as [ $id, $title, $cb ] ) {
+            echo '<a href="#' . esc_attr( $id ) . '">' . esc_html( $title ) . '</a>';
+        }
+        echo '</nav>';
+        ?>
+        <style>
+        .amir-tour-quicknav {
+            position: sticky; top: 32px; z-index: 9; display: flex; flex-wrap: nowrap;
+            gap: 6px; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch;
+            background: #fff; border: 1px solid #dcdfe0; border-radius: 6px;
+            padding: 8px 10px; margin: 0 0 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+        }
+        .amir-tour-quicknav-label { font-size: 12px; font-weight: 600; color: #50575e; flex: 0 0 auto; }
+        .amir-tour-quicknav a {
+            flex: 0 0 auto; white-space: nowrap; font-size: 12.5px; text-decoration: none;
+            color: var(--ab-teal, #1D9E75); background: var(--ab-teal-light, #f0faf6);
+            border: 1px solid var(--ab-teal, #1D9E75); border-radius: 999px; padding: 4px 10px;
+        }
+        .amir-tour-quicknav a:hover { background: var(--ab-teal, #1D9E75); color: #fff; }
+        [id^="amir_tour_"] { scroll-margin-top: 80px; }
+        @media (max-width: 782px) {
+            .amir-tour-quicknav { top: 46px; }
+        }
+        </style>
+        <?php
     }
 
     // ── Meta Box: Configuración principal ────────────────────────────────
@@ -421,7 +488,7 @@ class TourPostType {
             <?php if ( $m['deposit_enabled'] ) : ?><span class="amir-active-flag"><?php _e('Activo', 'amir-booking'); ?></span><?php endif; ?>
           </summary>
           <p style="font-size:12px;color:#666;margin:0 0 12px;">
-            <?php _e( 'El cliente paga solo este % online al reservar (flujo Explorar/combinado) — el resto lo cobrás después, en efectivo el día de la experiencia o mandando un link de pago desde la reserva. No aplica a habitaciones, solo a este tour.', 'amir-booking' ); ?>
+            <?php _e( 'El cliente paga solo este % online al reservar (flujo Explorar/combinado) — el resto lo cobrás después, en efectivo el día de la experiencia o mandando un link de pago desde la reserva. Aplica solo a este tour — las habitaciones tienen su propio % de depósito, configurable en su propio editor.', 'amir-booking' ); ?>
           </p>
           <div class="amir-meta-grid">
             <div class="amir-field">
@@ -2362,6 +2429,17 @@ class TourPostType {
 
         // La regla base BLOQUEA los días que NO están en la lista activa
         $blocked = array_values( array_diff( [0,1,2,3,4,5,6], $weekdays ) );
+
+        // Sin días bloqueados (todos activos) la regla NO debe existir. Antes se
+        // actualizaba a weekdays=[] — y en rule_applies_to_date() un array vacío
+        // significa "todos los días", así que la regla bloqueaba el calendario
+        // entero (tours con los 7 días activos quedaban sin disponibilidad).
+        if ( empty( $blocked ) ) {
+            if ( $existing ) {
+                $wpdb->delete( "{$wpdb->prefix}amir_availability_rules", [ 'id' => (int) $existing ] );
+            }
+            return;
+        }
 
         if ( $existing ) {
             $wpdb->update(

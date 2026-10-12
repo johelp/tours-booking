@@ -61,8 +61,10 @@ class Cleaner {
 				'tables' => [ 'amir_addons' ],
 			],
 			'partners' => [
-				'label'  => 'Partners (links de descuento/afiliados)',
-				'tables' => [ 'amir_partners' ],
+				// amir_partner_payouts (ledger de comisiones, núcleo v5.10.6) no
+				// estaba: al limpiar partners quedaban liquidaciones huérfanas.
+				'label'  => 'Partners (links de descuento/afiliados) + liquidaciones de partners',
+				'tables' => [ 'amir_partner_payouts', 'amir_partners' ],
 			],
 			'providers' => [
 				'label'  => 'Proveedores externos (marketplace) + liquidaciones',

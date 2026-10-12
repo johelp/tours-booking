@@ -75,6 +75,23 @@ final class RoomBookingManager {
 			}
 		}
 
+		// Depósito parcial (2026-10, GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md) —
+		// mismo criterio exacto que BookingManager::create_pending() para
+		// tours: `total` NUNCA cambia de significado (precio real de la
+		// estadía, reportes/liquidación), `charge_mxn` es lo que se cobra
+		// AHORA. Pensado sobre todo para habitaciones de proveedor externo
+		// donde el huésped arregla el resto directo con el proveedor — pero
+		// no se restringe a eso, el operador puede activarlo en cualquier
+		// habitación.
+		$deposit_pct_applied = 0;
+		if ( (bool) ( $room->deposit_enabled ?? 0 ) ) {
+			$cfg_pct = (int) ( $room->deposit_pct ?? 0 );
+			if ( $cfg_pct >= 1 && $cfg_pct <= 99 ) {
+				$deposit_pct_applied = $cfg_pct;
+			}
+		}
+		$charge_mxn = $deposit_pct_applied > 0 ? round( $total * $deposit_pct_applied / 100, 2 ) : $total;
+
 		$booking_ref  = ( new \AmirBooking\Core\BookingManager() )->generate_ref();
 		$access_token = \AmirBooking\Core\BookingManager::generate_access_token();
 
@@ -114,6 +131,7 @@ final class RoomBookingManager {
 			'children'          => 0,
 			'babies'            => 0,
 			'total_mxn'         => $total,
+			'deposit_pct'       => $deposit_pct_applied,
 			'coupon_code'       => $coupon_id > 0 ? strtoupper( trim( $coupon_code ) ) : '',
 			'special_requests'  => sanitize_textarea_field( $data['special_requests'] ?? '' ),
 			'created_at'        => current_time( 'mysql' ),
@@ -155,12 +173,16 @@ final class RoomBookingManager {
 		$wpdb->query( 'COMMIT' );
 
 		$result = new RoomBookingResult( true, $booking_id, $booking_ref, $total );
+		$result->charge_mxn = $charge_mxn;
 
-		// Cupón que cubre el 100% del total (Dudas de producto, CLAUDE.md) —
-		// mismo fix que BookingManager::create_pending() para tours: nace
-		// 'pending' igual que siempre y se confirma con confirm() apenas se
-		// inserta, en vez de intentar un cobro de $0 que Stripe rechaza.
-		if ( $total <= 0 ) {
+		// Cupón que cubre el 100% de lo que corresponde cobrar AHORA (Dudas
+		// de producto, CLAUDE.md) — chequea charge_mxn, no total: con un
+		// depósito activo, un cupón puede llevar el depósito a $0 aunque el
+		// precio total de la estadía siga siendo mayor a cero. Mismo fix que
+		// BookingManager::create_pending() para tours: nace 'pending' igual
+		// que siempre y se confirma con confirm() apenas se inserta, en vez
+		// de intentar un cobro de $0 que Stripe rechaza.
+		if ( $charge_mxn <= 0 ) {
 			( new \AmirBooking\Core\BookingManager() )->confirm( $booking_id, 'coupon-100pct' );
 			$result->requires_payment = false;
 			$result->status           = 'confirmed';

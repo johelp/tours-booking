@@ -110,6 +110,35 @@ final class BookingManagerProviderApprovalTest extends TestCase {
     }
 
     /**
+     * Generalización 2026-10 (GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md):
+     * confirm() también tiene que bifurcar a pending_provider_approval para
+     * una reserva de HABITACIÓN con proveedor externo activo — antes de este
+     * fix, booking_has_active_provider() (ex tour_has_active_provider()) solo
+     * miraba amir_tours vía tour_id, así que una reserva con tour_id NULL
+     * (item_type='room') nunca entraba a esta rama y se confirmaba directo,
+     * sin que el proveedor real se enterara.
+     */
+    public function test_confirm_goes_to_pending_provider_approval_with_active_provider_room(): void {
+        $fake              = $GLOBALS['wpdb'];
+        $fake->booking_row = $this->booking_row( [
+            'item_type' => 'room',
+            'tour_id'   => null,
+            'room_id'   => 5,
+        ] );
+        // Mismo truco que el test de tours: cualquier entero positivo sirve
+        // para las dos queries (flow_rooms.provider_id y amir_providers.active).
+        $fake->var_result = 7;
+
+        $manager = new BookingManager();
+        $ok      = $manager->confirm( 1, 'ch_123' );
+
+        $this->assertTrue( $ok );
+        $this->assertSame( 'pending_provider_approval', $fake->last_update_data['status'] );
+        $this->assertArrayHasKey( 'provider_response_token', $fake->last_update_data );
+        $this->assertNotEmpty( $fake->last_update_data['provider_response_token'] );
+    }
+
+    /**
      * Depósito parcial ("Depósito parcial por tour") — un cobro que llega
      * sobre una reserva YA 'confirmed' con saldo de depósito pendiente es
      * el pago del SALDO, no una confirmación nueva: confirm() debe marcar

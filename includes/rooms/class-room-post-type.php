@@ -131,10 +131,17 @@ class RoomPostType {
 		<style>
 		  .flow-room-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:8px; }
 		  .flow-room-grid-3 { grid-template-columns:1fr 1fr 1fr; }
+		  .flow-room-grid-2 { grid-template-columns:1fr 1fr; }
 		  .flow-room-field label { display:block; font-weight:600; font-size:12px; color:#1a2e24; margin-bottom:4px; text-transform:uppercase; letter-spacing:.3px; }
 		  .flow-room-field input, .flow-room-field select, .flow-room-field textarea { width:100%; border:1px solid #c3d9d0; border-radius:6px; padding:7px 10px; font-size:13px; box-sizing:border-box; }
 		  .flow-room-field input:focus, .flow-room-field select:focus { outline:none; border-color:var(--ab-teal, #1D9E75); box-shadow:0 0 0 2px rgba(29,158,117,.15); }
 		  .flow-room-hint { font-size:11px; color:#888; margin-top:3px; }
+		  .flow-room-collapsible { margin:16px 0 0; border-top:1px solid #e1f5ee; padding-top:2px; }
+		  .flow-room-collapsible summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:var(--ab-teal, #1D9E75); padding:8px 0; }
+		  .flow-room-collapsible summary::-webkit-details-marker { display:none; }
+		  .flow-room-collapsible summary::before { content:'▸'; display:inline-block; transition:transform .15s; font-size:11px; }
+		  .flow-room-collapsible[open] summary::before { transform:rotate(90deg); }
+		  .flow-room-active-flag { font-size:10px; font-weight:700; color:var(--ab-teal-dark, #0F6E56); background:#e1f5ee; border-radius:8px; padding:1px 8px; text-transform:none; letter-spacing:0; }
 		</style>
 
 		<div class="flow-room-grid">
@@ -180,18 +187,63 @@ class RoomPostType {
 		  </div>
 		</div>
 
-		<div class="flow-room-field">
-		  <label>Proveedor externo (marketplace de habitaciones)</label>
-		  <select name="flow_provider_id">
-		    <option value=""><?php _e( '— Habitación propia —', 'amir-booking' ); ?></option>
-		    <?php foreach ( $this->get_provider_options( (int) $m['provider_id'] ) as $p ) : ?>
-		      <option value="<?php echo (int) $p->id; ?>" <?php selected( (int) $m['provider_id'], (int) $p->id ); ?>>
-		        <?php echo esc_html( $p->business_name . ( (int) $p->active === 0 ? ' (inactivo)' : '' ) ); ?>
-		      </option>
-		    <?php endforeach; ?>
-		  </select>
-		  <p class="flow-room-hint">Reusa el mismo catálogo de proveedores del marketplace de tours (TourFlow → 🤝 Proveedores) — no evaluado todavía si el flujo de aprobación aplica igual a habitaciones, columna preparada desde el día uno para no migrar el esquema después.</p>
+		<div class="flow-room-grid flow-room-grid-2">
+		  <div class="flow-room-field">
+		    <label>Proveedor externo (marketplace de habitaciones)</label>
+		    <select name="flow_provider_id" id="flow-room-provider-select">
+		      <option value=""><?php _e( '— Habitación propia —', 'amir-booking' ); ?></option>
+		      <?php foreach ( $this->get_provider_options( (int) $m['provider_id'] ) as $p ) : ?>
+		        <option value="<?php echo (int) $p->id; ?>" <?php selected( (int) $m['provider_id'], (int) $p->id ); ?>>
+		          <?php echo esc_html( $p->business_name . ( (int) $p->active === 0 ? ' (inactivo)' : '' ) ); ?>
+		        </option>
+		      <?php endforeach; ?>
+		    </select>
+		    <p class="flow-room-hint">Reusa el mismo catálogo de proveedores del marketplace de tours (TourFlow → 🤝 Proveedores). Igual que un tour de proveedor: la reserva queda esperando que el proveedor confirme antes de darse por buena — ver <code>GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md</code>.</p>
+		  </div>
+		  <div class="flow-room-field" id="flow-room-provider-cost-field">
+		    <label>Costo del proveedor por noche</label>
+		    <input type="number" name="flow_provider_cost_per_night" value="<?php echo esc_attr( $m['provider_cost_per_night'] ); ?>" min="0" step="0.01" placeholder="0.00" />
+		    <p class="flow-room-hint">Lo que le pagás al proveedor por cada noche — la diferencia con el precio de venta es tu margen. Solo importa si arriba elegiste un proveedor.</p>
+		  </div>
 		</div>
+		<script>
+		(function(){
+		  var sel  = document.getElementById('flow-room-provider-select');
+		  var cost = document.getElementById('flow-room-provider-cost-field');
+		  if ( ! sel || ! cost ) return;
+		  function sync(){ cost.style.opacity = sel.value ? '1' : '.5'; }
+		  sel.addEventListener('change', sync);
+		  sync();
+		})();
+		</script>
+
+		<details class="flow-room-collapsible" <?php echo $m['deposit_enabled'] ? 'open' : ''; ?>>
+		  <summary>💰 Depósito parcial
+		    <?php if ( $m['deposit_enabled'] ) : ?><span class="flow-room-active-flag"><?php _e( 'Activo', 'amir-booking' ); ?></span><?php endif; ?>
+		  </summary>
+		  <p class="flow-room-hint">El huésped paga solo este % al reservar — el resto se arregla aparte (en efectivo, o directo con el proveedor si la habitación es de uno externo). No afecta a otras habitaciones ni tours del mismo carrito, cada ítem tiene su propio %.</p>
+		  <div class="flow-room-grid flow-room-grid-2">
+		    <div class="flow-room-field">
+		      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+		        <input type="checkbox" name="flow_deposit_enabled" id="flow-room-deposit-cb" value="1" <?php checked( $m['deposit_enabled'], '1' ); ?> style="width:auto;" />
+		        Cobrar solo un % como depósito
+		      </label>
+		    </div>
+		    <div class="flow-room-field">
+		      <label>Porcentaje del depósito</label>
+		      <input type="number" name="flow_deposit_pct" id="flow-room-deposit-pct" value="<?php echo esc_attr( $m['deposit_pct'] ); ?>" min="1" max="99" placeholder="Ej: 30" <?php disabled( ! $m['deposit_enabled'] ); ?> />
+		      <p class="flow-room-hint">Entre 1 y 99. Ej: 30 = el huésped paga 30% ahora, 70% después.</p>
+		    </div>
+		  </div>
+		  <script>
+		  (function(){
+		    var master = document.getElementById('flow-room-deposit-cb');
+		    var pct    = document.getElementById('flow-room-deposit-pct');
+		    if ( ! master || ! pct ) return;
+		    master.addEventListener('change', function(){ pct.disabled = ! master.checked; });
+		  })();
+		  </script>
+		</details>
 
 		<div class="flow-room-field">
 		  <label>Video (YouTube) — opcional</label>
@@ -377,6 +429,7 @@ class RoomPostType {
 			'_flow_default_checkout_time' => 'sanitize_text_field',
 			'_flow_sort_order'            => 'absint',
 			'_flow_provider_id'           => 'absint',
+			'_flow_provider_cost_per_night' => 'floatval',
 			'_flow_video_url'             => 'esc_url_raw',
 		];
 
@@ -390,6 +443,7 @@ class RoomPostType {
 			'_flow_default_checkout_time' => 'flow_default_checkout_time',
 			'_flow_sort_order'            => 'flow_sort_order',
 			'_flow_provider_id'           => 'flow_provider_id',
+			'_flow_provider_cost_per_night' => 'flow_provider_cost_per_night',
 			'_flow_video_url'             => 'flow_video_url',
 		];
 
@@ -400,6 +454,13 @@ class RoomPostType {
 			$value     = call_user_func( $sanitizer, wp_unslash( $_POST[ $post_key ] ?? '' ) );
 			update_post_meta( $post_id, $meta_key, $value );
 		}
+
+		// Depósito parcial (checkbox — no llega en $_POST si está destildado,
+		// por eso va aparte del loop genérico de arriba). Mismo patrón que
+		// TourPostType::save_meta() para tours.
+		update_post_meta( $post_id, '_flow_deposit_enabled', ! empty( $_POST['flow_deposit_enabled'] ) ? '1' : '0' );
+		$deposit_pct = (int) ( $_POST['flow_deposit_pct'] ?? 20 );
+		update_post_meta( $post_id, '_flow_deposit_pct', (string) max( 1, min( 99, $deposit_pct ) ) );
 
 		$gallery_ids = json_decode( sanitize_text_field( $_POST['flow_gallery_ids'] ?? '[]' ), true );
 		update_post_meta( $post_id, '_flow_gallery_ids', json_encode( array_map( 'intval', $gallery_ids ?: [] ) ) );
@@ -471,6 +532,9 @@ class RoomPostType {
 			'video_url'             => get_post_meta( $post_id, '_flow_video_url', true ) ?: null,
 			'sort_order'            => (int) get_post_meta( $post_id, '_flow_sort_order', true ),
 			'provider_id'           => ( (int) get_post_meta( $post_id, '_flow_provider_id', true ) ) ?: null,
+			'provider_cost_per_night' => (float) get_post_meta( $post_id, '_flow_provider_cost_per_night', true ),
+			'deposit_enabled'       => (int) get_post_meta( $post_id, '_flow_deposit_enabled', true ),
+			'deposit_pct'           => (int) get_post_meta( $post_id, '_flow_deposit_pct', true ),
 		];
 
 		if ( $db_id ) {
@@ -513,6 +577,9 @@ class RoomPostType {
 			'default_checkout_time' => $get( 'default_checkout_time' ) ?: '11:00',
 			'sort_order'            => $get( 'sort_order' ) ?: '0',
 			'provider_id'           => $get( 'provider_id' ),
+			'provider_cost_per_night' => $get( 'provider_cost_per_night' ) ?: '',
+			'deposit_enabled'       => $get( 'deposit_enabled' ),
+			'deposit_pct'           => $get( 'deposit_pct' ) ?: '20',
 			'video_url'             => $get( 'video_url' ),
 		];
 	}

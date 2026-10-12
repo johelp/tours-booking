@@ -27,7 +27,7 @@ Ya existe (`includes/api/class-config-controller.php`, desde v2.8.0) — es lo p
   "mpMode": "test",
   "currency": "MXN",
   "activeLanguages": ["es", "en"],
-  "siteUrl": "https://amiradventours.com",
+  "siteUrl": "https://tu-sitio-tourflow.example",
   "companyName": "TourFlow",
   "waPhone": "5219831649541",
   "policyTextEs": "...",

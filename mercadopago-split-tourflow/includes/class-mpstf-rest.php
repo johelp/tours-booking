@@ -104,6 +104,12 @@ class Rest {
 		// ciclo de vida (email, voucher, Google Calendar) siguen andando
 		// igual que con Stripe/MP normal (§ 5 GUIA-PLUGINS-SATELITE-TOURFLOW.md).
 		if ( $event->type === \AmirBooking\Payments\PaymentEvent::SUCCEEDED
+			&& ! empty( $booking->cart_group_id ) && class_exists( '\TourFlow\Cart\CartController' )
+		) {
+			// Compra de carrito: confirma el grupo entero (ver el mismo
+			// criterio en el webhook del núcleo, CartController::confirm_group()).
+			\TourFlow\Cart\CartController::confirm_group( (string) $booking->cart_group_id, (string) $event->charge_reference );
+		} elseif ( $event->type === \AmirBooking\Payments\PaymentEvent::SUCCEEDED
 			&& in_array( $booking->status, [ 'pending', 'payment_expired' ], true )
 		) {
 			// 'payment_expired': pago que llega después de vencer la reserva

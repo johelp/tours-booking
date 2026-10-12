@@ -181,6 +181,37 @@ class GlobalAddonsPage {
             btn.style.display = 'none';
           } );
         } );
+        document.querySelectorAll( '.amir-addon-gallery-select-btn' ).forEach( function ( btn ) {
+          btn.addEventListener( 'click', function ( e ) {
+            e.preventDefault();
+            var form    = btn.closest( 'form' );
+            var input   = form.querySelector( '.amir-addon-gallery-ids' );
+            var preview = form.querySelector( '.amir-addon-gallery-preview' );
+            var frame = wp.media( { title: '<?php echo esc_js( $this->tt( 'Seleccionar fotos', 'Select photos' ) ); ?>', button: { text: '<?php echo esc_js( $this->tt( 'Usar estas fotos', 'Use these photos' ) ); ?>' }, multiple: 'add', library: { type: 'image' } } );
+            frame.on( 'select', function () {
+              var ids = [];
+              preview.innerHTML = '';
+              frame.state().get( 'selection' ).each( function ( m ) {
+                var att = m.toJSON();
+                ids.push( att.id );
+                var img = document.createElement( 'img' );
+                img.src = att.sizes && att.sizes.thumbnail ? att.sizes.thumbnail.url : att.url;
+                img.style.cssText = 'width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e1f5ee;';
+                preview.appendChild( img );
+              } );
+              input.value = ids.join( ',' );
+            } );
+            frame.open();
+          } );
+        } );
+        document.querySelectorAll( '.amir-addon-gallery-clear-btn' ).forEach( function ( btn ) {
+          btn.addEventListener( 'click', function ( e ) {
+            e.preventDefault();
+            var form = btn.closest( 'form' );
+            form.querySelector( '.amir-addon-gallery-ids' ).value = '';
+            form.querySelector( '.amir-addon-gallery-preview' ).innerHTML = '';
+          } );
+        } );
         </script>
         <?php
     }
@@ -214,6 +245,36 @@ class GlobalAddonsPage {
             <p style="font-size:11px;color:#8a9a93;margin:4px 0 0;"><?php echo esc_html( $this->tt(
               'Se muestra en la tarjeta de producto de [flow_product] y en el paso de extras del flujo de reserva. Sin foto, se muestra un ícono genérico.',
               "Shown on the [flow_product] product card and in the booking flow's extras step. Without a photo, a generic icon is shown instead."
+            ) ); ?></p>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+            <div>
+              <label class="ab-label"><?php echo esc_html( sprintf( $this->tt( 'Descripción (%s)', 'Description (%s)' ), 'Español' ) ); ?></label>
+              <textarea name="description_es" rows="6" style="<?php echo $this->input_style(); ?> width:100%;"><?php echo esc_textarea( $a->description_es ?? '' ); ?></textarea>
+            </div>
+            <div>
+              <label class="ab-label"><?php echo esc_html( sprintf( $this->tt( 'Descripción (%s)', 'Description (%s)' ), 'English' ) ); ?></label>
+              <textarea name="description_en" rows="6" style="<?php echo $this->input_style(); ?> width:100%;"><?php echo esc_textarea( $a->description_en ?? '' ); ?></textarea>
+            </div>
+          </div>
+          <p style="font-size:11px;color:#8a9a93;margin:-8px 0 14px;"><?php echo esc_html( $this->tt(
+            'Qué incluye, para quién es, cuántas páginas. Texto plano: una línea en blanco separa párrafos y un renglón que empieza con "- " se muestra como viñeta. Es lo que lee quien decide si lo compra.',
+            'What it includes, who it is for, how many pages. Plain text: a blank line separates paragraphs and a line starting with "- " is shown as a bullet. This is what a buyer reads before deciding.'
+          ) ); ?></p>
+          <?php $gallery_ids = array_filter( array_map( 'intval', (array) ( json_decode( (string) ( $a->gallery_ids ?? '' ), true ) ?: [] ) ) ); ?>
+          <div class="amir-addon-gallery-field" style="margin-bottom:14px;">
+            <label class="ab-label"><?php echo esc_html( $this->tt( 'Fotos extra (opcional)', 'Extra photos (optional)' ) ); ?></label>
+            <input type="hidden" name="gallery_ids" class="amir-addon-gallery-ids" value="<?php echo esc_attr( implode( ',', $gallery_ids ) ); ?>" />
+            <div class="amir-addon-gallery-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
+              <?php foreach ( $gallery_ids as $gid ) : $gurl = wp_get_attachment_image_url( $gid, 'thumbnail' ); if ( ! $gurl ) continue; ?>
+                <img src="<?php echo esc_url( $gurl ); ?>" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e1f5ee;" />
+              <?php endforeach; ?>
+            </div>
+            <button type="button" class="button amir-addon-gallery-select-btn"><?php echo esc_html( $this->tt( 'Elegir fotos (varias)', 'Choose photos (multiple)' ) ); ?></button>
+            <button type="button" class="button amir-addon-gallery-clear-btn"><?php echo esc_html( $this->tt( 'Quitar todas', 'Remove all' ) ); ?></button>
+            <p style="font-size:11px;color:#8a9a93;margin:4px 0 0;"><?php echo esc_html( $this->tt(
+              'Páginas de muestra, portada, mapa… Se ven como galería en la página del producto, además de la foto principal.',
+              'Sample pages, cover, map… Shown as a gallery on the product page, in addition to the main photo.'
             ) ); ?></p>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
@@ -289,6 +350,10 @@ class GlobalAddonsPage {
                 }
             }
 
+            // IDs de adjuntos separados por coma → JSON; solo enteros > 0.
+            $gallery_ids  = array_values( array_unique( array_filter( array_map( 'absint', explode( ',', (string) ( $_POST['gallery_ids'] ?? '' ) ) ) ) ) );
+            $gallery_json = $gallery_ids ? wp_json_encode( $gallery_ids ) : null;
+
             $data = [
                 'applies_to'       => 'global',
                 'pricing_type'     => $pricing_type,
@@ -300,8 +365,11 @@ class GlobalAddonsPage {
                 // cuando alguien lo probó como digital y cambió de idea.
                 'digital_file_url' => $digital_path,
                 'image_id'         => (int) ( $_POST['image_id'] ?? 0 ) ?: null,
+                'description_es'   => sanitize_textarea_field( wp_unslash( $_POST['description_es'] ?? '' ) ),
+                'description_en'   => sanitize_textarea_field( wp_unslash( $_POST['description_en'] ?? '' ) ),
+                'gallery_ids'      => $gallery_json,
             ];
-            $formats = [ '%s', '%s', '%s', '%s', '%f', '%s', '%d' ];
+            $formats = [ '%s', '%s', '%s', '%s', '%f', '%s', '%d', '%s', '%s', '%s' ];
 
             if ( $action === 'create_addon' ) {
                 // Bug real corregido 2026-08-04: el %format% tiene que

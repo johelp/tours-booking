@@ -582,3 +582,75 @@ body.tfp-body--login {
   .tfp-quick-actions { grid-template-columns: 1fr 1fr; }
   .tfp-quick-action { padding: 12px; font-size: 12.5px; }
 }
+
+/* ── Editor de Tours/Habitaciones del panel — navegación rápida ──────────
+   Pedido del cliente ("que la pantalla de gestión de tours sea usable y
+   entendible"): el editor arma ~9-11 metaboxes seguidas en una sola página
+   larga (TourFlow\Panel\ToursSection::render_edit()) — sin esto, encontrar
+   una sección puntual (ej. "Precios") significa scrollear toda la pantalla,
+   peor todavía en celular. Barra pegajosa con un link por sección (mismos
+   íconos/títulos que ya define metabox_list(), cero texto duplicado) +
+   scroll-margin-top en cada sección para que la barra no tape el título al
+   saltar. */
+
+.tfp-tour-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #fff;
+  border: 1px solid var(--ab-border, #e1f5ee);
+  border-radius: var(--ab-radius, 10px);
+  padding: 8px 10px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+}
+
+.tfp-tour-nav a {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ab-teal-dark, #0F6E56);
+  background: var(--ab-teal-soft, #f0faf6);
+  border-radius: 999px;
+  padding: 6px 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .15s ease, color .15s ease;
+}
+
+.tfp-tour-nav a:hover,
+.tfp-tour-nav a:focus-visible {
+  background: var(--ab-teal, #1D9E75);
+  color: #fff;
+}
+
+.tfp-tour-section { scroll-margin-top: 64px; }
+
+/* Botón "Guardar" también arriba, junto al título — en una pantalla larga,
+   repetir la acción principal cerca de donde se empieza a editar evita que
+   haya que scrollear todo para confirmar un cambio chico. */
+.tfp-tour-save-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--ab-teal, #1D9E75);
+  border: none;
+  border-radius: var(--ab-radius, 10px);
+  padding: 9px 16px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.tfp-tour-save-top:hover { background: var(--ab-teal-dark, #0F6E56); color: #fff; }
+
+@media (max-width: 782px) {
+  .tfp-tour-nav { top: 54px; } /* debajo de .tfp-topbar (54px de alto, ver arriba) */
+  .tfp-tour-section { scroll-margin-top: 118px; } /* 54px topbar + ~64px de la nav */
+}

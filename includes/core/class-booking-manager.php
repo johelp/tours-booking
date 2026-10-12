@@ -973,7 +973,7 @@ class BookingManager {
         // el proveedor YA aprobó antes, sin cobrar nada — este confirm() es
         // el pago que llegó recién ahora, por el link. No corresponde
         // volver a pedirle aprobación al proveedor una segunda vez.
-        if ( $this->tour_has_active_provider( (int) $booking->tour_id ) && empty( $booking->provider_responded_at ) ) {
+        if ( $this->booking_has_active_provider( $booking ) && empty( $booking->provider_responded_at ) ) {
             $claimed = $wpdb->update(
                 "{$wpdb->prefix}amir_bookings",
                 [
@@ -1438,16 +1438,36 @@ class BookingManager {
     }
 
     /**
-     * Resuelve si el tour de una reserva tiene un proveedor externo activo
-     * asignado — determina si confirm() bifurca a pending_provider_approval.
-     * Un proveedor inactivo se trata igual que "sin proveedor" (tour propio).
+     * Resuelve si el tour O LA HABITACIÓN de una reserva tiene un proveedor
+     * externo activo asignado — determina si confirm() bifurca a
+     * pending_provider_approval. Un proveedor inactivo se trata igual que
+     * "sin proveedor" (propio).
+     *
+     * Generalizada 2026-10 (revisión del circuito de proveedores para el
+     * sitio nuevo de Caliafarm, GUIA-CIRCUITO-PROVEEDORES-EXTERNOS.md) —
+     * antes solo miraba `amir_tours.provider_id`, así que una reserva de
+     * habitación (`item_type='room'`, `tour_id` NULL) nunca entraba a esta
+     * rama: se cobraba y confirmaba igual que una habitación propia, sin que
+     * el proveedor real se enterara. `flow_rooms.provider_id` existía desde
+     * el día uno pero nunca se leyó acá.
      */
-    private function tour_has_active_provider( int $tour_id ): bool {
+    private function booking_has_active_provider( object $booking ): bool {
         global $wpdb;
-        $provider_id = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT provider_id FROM {$wpdb->prefix}amir_tours WHERE id = %d",
-            $tour_id
-        ) );
+
+        if ( ! empty( $booking->tour_id ) ) {
+            $provider_id = (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT provider_id FROM {$wpdb->prefix}amir_tours WHERE id = %d",
+                (int) $booking->tour_id
+            ) );
+        } elseif ( ! empty( $booking->room_id ) ) {
+            $provider_id = (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT provider_id FROM {$wpdb->prefix}flow_rooms WHERE id = %d",
+                (int) $booking->room_id
+            ) );
+        } else {
+            return false;
+        }
+
         if ( $provider_id <= 0 ) {
             return false;
         }

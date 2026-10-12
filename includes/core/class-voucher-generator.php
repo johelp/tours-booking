@@ -531,6 +531,13 @@ class VoucherGenerator {
      * antiguas donde la opción todavía no se haya guardado.
      */
     protected function verify_page_url(): string {
+        // Headless (v5.13.12): con un frontend externo configurado, el link
+        // va a SU página /verificar-reserva/ — antes ganaba siempre la página
+        // de WordPress del backend (get_permalink), así que el cliente
+        // aterrizaba en book.* aunque 'Frontend externo' estuviera cargado.
+        if ( trim( (string) get_option( 'amir_public_site_url', '' ) ) !== '' ) {
+            return \AmirBooking\Core\FrontendUrl::base() . '/verificar-reserva/';
+        }
         $page_id = (int) get_option( 'amir_verify_page_id', 0 );
         if ( $page_id ) {
             $url = get_permalink( $page_id );
