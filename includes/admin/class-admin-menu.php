@@ -25,6 +25,7 @@ class AdminMenu {
         add_action( 'admin_init',   [ $this, 'maybe_export_reports_csv' ] );
         add_action( 'admin_init',   [ $this, 'maybe_export_bookings_csv' ] );
         add_action( 'admin_init',   [ $this, 'maybe_export_manifest_pdf' ] );
+        add_action( 'admin_init',   [ $this, 'maybe_export_product_buyers_csv' ] );
 
         // Modo campo: pantalla completa, sin nada del chrome de WP (pensada
         // para el celular). La admin bar se decide temprano (antes de que WP
@@ -305,6 +306,7 @@ class AdminMenu {
         // criterio que Habitaciones arriba.
         if ( AMIR_EDITION === 'pro_max' ) {
             $submenus[] = [ 'amir-global-addons', __( '🎁 Extras globales', 'amir-booking' ), [ $this, 'page_global_addons' ], 'manage_options' ];
+            $submenus[] = [ 'amir-product-buyers', __( '🛒 Compradores de guías', 'amir-booking' ), [ $this, 'page_product_buyers' ], 'manage_options' ];
         }
         if ( $wishlist_on ) {
             $submenus[] = [ 'amir-wishlist', __( '🔔 Lista de interés', 'amir-booking' ), [ $this, 'page_wishlist' ] ];
@@ -403,6 +405,22 @@ class AdminMenu {
     }
     public function page_global_addons(): void {
         ( new \AmirBooking\Admin\GlobalAddonsPage() )->render();
+    }
+    public function page_product_buyers(): void {
+        ( new \AmirBooking\Admin\ProductBuyersPage() )->render();
+    }
+
+    /** Export CSV de compradores — en admin_init por el mismo motivo que Reportes (headers antes del HTML). */
+    public function maybe_export_product_buyers_csv(): void {
+        if (
+            ( $_GET['page']   ?? '' ) !== 'amir-product-buyers' ||
+            ( $_GET['export'] ?? '' ) !== 'csv'                  ||
+            ! current_user_can( 'manage_options' )
+        ) {
+            return;
+        }
+        ( new \AmirBooking\Admin\ProductBuyersPage() )->export_csv();
+        exit;
     }
 
     // ── Assets ─────────────────────────────────────────────────────────────

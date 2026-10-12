@@ -177,10 +177,15 @@ function ProductCheckoutForm( { product, lang, t, currency, loading, onBuy } ) {
 	const [ name, setName ] = useState( '' );
 	const [ email, setEmail ] = useState( '' );
 	const [ emailLang, setEmailLang ] = useState( lang );
+	const [ termsAccepted, setTermsAccepted ] = useState( false );
+	const [ newsOptIn, setNewsOptIn ] = useState( false );
 
 	function handleSubmit( e ) {
 		e.preventDefault();
-		onBuy( { customer_name: name, customer_email: email, lang: emailLang } );
+		if ( ! termsAccepted ) return;
+		// policy_accepted: un producto digital no tiene política de cancelación
+		// propia (el servidor no la evalúa); terms_accepted es obligatorio.
+		onBuy( { customer_name: name, customer_email: email, lang: emailLang, policy_accepted: true, terms_accepted: termsAccepted, marketing_opt_in: newsOptIn } );
 	}
 
 	return (
@@ -216,7 +221,25 @@ function ProductCheckoutForm( { product, lang, t, currency, loading, onBuy } ) {
 						</div>
 					</div>
 				) }
-				<button type="submit" className="ab-btn ab-btn-primary fpr-buy-btn" disabled={ loading }>
+				<div className="fpr-terms">
+					{ ( () => {
+						const custom = t( window.amirBooking?.termsTextEs, window.amirBooking?.termsTextEn );
+						const lines = custom ? custom.split( '\n' ).filter( Boolean ) : [
+							t( 'Al comprar, aceptás las condiciones de uso y venta de este sitio — datos personales tratados según la política de privacidad del operador.',
+							   "By purchasing, you accept this site's terms of use and sale — personal data is handled according to the operator's privacy policy." ),
+						];
+						return lines.map( ( line, i ) => <p className="fpr-terms-line" key={ i }>{ line }</p> );
+					} )() }
+				</div>
+				<label className="fpr-check">
+					<input type="checkbox" checked={ termsAccepted } onChange={ e => setTermsAccepted( e.target.checked ) } />
+					<span>{ t( 'He leído y acepto los términos y condiciones', 'I have read and accept the terms and conditions' ) }</span>
+				</label>
+				<label className="fpr-check">
+					<input type="checkbox" checked={ newsOptIn } onChange={ e => setNewsOptIn( e.target.checked ) } />
+					<span>{ t( 'Quiero recibir novedades y nuevas guías por email (opcional, podés darte de baja cuando quieras).', 'I want to receive news and new guides by email (optional — you can unsubscribe any time).' ) }</span>
+				</label>
+				<button type="submit" className="ab-btn ab-btn-primary fpr-buy-btn" disabled={ loading || ! termsAccepted }>
 					{ loading ? t( 'Procesando…', 'Processing…' ) : t( 'Comprar ahora →', 'Buy now →' ) }
 				</button>
 			</form>
@@ -327,4 +350,8 @@ const PRODUCT_CSS = `
 .fpr-field input { border:1px solid #c3d9d0; border-radius:var(--ab-radius-sm,8px); padding:9px 12px; font-size:14px; box-sizing:border-box; }
 .fpr-hint { font-size:11px; color:#5a7068; margin:2px 0 0; }
 .fpr-buy-btn { width:100%; margin-top:6px; }
+.fpr-terms { background:#f8fdfb; border:1px solid #e1f5ee; border-radius:var(--ab-radius-sm,8px); padding:10px 12px; margin:4px 0 10px; }
+.fpr-terms-line { font-size:12px; color:#5a7068; margin:0 0 4px; line-height:1.5; }
+.fpr-check { display:flex; align-items:flex-start; gap:8px; font-size:13px; margin:0 0 10px; cursor:pointer; }
+.fpr-check input { margin-top:2px; flex-shrink:0; }
 `;

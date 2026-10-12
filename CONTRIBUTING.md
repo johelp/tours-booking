@@ -2530,6 +2530,18 @@ Los Plugin URI de Amir Adventours que quedaban en cabeceras ya se habían quitad
 
 Lista completa de lo que falta antes de cambiar el DNS (correo, redirecciones, plugins, datos del sistema viejo): `caliafarm-web/docs/CUTOVER.md`.
 
+### 16.111 v5.13.13 — compradores de productos digitales, casilla de novedades y términos obligatorios en la venta suelta (2026-10-12)
+
+Pedido del cliente al empezar a vender las guías PDF de Caliafarm: "no veo en ningún lado quién compró" (no había forma de listar ni reenviar), más una casilla de suscripción y la aceptación de términos en la compra de productos digitales.
+
+- **Pantalla nueva `TourFlow → 🛒 Compradores de guías`** (`AdminMenu`, Pro Max, `manage_options`; clase `ProductBuyersPage`). Lista las reservas `item_type='product'` no anonimizadas con comprador, producto (`name_snapshot`), importe, estado y consentimiento de novedades; filtros por estado (pagadas/sin pagar/todas), producto, "solo con consentimiento" y búsqueda; paginado. Acción **📧 Reenviar enlace** por fila (solo pagadas): dispara `flow_cart_confirmed` para el `cart_group_id`, o sea el mismo `CartConfirmationEmail` de la compra con el enlace de descarga tokenizado de ESA compra. **Exportar CSV** (lo filtrado, o solo quienes aceptaron novedades) en `admin_init` (headers antes del HTML), con la misma protección de fórmulas que Reservas.
+- **Casilla de novedades.** `amir_bookings.marketing_opt_in` + `marketing_opt_in_at` (`AMIR_DB_VERSION` → `1.45.0`). `POST /cart/checkout` acepta `marketing_opt_in` y marca TODAS las reservas del carrito, solo ante un sí explícito; sin marcar de fábrica. Casilla en el checkout de `caliafarm-web` (`GuideShop.tsx`) y en el widget `[flow_product]` (`ProductOrder.jsx`, bundle reconstruido).
+- **Bug real corregido: la venta suelta de un producto digital no exigía términos del lado servidor.** `BookingManager::create_pending()` rechaza sin `terms_accepted`, pero `CartController::create_product_order()` no lo evaluaba: una llamada directa a la API compraba sin aceptar nada. Ahora exige `terms_accepted` y registra el consentimiento (`BookingManager::consent_snapshot()`, fecha + hash del texto), igual que los tours. `[flow_product]` no mostraba términos en absoluto: ahora trae el texto configurado, casilla obligatoria (botón deshabilitado hasta tildar) y la de novedades. La política de cancelación sigue sin aplicar a un producto digital.
+- **Fuera de alcance, a propósito**: no se envía ningún email de novedades desde el plugin — solo se registra el consentimiento y se exporta la lista para usarla en la herramienta de email marketing del cliente. El consentimiento solo cubre a quienes compran desde ahora.
+- **Verificación**: 161 tests en verde, `php -l` limpio, ZIPs `tourflow-v5.13.13-{lite,pro,pro_max}.zip` armados e inspeccionados. **Sin probar en vivo**: instalar en book, comprar una guía con la casilla marcada y comprobar que aparece en la pantalla nueva, que el reenvío llega y que el CSV filtra bien.
+
+En el mismo ciclo, del lado de `caliafarm-web`: blog (`/blog`, `/blog/[slug]`) alimentado por las Entradas de WordPress de book con bloque de venta de guías y experiencias al pie de cada nota; hallazgo de seguridad documentado en `docs/CUTOVER.md § 7` (categoría de spam `juliuscasino` heredada del WordPress original).
+
 ---
 
 ## 17. Independencia total de WordPress — análisis pedido por el cliente (2026-07-31), solo para documentar, no construir

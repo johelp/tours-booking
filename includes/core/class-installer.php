@@ -447,6 +447,8 @@ class Installer {
             consent_recorded_at      DATETIME DEFAULT NULL,
             consent_text_hash        VARCHAR(64) DEFAULT NULL,
             anonymized_at            DATETIME DEFAULT NULL,
+            marketing_opt_in         TINYINT(1) NOT NULL DEFAULT 0,
+            marketing_opt_in_at      DATETIME DEFAULT NULL,
             created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -1631,6 +1633,18 @@ class Installer {
         }
         if ( ! in_array( 'gallery_ids', $addon_cols_v4, true ) ) {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_addons ADD COLUMN gallery_ids TEXT AFTER description_en" );
+        }
+
+        // 1.45.0 (v5.13.13) — consentimiento de novedades por compra
+        // (casilla opcional del checkout, pedido del cliente 2026-10-12 para
+        // poder escribirles a los compradores de guías). Se guarda la FECHA
+        // además del flag: es la prueba de cuándo se dio el consentimiento.
+        $booking_cols_mkt = $wpdb->get_col( "DESCRIBE {$wpdb->prefix}amir_bookings" );
+        if ( ! in_array( 'marketing_opt_in', $booking_cols_mkt, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN marketing_opt_in TINYINT(1) NOT NULL DEFAULT 0 AFTER anonymized_at" );
+        }
+        if ( ! in_array( 'marketing_opt_in_at', $booking_cols_mkt, true ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}amir_bookings ADD COLUMN marketing_opt_in_at DATETIME DEFAULT NULL AFTER marketing_opt_in" );
         }
 
         self::create_tables();

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  TourFlow
  * Description:  Sistema de reservas y gestión de tours para operadoras. Sin WooCommerce. Multisite ready.
- * Version:      5.13.12
+ * Version:      5.13.13
  * Author:       TourFlow
  * Text Domain:  amir-booking
  * Domain Path:  /languages
@@ -14,11 +14,11 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-define( 'AMIR_VERSION',     '5.13.12' );
+define( 'AMIR_VERSION',     '5.13.13' );
 define( 'AMIR_PLUGIN_FILE', __FILE__ );
 define( 'AMIR_PLUGIN_DIR',  plugin_dir_path( __FILE__ ) );
 define( 'AMIR_PLUGIN_URL',  plugin_dir_url( __FILE__ ) );
-define( 'AMIR_DB_VERSION',  '1.44.0' );
+define( 'AMIR_DB_VERSION',  '1.45.0' );
 
 // 'pro' (default, este repo), 'lite' o 'pro_max' — el build de empaquetado de
 // cada edición pisa este valor y excluye del ZIP los archivos exclusivos de

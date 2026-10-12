@@ -202,6 +202,16 @@ class CartController {
 			array_merge( [ $cart_group_id ], $created_ids )
 		) );
 
+		// Casilla opcional "quiero recibir novedades" (v5.13.13). Se marca
+		// en TODAS las reservas del carrito: el consentimiento es de la
+		// persona, no de un ítem. Solo se guarda un sí explícito.
+		if ( filter_var( $request->get_param( 'marketing_opt_in' ), FILTER_VALIDATE_BOOLEAN ) ) {
+			$wpdb->query( $wpdb->prepare(
+				"UPDATE {$wpdb->prefix}amir_bookings SET marketing_opt_in = 1, marketing_opt_in_at = %s WHERE id IN (" . implode( ',', array_fill( 0, count( $created_ids ), '%d' ) ) . ')',
+				array_merge( [ current_time( 'mysql' ) ], $created_ids )
+			) );
+		}
+
 		if ( empty( $payable ) ) {
 			// Todo el carrito era de cobro diferido a proveedor, y/o quedó
 			// confirmado de una por un cupón que cubrió el 100% (Dudas de
@@ -337,6 +347,15 @@ class CartController {
 	private function create_product_order( array $item, array $customer ): \AmirBooking\Core\BookingResult {
 		global $wpdb;
 
+		// Aceptación de términos: validación real del lado servidor (v5.13.13).
+		// Los tours ya la exigían en BookingManager::create_pending(); la venta
+		// suelta de un producto digital no, así que una llamada directa a la
+		// API compraba sin aceptar nada. Sin política de cancelación acá: un
+		// producto digital no tiene (ver comentario del checkout del sitio).
+		if ( empty( $customer['terms_accepted'] ) ) {
+			return \AmirBooking\Core\BookingResult::error( 'Debes aceptar los términos y condiciones para continuar.' );
+		}
+
 		$addon_id = (int) ( $item['addon_id'] ?? 0 );
 		$addon    = $addon_id ? $wpdb->get_row( $wpdb->prepare(
 			"SELECT id FROM {$wpdb->prefix}amir_addons WHERE id = %d AND applies_to = 'global' AND active = 1 AND pricing_type = 'digital'",
@@ -364,8 +383,8 @@ class CartController {
 				'customer_email' => sanitize_email( $customer['customer_email'] ?? '' ),
 				'customer_phone' => sanitize_text_field( $customer['customer_phone'] ?? '' ),
 				'total_mxn'      => 0,
-			],
-			[ '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f' ]
+			] + \AmirBooking\Core\BookingManager::consent_snapshot( $customer['lang'] ?? 'es' ),
+			[ '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s' ]
 		);
 
 		if ( ! $inserted ) {
