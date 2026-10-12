@@ -347,6 +347,13 @@ class CartController {
 	private function create_product_order( array $item, array $customer ): \AmirBooking\Core\BookingResult {
 		global $wpdb;
 
+		// BookingResult vive DENTRO de class-booking-manager.php (no tiene
+		// archivo propio, el autoloader no la encuentra sola): hay que cargar
+		// BookingManager antes de poder devolver cualquier BookingResult::error().
+		// Sin esto, los rechazos tempranos de abajo daban un error fatal 500 en
+		// vez de un 422 con mensaje (hallado probando v5.13.13 contra book).
+		class_exists( \AmirBooking\Core\BookingManager::class );
+
 		// Aceptación de términos: validación real del lado servidor (v5.13.13).
 		// Los tours ya la exigían en BookingManager::create_pending(); la venta
 		// suelta de un producto digital no, así que una llamada directa a la

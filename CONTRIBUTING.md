@@ -2542,6 +2542,8 @@ Pedido del cliente al empezar a vender las guías PDF de Caliafarm: "no veo en n
 
 En el mismo ciclo, del lado de `caliafarm-web`: blog (`/blog`, `/blog/[slug]`) alimentado por las Entradas de WordPress de book con bloque de venta de guías y experiencias al pie de cada nota; hallazgo de seguridad documentado en `docs/CUTOVER.md § 7` (categoría de spam `juliuscasino` heredada del WordPress original).
 
+**v5.13.14 — hotfix del mismo ciclo.** Probando v5.13.13 contra book, un checkout de producto sin `terms_accepted` daba un error fatal 500 en vez de un 422: `BookingResult` vive dentro de `class-booking-manager.php` (no tiene archivo propio, el autoloader no la encuentra sola) y el rechazo temprano nuevo se ejecutaba antes de cargar `BookingManager`. Corregido con un `class_exists( BookingManager::class )` al inicio de `create_product_order()`; de paso arregla el mismo problema latente en el rechazo "producto ya no disponible". Lección: cualquier `return BookingResult::error()` antes de tocar `BookingManager` necesita cargarlo primero.
+
 ---
 
 ## 17. Independencia total de WordPress — análisis pedido por el cliente (2026-07-31), solo para documentar, no construir
