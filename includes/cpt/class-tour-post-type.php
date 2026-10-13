@@ -2257,9 +2257,8 @@ class TourPostType {
     }
 
     /**
-     * A diferencia de sync_schedules_prices() (que lee $_POST sin chequear
-     * nonce, comportamiento preexistente que no se toca acá), este método sí
-     * exige el nonce del editor del tour. Es necesario porque sync_to_db()
+     * Igual que sync_schedules_prices() (que desde v5.13.15 también exige el
+     * nonce), este método exige el nonce del editor del tour. Es necesario porque sync_to_db()
      * también se dispara con un wp_update_post() "a pelo" desde otros lugares
      * del plugin (ej. "Publicar y notificar" de la lista de interés,
      * class-wishlist-page.php) que NO mandan los campos de este meta box —
@@ -2323,6 +2322,18 @@ class TourPostType {
     }
 
     private function sync_schedules_prices( int $post_id, int $tour_db_id ): void {
+        // Mismo guard que sync_addons(): sync_to_db() también corre FUERA del editor completo
+        // (edición rápida / acciones masivas / "Publicar" desde el listado, cambio de foto destacada,
+        // wp_update_post() "a pelo" del plugin, importador). Sin los campos del meta box en $_POST, el
+        // DELETE de abajo borraba los precios y reinsertaba filas adulto/niño/bebé en $0 — bug real
+        // visto en producción (2026-10-13): publicar los tours importados dejó TODOS los precios en 0.
+        if (
+            ! isset( $_POST['amir_tour_nonce'] ) ||
+            ! wp_verify_nonce( $_POST['amir_tour_nonce'], 'amir_tour_meta' )
+        ) {
+            return;
+        }
+
         global $wpdb;
 
         $starts      = $_POST['amir_schedule_start']    ?? [];
