@@ -533,18 +533,51 @@ class CartController {
 		}
 
 		if ( $transitioned > 0 ) {
+			// Dos llamadas concurrentes (webhook + POST del navegador) se
+			// reparten las reservas del carrito: cada una confirma las que
+			// reclama primero, así que AMBAS ven transitioned > 0. Bug real
+			// visto en vivo (2026-11-16, book.caliafarm.com): el cliente
+			// recibió el mismo email del carrito dos veces. Dos reglas:
+			//  1. Solo se envía cuando el carrito quedó RESUELTO (ninguna
+			//     reserva sigue en pending/payment_expired) — si no, el email
+			//     de la llamada que termina primero listaría solo parte de
+			//     la compra. La última en terminar siempre ve todo resuelto.
+			//  2. Aun así, un único ganador por carrito: INSERT IGNORE sobre
+			//     el índice UNIQUE de wp_options es atómico a nivel de base
+			//     de datos (add_option()/transients no lo son).
+			$unresolved = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->prefix}amir_bookings
+				 WHERE cart_group_id = %s AND status IN ('pending','payment_expired')",
+				$cart_group_id
+			) );
 			// Si todo se reembolsó por falta de cupo no hay nada que resumir.
 			$alive = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->prefix}amir_bookings
 				 WHERE cart_group_id = %s AND status IN ('confirmed','pending_provider_approval')",
 				$cart_group_id
 			) );
-			if ( $alive > 0 ) {
+			if ( 0 === $unresolved && $alive > 0 && self::claim_cart_email( $cart_group_id ) ) {
 				do_action( 'flow_cart_confirmed', $cart_group_id );
 			}
 		}
 
 		return $transitioned;
+	}
+
+	/**
+	 * Reclama el derecho a enviar el email de confirmación de un carrito —
+	 * true para exactamente UNA llamada por carrito, aunque corran en paralelo.
+	 * Un reenvío manual (Compradores de guías) no pasa por acá: dispara
+	 * `flow_cart_confirmed` directo, a propósito.
+	 */
+	private static function claim_cart_email( string $cart_group_id ): bool {
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare(
+			"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+			'flow_cart_mail_' . substr( preg_replace( '/[^A-Za-z0-9_-]/', '', $cart_group_id ), 0, 60 ),
+			(string) time()
+		) );
+		return 1 === (int) $wpdb->rows_affected;
 	}
 
 	// ── POST /cart/{cart_group_id}/confirm-payment ───────────────────────

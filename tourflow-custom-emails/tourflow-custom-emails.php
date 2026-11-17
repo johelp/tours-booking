@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:  Custom Emails for TourFlow
- * Description:  Reemplazá la plantilla COMPLETA del email de confirmación de reserva por tu propio HTML, con variables tipo {{customer_name}}. Plugin satélite — no toca el núcleo (usa el filtro amir_email_render_html). Ver GUIA-PLUGINS-SATELITE-TOURFLOW.md.
- * Version:      0.1.0
+ * Description:  Reemplazá la plantilla COMPLETA de los emails al cliente (confirmación, recordatorio, cancelación, pago, etc.) por tu propio HTML, con variables tipo {{customer_name}}. Plugin satélite — no toca el núcleo (usa el filtro amir_email_render_html). Ver GUIA-PLUGINS-SATELITE-TOURFLOW.md.
+ * Version:      0.2.0
  * Author:       TourFlow
  * Text Domain:  tourflow-custom-emails
  * Requires PHP: 8.1
@@ -14,9 +14,10 @@ namespace TourFlowCustomEmails;
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TFCE_VERSION',    '0.1.0' );
+define( 'TFCE_VERSION',    '0.2.0' );
 define( 'TFCE_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 
+require_once TFCE_PLUGIN_DIR . 'includes/class-tfce-types.php';
 require_once TFCE_PLUGIN_DIR . 'includes/class-tfce-vars.php';
 require_once TFCE_PLUGIN_DIR . 'includes/class-tfce-renderer.php';
 require_once TFCE_PLUGIN_DIR . 'includes/class-tfce-settings.php';

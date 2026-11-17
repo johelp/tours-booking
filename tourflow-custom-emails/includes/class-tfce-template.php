@@ -19,11 +19,11 @@ final class Template {
 	/**
 	 * @param string $html    HTML que el núcleo ya armó (el default si no reemplazamos nada).
 	 * @param object $booking Fila de amir_bookings (+ columnas de tour/horario ya unidas).
-	 * @param string $type    'confirmation', 'reminder', etc. — hoy solo se ofrece UI para 'confirmation'.
+	 * @param string $type    'confirmation', 'reminder', etc. — ver Types::all() para los que tienen UI.
 	 * @param object $email   Instancia de la clase de email en curso (BaseEmail).
 	 */
 	public static function maybe_render( string $html, object $booking, string $type, object $email ): string {
-		$template = Settings::template_for( $type );
+		$template = Settings::template_for( $type, (string) ( $booking->lang ?? '' ) );
 		if ( $template === '' ) {
 			return $html;
 		}

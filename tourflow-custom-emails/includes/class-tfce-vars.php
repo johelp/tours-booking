@@ -22,9 +22,14 @@ final class Vars {
 		'customer_name', 'customer_email', 'customer_phone', 'booking_ref',
 		'tour_name', 'tour_date', 'tour_time', 'meeting_point', 'total',
 		'people_count', 'special_requests', 'company_name', 'brand_color',
+		// Propias de algunos tipos (ver Types::all()) — vacías en el resto.
+		'balance_amount', 'payment_deadline', 'refund_amount', 'cancellation_reason', 'custom_note', 'total_booking',
 	];
 
-	public const URL_KEYS = [ 'pdf_url', 'verify_url', 'calendar_url', 'maps_url', 'whatsapp_url', 'logo_url' ];
+	public const URL_KEYS = [
+		'pdf_url', 'verify_url', 'calendar_url', 'maps_url', 'whatsapp_url', 'logo_url',
+		'pay_url', 'browse_url', 'review_google_url', 'review_tripadvisor_url',
+	];
 
 	/**
 	 * @param object               $booking Fila de amir_bookings + columnas de tour/horario ya unidas.
@@ -41,7 +46,34 @@ final class Vars {
 		$pdf_url = rest_url( 'amir/v1/bookings/' . rawurlencode( (string) $booking->booking_ref ) . '/pdf' )
 			. '?token=' . rawurlencode( (string) ( $booking->access_token ?? '' ) );
 
+		$lang  = (string) ( $booking->lang ?? 'es' );
+		$total = (float) ( $booking->total_mxn ?? 0 );
+		$pct   = (int) ( $booking->deposit_pct ?? 0 );
+
+		// Saldo de un depósito parcial — misma cuenta que BalancePaymentLinkEmail::balance_mxn().
+		$balance = $pct > 0 ? round( $total - round( $total * $pct / 100, 2 ), 2 ) : 0.0;
+
+		// Fin del plazo de gracia tras un pago rechazado — mismo formato que PaymentFailedEmail::deadline_label().
+		$deadline = '';
+		if ( ! empty( $booking->created_at ) && class_exists( '\AmirBooking\Core\PendingExpiry' ) ) {
+			$ts       = \AmirBooking\Core\PendingExpiry::hold_deadline( $booking );
+			$deadline = $lang === 'es' ? gmdate( 'd/m/Y H:i', $ts ) . ' h' : gmdate( 'M j, Y g:i A', $ts );
+		}
+
+		$refund = (float) ( $booking->refund_amount_mxn ?? 0 );
+		$verify = $email ? $email->verify_url() : '#';
+
 		return [
+			'balance_amount'      => $balance > 0 ? \AmirBooking\Core\Currency::format( $balance ) : '',
+			'payment_deadline'    => $deadline,
+			'refund_amount'       => $refund > 0 ? \AmirBooking\Core\Currency::format( $refund ) : '',
+			'cancellation_reason' => (string) ( $booking->provider_reject_reason ?? '' ),
+			'custom_note'         => (string) ( $booking->custom_email_note ?? '' ),
+			'total_booking'       => $total > 0 ? \AmirBooking\Core\Currency::format( $total ) : '',
+			'pay_url'             => esc_url( $verify ),
+			'browse_url'          => esc_url( class_exists( '\AmirBooking\Core\FrontendUrl' ) ? \AmirBooking\Core\FrontendUrl::base() : home_url( '/' ) ),
+			'review_google_url'   => esc_url( (string) get_option( 'amir_google_review_url', '' ) ),
+			'review_tripadvisor_url' => esc_url( (string) get_option( 'amir_tripadvisor_review_url', '' ) ),
 			'customer_name'     => (string) ( $booking->customer_name ?? '' ),
 			'customer_email'    => (string) ( $booking->customer_email ?? '' ),
 			'customer_phone'    => (string) ( $booking->customer_phone ?? '' ),
@@ -58,7 +90,7 @@ final class Vars {
 			'company_name'      => (string) $company,
 			'brand_color'       => (string) get_option( 'amir_brand_color', '#1D9E75' ),
 			'pdf_url'           => esc_url( $pdf_url ),
-			'verify_url'        => esc_url( $email ? $email->verify_url() : '#' ),
+			'verify_url'        => esc_url( $verify ),
 			'calendar_url'      => esc_url( $email ? $email->calendar_url() : '#' ),
 			'maps_url'          => esc_url( $email ? $email->maps_url() : '#' ),
 			'whatsapp_url'      => $wa ? esc_url( 'https://wa.me/' . preg_replace( '/\D/', '', $wa ) ) : '',
@@ -67,7 +99,7 @@ final class Vars {
 	}
 
 	/** Reserva ficticia para el botón "Enviar email de prueba" — misma forma que get_booking_with_tour(), sin tocar la DB. */
-	public static function sample_booking(): object {
+	public static function sample_booking( string $lang = 'es' ): object {
 		return (object) [
 			'customer_name'    => 'Juana Pérez',
 			'customer_email'   => 'juana@example.com',
@@ -85,7 +117,12 @@ final class Vars {
 			'children'         => 1,
 			'babies'           => 0,
 			'special_requests' => 'Uno de los adultos no sabe nadar.',
-			'lang'             => 'es',
+			'custom_email_note'  => 'Ejemplo de mensaje personal del equipo.',
+			'deposit_pct'        => 20,
+			'refund_amount_mxn'  => 750.00,
+			'created_at'         => gmdate( 'Y-m-d H:i:s' ),
+			'provider_reject_reason' => '',
+			'lang'             => $lang,
 		];
 	}
 }

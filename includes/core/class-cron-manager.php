@@ -39,6 +39,17 @@ class CronManager {
         $this->send_tour_reminders();
         $this->send_review_requests();
         $this->mark_completed_bookings();
+        $this->purge_cart_mail_claims();
+    }
+
+    /** Borra las marcas "email de carrito ya enviado" (CartController::claim_cart_email) de más de 30 días. */
+    private function purge_cart_mail_claims(): void {
+        global $wpdb;
+        $wpdb->query( $wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s AND CAST(option_value AS UNSIGNED) < %d",
+            $wpdb->esc_like( 'flow_cart_mail_' ) . '%',
+            time() - 30 * DAY_IN_SECONDS
+        ) );
     }
 
     // ── Liberar reservas expiradas ────────────────────────────────────────

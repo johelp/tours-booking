@@ -4,6 +4,7 @@ namespace TourFlow\Cart;
 defined( 'ABSPATH' ) || exit;
 
 require_once __DIR__ . '/../emails/class-email-dispatcher.php';
+require_once __DIR__ . '/../emails/class-email-texts.php';
 
 /**
  * Email con el "voucher general" del carrito (§ 16.15 CONTRIBUTING.md) —
@@ -29,9 +30,12 @@ final class CartConfirmationEmail extends \AmirBooking\Emails\BaseEmail {
 		// cada pendiente por separado.
 		$bookings = $wpdb->get_results( $wpdb->prepare(
 			"SELECT b.*, t.name_es AS tour_name_es, t.name_en AS tour_name_en,
+			        t.meeting_point_es, t.meeting_point_en, t.meeting_lat, t.meeting_lng,
+			        s.time_start, s.time_end,
 			        r.name_es AS room_name_es, r.name_en AS room_name_en
 			 FROM {$wpdb->prefix}amir_bookings b
 			 LEFT JOIN {$wpdb->prefix}amir_tours t ON t.id = b.tour_id
+			 LEFT JOIN {$wpdb->prefix}amir_tour_schedules s ON s.id = b.schedule_id
 			 LEFT JOIN {$wpdb->prefix}flow_rooms r ON r.id = b.room_id
 			 WHERE b.cart_group_id = %s AND b.status IN ('confirmed','pending_provider_approval')
 			 ORDER BY b.item_type ASC, b.tour_date ASC",
@@ -39,6 +43,19 @@ final class CartConfirmationEmail extends \AmirBooking\Emails\BaseEmail {
 		) );
 		if ( empty( $bookings ) ) {
 			return;
+		}
+
+		// Nombre del ítem en el idioma de la reserva, con la misma clave
+		// `tour_name` que usan get_booking_with_tour() y, por lo tanto, los
+		// satélites que reemplazan la plantilla (tourflow-custom-emails). Sin
+		// esto, una compra de un solo ítem con plantilla personalizada salía
+		// con el nombre de la experiencia en blanco.
+		foreach ( $bookings as $row ) {
+			$en = ( $row->lang ?? 'es' ) !== 'es';
+			$row->tour_name = $row->item_type === 'room'
+				? ( ( $en ? $row->room_name_en : $row->room_name_es ) ?: $row->room_name_es ?: $row->room_name_en )
+				: ( ( $en ? $row->tour_name_en : $row->tour_name_es ) ?: $row->tour_name_es ?: $row->tour_name_en );
+			$row->tour_name = (string) $row->tour_name;
 		}
 
 		$primary = $bookings[0];
@@ -105,6 +122,15 @@ final class CartConfirmationEmail extends \AmirBooking\Emails\BaseEmail {
 
 	protected function get_subject(): string {
 		$ref     = 'CART-' . strtoupper( substr( $this->cart_group_id, 0, 8 ) );
+		// Un carrito de un solo ítem usa la plantilla de "Confirmación": el
+		// operador también puede haber editado su asunto (Emails → Editar
+		// textos). Sin override guardado, queda el asunto de siempre.
+		if ( $this->type_key() === 'confirmation' ) {
+			$override = \AmirBooking\Emails\EmailTexts::get_override( 'confirmation', 'subject', $this->lang );
+			if ( $override !== null ) {
+				return str_replace( '{ref}', $this->booking->booking_ref, $override );
+			}
+		}
 		$pending = $this->pending_count();
 		if ( $pending > 0 ) {
 			return $this->lang === 'es'
