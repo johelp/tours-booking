@@ -77,6 +77,32 @@ final class CartConfirmationEmail extends \AmirBooking\Emails\BaseEmail {
 		return count( array_filter( $this->items, fn( $b ) => $this->is_pending( $b ) ) );
 	}
 
+	/**
+	 * Bug real reportado por el cliente (2026-11-16, book.caliafarm.com en
+	 * vivo): "el mail personalizado está activado pero no reemplaza al
+	 * anterior, al reservar recibí el del tourflow normal". Causa: esta
+	 * clase nunca sobrescribía type_key() — se quedaba en el default de
+	 * BaseEmail (string vacío), así que `tourflow-custom-emails` (que busca
+	 * la plantilla guardada bajo la clave 'confirmation') nunca la
+	 * encontraba para este email — y CUALQUIER reserva en Pro Max pasa por
+	 * ACÁ, no por ConfirmationEmail, incluso una reserva individual (el
+	 * checkout de carrito es el único camino en Discovery/Explore/Rooms).
+	 *
+	 * Solo se mapea a 'confirmation' cuando el carrito es funcionalmente
+	 * IDÉNTICO a una reserva individual (un solo ítem, sin nada pendiente de
+	 * proveedor, no un producto digital suelto) — la plantilla del operador
+	 * está pensada para un tour/habitación de una reserva, no para listar
+	 * N ítems de compra ni el estado parcial de un proveedor externo; en
+	 * esos casos este email sigue usando su propio diseño multi-ítem, que ya
+	 * cubre esos detalles.
+	 */
+	protected function type_key(): string {
+		if ( count( $this->items ) !== 1 || $this->is_product_only() || $this->pending_count() > 0 ) {
+			return '';
+		}
+		return 'confirmation';
+	}
+
 	protected function get_subject(): string {
 		$ref     = 'CART-' . strtoupper( substr( $this->cart_group_id, 0, 8 ) );
 		$pending = $this->pending_count();

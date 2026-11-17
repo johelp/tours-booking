@@ -25,6 +25,12 @@ jobs:
       - name: Instalar dependencias (composer)
         run: composer install --prefer-dist --no-progress
 
+      - name: Auditoría de dependencias (composer audit)
+        # Hallazgo de auditoría de seguridad, 2026-11-05 (SEC-006): antes de
+        # esto, una dependencia con un CVE conocido no bloqueaba el pipeline
+        # — solo se detectaba corriendo esto a mano.
+        run: composer audit
+
       - name: Lint de sintaxis PHP (includes/)
         run: |
           find includes amir-booking.php -name "*.php" -print0 \
@@ -32,3 +38,37 @@ jobs:
 
       - name: PHPUnit
         run: vendor/bin/phpunit
+
+  audit-widget:
+    name: Auditoría de dependencias del widget (react-src)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: react-src/package-lock.json
+
+      - name: Instalar dependencias (npm ci)
+        working-directory: react-src
+        run: npm ci
+
+      - name: Auditoría de dependencias (npm audit)
+        # Hallazgo de auditoría de seguridad, 2026-11-05 (SEC-006): mismo
+        # criterio que composer audit — bloquea el merge si aparece una
+        # vulnerabilidad nueva en las dependencias de build del widget.
+        # Umbral en "critical" (no "high") a propósito: el único hallazgo
+        # pendiente hoy es esbuild/vite (GHSA-67mh-4wv8-2f99, "moderate" real
+        # pero npm lo reporta como "high" agregado vía vite) — solo
+        # explotable si el dev-server de Vite se expone a una red no
+        # confiable, lo cual nunca pasa acá (se usa solo para build local).
+        # La corrección real exige Vite 8, que cambia el bundle generado
+        # (34 vs 56 módulos transformados en la prueba de esta auditoría) —
+        # decisión diferida a una sesión con prueba visual del widget, no
+        # algo para forzar silenciosamente. Subir este umbral si aparece
+        # algo nuevo además de esbuild/vite.
+        working-directory: react-src
+        run: npm audit --audit-level=critical

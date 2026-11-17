@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Calia Farm Experience Is Confirmed</title>
+</head>
+<body style="margin:0;padding:0;background:#f3efe7;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+
+<!--
+  Plantilla de ejemplo para TourFlow → Emails personalizados → Confirmación.
+  Pegá TODO este archivo en el textarea. Variables usadas: ver la tabla de
+  la misma pantalla de admin.
+
+  DOS COSAS A COMPLETAR VOS ANTES DE ACTIVARLA:
+  1) Reemplazá REEMPLAZAR_CON_URL_DE_LA_FOTO por la URL de una foto subida a
+     la Media Library de WordPress (la del techo de uvas, por ejemplo).
+  2) El asunto del email ("Your Calia Farm Experience Is Confirmed!") NO se
+     cambia acá — este satélite solo reemplaza el cuerpo. Se configura en
+     TourFlow → ✉️ Emails → Editar textos → Confirmación → campo "Asunto".
+-->
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3efe7;">
+  <tr>
+    <td align="center" style="padding:0;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#f3efe7;">
+
+        <!-- Foto de portada -->
+        <tr>
+          <td style="padding:0;">
+            <img src="REEMPLAZAR_CON_URL_DE_LA_FOTO" width="600" alt="Calia Farm" style="display:block;width:100%;max-width:600px;height:auto;border:0;">
+          </td>
+        </tr>
+
+        <!-- Encabezado -->
+        <tr>
+          <td align="center" style="padding:40px 32px 8px;">
+            <div style="font-size:22px;color:#b89659;line-height:1;">⚜</div>
+            <h1 style="margin:12px 0 0;font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:38px;line-height:1.2;color:#1c2b3a;">
+              Your Visit<br>is Confirmed
+            </h1>
+            <div style="margin:18px auto 14px;width:40px;border-top:1px solid #c9a869;"></div>
+            <div style="font-size:12px;letter-spacing:2px;color:#8a7a5c;text-transform:uppercase;">
+              We can't wait to welcome you
+            </div>
+          </td>
+        </tr>
+
+        <!-- Cuerpo -->
+        <tr>
+          <td style="padding:28px 40px 0;font-size:15px;line-height:1.7;color:#33302a;">
+            <p style="margin:0 0 16px;">Dear <strong>{{customer_name}}</strong>,</p>
+
+            <p style="margin:0 0 16px;">
+              Welcome to Calia Farm! We're delighted to host you and look forward to
+              sharing a wonderful Sicilian experience with you.
+            </p>
+
+            <p style="margin:0 0 16px;">
+              Your booking is confirmed for <strong>{{tour_date}}</strong> at
+              <strong>{{tour_time}}</strong> for <strong>{{people_count}} guests</strong>.
+            </p>
+
+            <p style="margin:0 0 16px;">
+              Please let us know in advance if anyone in your group has food allergies
+              or dietary restrictions.
+            </p>
+
+            <p style="margin:24px 0 4px;font-weight:700;color:#1c2b3a;">Meeting point</p>
+            <p style="margin:0 0 6px;">
+              Please open this link in Google Maps to find Calia Farm:<br>
+              <a href="{{maps_url}}" style="color:#8a6d3b;">Google Maps directions</a>
+            </p>
+            <p style="margin:0 0 16px;">At the entrance, look for two large palm trees.</p>
+
+            <p style="margin:24px 0 4px;font-weight:700;color:#1c2b3a;">Experience hours by season</p>
+            <p style="margin:0 0 16px;">
+              April 1–May 31: 11:00 a.m.–3:00 p.m.<br>
+              June 1–September 14: 5:00 p.m.–9:00 p.m.<br>
+              September 15–October 31: 11:00 a.m.–3:00 p.m.
+            </p>
+
+            <p style="margin:0 0 16px;">
+              If you need any assistance, contact Piera on WhatsApp at
+              <a href="https://wa.me/393471941719" style="color:#8a6d3b;">+39 347 194 1719</a>.
+            </p>
+
+            <p style="margin:24px 0 0;">We look forward to welcoming you to {{company_name}}!</p>
+
+            <p style="margin:28px 0 0;font-family:Georgia,serif;font-style:italic;font-size:20px;color:#1c2b3a;">Nicolas</p>
+            <p style="margin:0 0 8px;font-size:13px;color:#8a7a5c;">Calia Farm Family</p>
+          </td>
+        </tr>
+
+        <!-- Tarjeta de detalles de la reserva -->
+        <tr>
+          <td style="padding:28px 40px 0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffdf9;border:1px solid #e6dcc8;border-radius:16px;">
+              <tr>
+                <td style="padding:20px 24px 8px;" align="center">
+                  <div style="font-size:11px;letter-spacing:2px;color:#8a7a5c;text-transform:uppercase;">Your booking details</div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:8px 16px 22px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td align="center" style="width:25%;padding:8px 4px;">
+                        <div style="font-size:20px;">📅</div>
+                        <div style="font-size:10px;letter-spacing:1px;color:#8a7a5c;text-transform:uppercase;margin-top:6px;">Date</div>
+                        <div style="font-size:13px;color:#1c2b3a;margin-top:2px;">{{tour_date}}</div>
+                      </td>
+                      <td align="center" style="width:25%;padding:8px 4px;">
+                        <div style="font-size:20px;">👥</div>
+                        <div style="font-size:10px;letter-spacing:1px;color:#8a7a5c;text-transform:uppercase;margin-top:6px;">Guests</div>
+                        <div style="font-size:13px;color:#1c2b3a;margin-top:2px;">{{people_count}} People</div>
+                      </td>
+                      <td align="center" style="width:25%;padding:8px 4px;">
+                        <div style="font-size:20px;">📍</div>
+                        <div style="font-size:10px;letter-spacing:1px;color:#8a7a5c;text-transform:uppercase;margin-top:6px;">Location</div>
+                        <div style="font-size:13px;color:#1c2b3a;margin-top:2px;">{{company_name}}, Sicily</div>
+                      </td>
+                      <td align="center" style="width:25%;padding:8px 4px;">
+                        <div style="font-size:20px;">🫒</div>
+                        <div style="font-size:10px;letter-spacing:1px;color:#8a7a5c;text-transform:uppercase;margin-top:6px;">Experience</div>
+                        <div style="font-size:13px;color:#1c2b3a;margin-top:2px;">{{tour_name}}</div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Acciones útiles (opcional — podés borrar este bloque si no lo querés) -->
+        <tr>
+          <td align="center" style="padding:22px 40px 0;font-size:13px;color:#8a7a5c;">
+            <a href="{{pdf_url}}" style="color:#8a6d3b;">Download voucher</a>
+            &nbsp;·&nbsp;
+            <a href="{{verify_url}}" style="color:#8a6d3b;">View my booking</a>
+            &nbsp;·&nbsp;
+            <a href="{{calendar_url}}" style="color:#8a6d3b;">Add to calendar</a>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:6px 40px 0;font-size:12px;color:#b3a688;">
+            Booking reference: {{booking_ref}}
+          </td>
+        </tr>
+
+        <!-- Pie -->
+        <tr>
+          <td align="center" style="padding:32px 40px 40px;">
+            <div style="margin:0 0 10px;color:#c9a869;font-size:16px;">♡</div>
+            <div style="font-family:Georgia,serif;font-style:italic;font-size:15px;color:#8a7a5c;">
+              We can't wait to host you.
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>

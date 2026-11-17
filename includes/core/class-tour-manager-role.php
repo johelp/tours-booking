@@ -115,6 +115,23 @@ class TourManagerRole {
         if ( is_wp_error( $user ) || ! ( $user instanceof \WP_User ) || ! $user->has_cap( 'manage_amir_booking' ) ) {
             return $redirect_to;
         }
+
+        // Bug real reportado por el cliente (2026-11-16, book.caliafarm.com en
+        // vivo): un Tour Manager que inicia sesión por el login normal de WP
+        // nunca recibía la cookie propia del panel /gestor/ — quedaba varado
+        // en wp-admin curado, y si después pegaba un link a /gestor/, lo
+        // rebotaba al login del panel (ManagerPanel::maybe_render(), sin
+        // cookie válida). Puente agregado en ManagerAuth::bridge_from_wp_login()
+        // — mantiene las capabilities de wp-admin intactas (por si alguna
+        // pantalla del panel las necesita por detrás, ej. wp.media), solo
+        // cambia a dónde aterriza al loguearse.
+        if ( class_exists( '\TourFlow\Panel\ManagerAuth' ) ) {
+            $bridged = \TourFlow\Panel\ManagerAuth::bridge_from_wp_login( $user );
+            if ( $bridged ) {
+                return $bridged;
+            }
+        }
+
         return admin_url( 'admin.php?page=amir-booking' );
     }
 
@@ -150,8 +167,21 @@ class TourManagerRole {
             return; // Está en una página permitida
         }
 
-        // Si está en el dashboard genérico de WP → redirigir al del plugin
+        // Si está en el dashboard genérico de WP → redirigir al panel /gestor/
+        // (bug real, book.caliafarm.com en vivo, 2026-11-16): una sesión de WP
+        // ya abierta ANTES de este fix (o cualquier otro camino que no pasó
+        // por redirect_after_login()) podía seguir cayendo acá sin cookie del
+        // panel — se bridgea también en este punto, no solo al loguearse.
         if ( ! $page && ( ! $screen || $screen->id === 'dashboard' ) ) {
+            if ( class_exists( '\TourFlow\Panel\ManagerAuth' ) ) {
+                $user    = wp_get_current_user();
+                $bridged = $user instanceof \WP_User ? \TourFlow\Panel\ManagerAuth::bridge_from_wp_login( $user ) : null;
+                if ( $bridged ) {
+                    wp_redirect( $bridged );
+                    exit;
+                }
+            }
+
             wp_redirect( admin_url( 'admin.php?page=amir-booking' ) );
             exit;
         }

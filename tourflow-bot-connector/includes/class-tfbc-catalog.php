@@ -208,4 +208,133 @@ class Catalog {
 
 		return null;
 	}
+
+	// ── POST /quote ──────────────────────────────────────────────────────
+
+	/** Cotización real del motor de precios del núcleo (misma ruta que usa el widget). Solo tours. */
+	public static function quote( array $p ): array {
+		$request = new \WP_REST_Request( 'POST', '/amir/v1/bookings/quote' );
+		foreach ( [ 'tour_id', 'schedule_id', 'date', 'adults', 'children', 'babies', 'coupon_code', 'lang' ] as $k ) {
+			if ( isset( $p[ $k ] ) ) {
+				$request->set_param( $k, $p[ $k ] );
+			}
+		}
+		$response = rest_do_request( $request );
+		$data     = $response->get_data();
+		if ( ! $response->is_error() && is_array( $data ) ) {
+			$data = self::normalize_quote( $data, $p );
+		}
+		return [ 'ok' => ! $response->is_error(), 'status' => $response->get_status(), 'data' => $data ];
+	}
+
+	/**
+	 * Agrega campos neutros de moneda (el núcleo los llama *_mxn aunque el
+	 * sitio cobre en otra moneda), el monto a cobrar ahora (depósito) y si la
+	 * fecha tiene cupo — el núcleo cotiza igual una fecha sin cupo.
+	 */
+	private static function normalize_quote( array $q, array $p ): array {
+		$total   = (float) ( $q['total_mxn'] ?? 0 );
+		$pct     = (int) ( $q['deposit_pct'] ?? 0 );
+		$due_now = $pct > 0 ? (float) ( $q['deposit_mxn'] ?? 0 ) : $total;
+
+		$q['currency']  = self::currency();
+		$q['total']     = $total;
+		$q['due_now']   = $due_now;
+		$q['due_later'] = round( $total - $due_now, 2 );
+
+		$slots = self::availability( 'tour', (int) ( $p['tour_id'] ?? 0 ), [ 'date' => $p['date'] ?? '' ] );
+		$q['available'] = null; // null = no se pudo determinar
+		if ( is_array( $slots ) ) {
+			$schedule_id = (int) ( $p['schedule_id'] ?? 0 );
+			$q['available'] = false;
+			foreach ( $slots as $slot ) {
+				if ( ! empty( $slot['available'] ) && ( $schedule_id === 0 || (int) ( $slot['id'] ?? 0 ) === $schedule_id ) ) {
+					$q['available'] = true;
+					break;
+				}
+			}
+		}
+		return $q;
+	}
+
+	// ── POST /book ───────────────────────────────────────────────────────
+
+	/**
+	 * Crea una reserva PENDIENTE de un tour con la misma validación del
+	 * núcleo (cupo, mínimos, política de niños, nombres, cupón) y devuelve el
+	 * link de pago. NUNCA cobra ni toca datos de tarjeta: el pago ocurre en
+	 * la página del sitio (verificar-reserva) con la pasarela activa.
+	 * El cupo queda retenido hasta `amir_pending_expire_mins`.
+	 */
+	public static function book( array $p ): array {
+		$manager = new \AmirBooking\Core\BookingManager();
+		$result  = $manager->create_pending( [
+			'tour_id'           => (int) $p['tour_id'],
+			'schedule_id'       => (int) ( $p['schedule_id'] ?? 0 ),
+			'date'              => $p['date'],
+			'adults'            => (int) $p['adults'],
+			'children'          => (int) ( $p['children'] ?? 0 ),
+			'babies'            => (int) ( $p['babies'] ?? 0 ),
+			'customer_name'     => $p['customer_name'],
+			'customer_email'    => $p['customer_email'],
+			'customer_phone'    => $p['customer_phone'] ?? '',
+			'lang'              => $p['lang'] ?? 'es',
+			'special_requests'  => $p['special_requests'] ?? '',
+			'coupon_code'       => $p['coupon_code'] ?? '',
+			'participant_names' => is_array( $p['participant_names'] ?? null ) ? $p['participant_names'] : [],
+			'policy_accepted'   => ! empty( $p['policy_accepted'] ),
+			'terms_accepted'    => ! empty( $p['terms_accepted'] ),
+			'source'            => 'direct',
+		] );
+
+		if ( ! $result->success ) {
+			return [ 'success' => false, 'error' => $result->error ];
+		}
+
+		$booking = $manager->get_booking_by_ref( $result->booking_ref );
+		return [
+			'success'          => true,
+			'booking_ref'      => $result->booking_ref,
+			'status'           => $result->status ?? 'pending',
+			'total'            => $result->total_mxn,
+			// Lo que se cobra al pagar (con depósito parcial es menor que `total`).
+			'due_now'          => (float) ( $result->charge_mxn ?? $result->total_mxn ),
+			'currency'         => self::currency(),
+			'requires_payment' => (bool) $result->requires_payment,
+			// Sin pago inmediato (aprobación de proveedor, solicitud de fecha,
+			// cotización a medida): el sitio avisa por email, no hay link.
+			'payment_url'      => $result->requires_payment && $booking ? self::pay_url( $booking ) : null,
+		];
+	}
+
+	private static function pay_url( object $booking ): string {
+		$page_id = (int) get_option( 'amir_verify_page_id', 0 );
+		$base    = $page_id ? get_permalink( $page_id ) : false;
+		if ( trim( (string) get_option( 'amir_public_site_url', '' ) ) !== '' ) {
+			$base = false;
+		}
+		$base = $base ?: ( \AmirBooking\Core\FrontendUrl::base() . '/verificar-reserva/' );
+		return add_query_arg( [ 'ref' => $booking->booking_ref, 'token' => $booking->access_token ?? '' ], $base );
+	}
+
+	// ── GET /bookings/{ref} ──────────────────────────────────────────────
+
+	/** Estado de una reserva; exige el email con el que se hizo (no basta el ref, es secuencial). */
+	public static function booking_status( string $ref, string $email ): ?array {
+		$manager = new \AmirBooking\Core\BookingManager();
+		$booking = $manager->get_booking_by_ref( strtoupper( $ref ) );
+		if ( ! $booking || ! $manager->authorize_public_access( $booking, '', $email ) ) {
+			return null; // mismo 404 para "no existe" y "email incorrecto": no revelar cuál
+		}
+		return [
+			'booking_ref' => $booking->booking_ref,
+			'status'      => $booking->status,
+			'date'        => $booking->tour_date ?? null,
+			'adults'      => (int) ( $booking->adults ?? 0 ),
+			'children'    => (int) ( $booking->children ?? 0 ),
+			'total'       => (float) $booking->total_mxn,
+			'currency'    => self::currency(),
+			'payment_url' => in_array( $booking->status, [ 'pending', 'awaiting_payment' ], true ) ? self::pay_url( $booking ) : null,
+		];
+	}
 }

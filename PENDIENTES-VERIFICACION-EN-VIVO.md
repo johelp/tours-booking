@@ -1,6 +1,6 @@
 # Pendientes de verificación en vivo
 
-Lista de todo lo que está construido y documentado pero **todavía no pasó por un WordPress real en un sitio público** (o, cuando se indica, falta probarlo en un dispositivo o cuenta externa). Armada el 2026-10-04 a partir de `CLAUDE.md` y `CONTRIBUTING.md`.
+Lista de todo lo que está construido y documentado pero **todavía no pasó por un WordPress real en un sitio público** (o, cuando se indica, falta probarlo en un dispositivo o cuenta externa). Armada el 2026-10-04 a partir de `CLAUDE.md` y `CONTRIBUTING.md`. Secciones D/E/F revisadas y actualizadas el 2026-11-17 contra pruebas reales en `book.caliafarm.com` — el resto de las secciones (A, B, C, G-L) sigue reflejando el estado del 2026-10-04, sin revalidar en esta ronda.
 
 Lo que sí se verificó en el sandbox **local** (Docker, MariaDB y MySQL 8) está marcado como "local". Eso no reemplaza una prueba en un sitio real.
 
@@ -42,7 +42,7 @@ Marcá cada ítem cuando lo pruebes y anotá la fecha y el sitio.
 
 ## D. Panel de gestión sin wp-admin (núcleo v5.11.x)
 
-- [ ] Login en `/gestor/` con un usuario con rol de gestor de tours.
+- [x] **Login en `/gestor/` desde el login normal de WordPress** — confirmado en vivo en `book.caliafarm.com`, 2026-11-16 (v5.13.17): el puente nuevo (`ManagerAuth::bridge_from_wp_login()`) funciona para una cuenta de Panel rápido. **Sigue sin confirmar específicamente para una cuenta con rol "Tour Manager"** — el sitio no tiene ninguna cuenta con ese rol todavía, falta crear una y probar.
 - [ ] Tours y Habitaciones: guardado completo (precio, horarios, galería). Es la única superficie con `wp.media` fuera de wp-admin.
 - [ ] Drawer mobile en un celular real (no solo en el harness estático).
 - [ ] Reservas, Calendario, Disponibilidad, Partners, Liquidación.
@@ -50,15 +50,21 @@ Marcá cada ítem cuando lo pruebes y anotá la fecha y el sitio.
 - [ ] Idioma del panel = idioma del sitio (no el del perfil), incluido el Dashboard, que todavía puede quedar en el idioma del perfil (limitación conocida).
 - [ ] **Nav del editor de tours** (v5.13.8) — barra sticky con un link por metabox + botón "Guardar" duplicado arriba; confirmar que funciona bien en un celular real.
 
-## E. Panel rápido — roles nuevos (v5.13.0 / v5.13.1)
+## E. Panel rápido — roles nuevos (v5.13.0 → v5.13.20)
 
-- [ ] Crear un usuario `amir_quick_staff` y uno `amir_quick_cashier`.
-- [ ] Confirmar que el menú queda recortado a una sola sección y que tecleando la URL a mano no se accede a otras.
-- [ ] Confirmar que el staff no ve montos ni precios, y que el cashier puede marcar el saldo cobrado.
-- [ ] Listado en tarjetas en un celular real (375 px y 320 px).
+- [x] Crear un usuario `amir_quick_staff` — confirmado en vivo en `book.caliafarm.com` (ya existía 1 cuenta real).
+- [x] Confirmar que el menú queda recortado a una sola sección ("Panel rápido") — confirmado en vivo.
+- [ ] Crear un usuario `amir_quick_cashier` y confirmar que ve pagado/falta por reserva y puede marcar el saldo cobrado — todavía sin probar con una cuenta real de este rol específico.
+- [ ] Tecleando la URL a mano (`?tourflow_manager_page=tours`, etc.) no se accede a otras secciones — verificado solo por lectura de código.
+- [ ] Listado en tarjetas en un celular real (375 px y 320 px) — solo verificado con harness estático.
+- [ ] **Contacto (`tel:`/`mailto:`) y requerimientos** (v5.13.19) — con una reserva real que tenga teléfono/email/solicitudes especiales cargados.
+- [ ] **Reservas pasadas + rango de fechas libre** (v5.13.20) — confirmar que "Pasadas" trae reservas reales con fecha ya ocurrida, y que el selector Desde/Hasta funciona.
+- [ ] **Estadísticas del período** (v5.13.20) — "Personas en tours"/"Personas alojadas" contra un rango con reservas reales ya completadas, para confirmar que el número coincide con lo esperado (no cuenta de más ni de menos).
+- [ ] **Estética alineada al Dashboard** (`.tfp-card`/`.tfp-stats`, v5.13.20) — confirmar visualmente en el sitio real, no solo en el harness estático.
 
 ## F. Emails
 
+- [ ] **Plantilla completa personalizable** (`tourflow-custom-emails`, v5.13.16/18) — con el fix de `CartConfirmationEmail::type_key()` (v5.13.18) ya instalado, hacer una reserva real de un solo ítem en `book.caliafarm.com` y confirmar que llega el diseño de Calia Farm, y que una reserva de carrito con 2+ ítems sigue con el diseño multi-ítem de siempre (no probado explícitamente, solo verificado por lectura de código).
 - [ ] **Bloque HTML personalizado** (v5.12.0) — banner real de Caliafarm en Gmail y Outlook (esos clientes son más estrictos que un navegador).
 - [ ] **Plantillas en inglés** — con el idioma del admin en inglés, todos los textos se ven en inglés.
 - [ ] **Link de pago** (v5.6.21) — el mensaje personalizado llega en el email.

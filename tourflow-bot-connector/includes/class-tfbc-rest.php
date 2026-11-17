@@ -62,6 +62,82 @@ class Rest {
 				'lang' => [ 'required' => false, 'type' => 'string', 'default' => 'es' ],
 			],
 		] );
+
+		register_rest_route( self::NAMESPACE, '/quote', [
+			'methods'             => \WP_REST_Server::CREATABLE,
+			'callback'            => [ __CLASS__, 'post_quote' ],
+			'permission_callback' => [ Auth::class, 'permission_callback' ],
+			'args'                => [
+				'tour_id' => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+				'date'    => [ 'required' => true, 'type' => 'string', 'format' => 'date' ],
+				'adults'  => [ 'required' => true, 'type' => 'integer', 'minimum' => 1, 'maximum' => 20 ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/book', [
+			'methods'             => \WP_REST_Server::CREATABLE,
+			'callback'            => [ __CLASS__, 'post_book' ],
+			'permission_callback' => [ Auth::class, 'permission_callback' ],
+			'args'                => [
+				'tour_id'         => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+				'date'            => [ 'required' => true, 'type' => 'string', 'format' => 'date' ],
+				'adults'          => [ 'required' => true, 'type' => 'integer', 'minimum' => 1, 'maximum' => 20 ],
+				'customer_name'   => [ 'required' => true, 'type' => 'string', 'minLength' => 2 ],
+				'customer_email'  => [ 'required' => true, 'type' => 'string', 'format' => 'email' ],
+				'policy_accepted' => [ 'required' => true, 'type' => 'boolean' ],
+				'terms_accepted'  => [ 'required' => true, 'type' => 'boolean' ],
+			],
+		] );
+
+		register_rest_route( self::NAMESPACE, '/bookings/(?P<ref>[A-Za-z0-9\-]+)', [
+			'methods'             => \WP_REST_Server::READABLE,
+			'callback'            => [ __CLASS__, 'get_booking_status' ],
+			'permission_callback' => [ Auth::class, 'permission_callback' ],
+			'args'                => [
+				'email' => [ 'required' => true, 'type' => 'string', 'format' => 'email' ],
+			],
+		] );
+	}
+
+	/** Parámetros de reserva/cotización sanitizados — whitelist explícita, nada del body pasa sin tocar. */
+	private static function clean_params( \WP_REST_Request $r ): array {
+		$out = [];
+		foreach ( [ 'tour_id', 'schedule_id', 'adults', 'children', 'babies' ] as $k ) {
+			if ( $r->get_param( $k ) !== null ) {
+				$out[ $k ] = (int) $r->get_param( $k );
+			}
+		}
+		foreach ( [ 'date', 'customer_name', 'customer_phone', 'coupon_code' ] as $k ) {
+			if ( $r->get_param( $k ) !== null ) {
+				$out[ $k ] = sanitize_text_field( (string) $r->get_param( $k ) );
+			}
+		}
+		$out['customer_email']   = sanitize_email( (string) $r->get_param( 'customer_email' ) );
+		$out['special_requests'] = sanitize_textarea_field( (string) $r->get_param( 'special_requests' ) );
+		$out['lang']             = sanitize_key( $r->get_param( 'lang' ) ?: 'es' );
+		$names                   = $r->get_param( 'participant_names' );
+		$out['participant_names'] = is_array( $names ) ? array_map( 'sanitize_text_field', array_map( 'strval', $names ) ) : [];
+		$out['policy_accepted']  = $r->get_param( 'policy_accepted' ) === true;
+		$out['terms_accepted']   = $r->get_param( 'terms_accepted' ) === true;
+		return $out;
+	}
+
+	public static function post_quote( \WP_REST_Request $request ): \WP_REST_Response {
+		$res = Catalog::quote( self::clean_params( $request ) );
+		return new \WP_REST_Response( self::envelope( $res['ok'] ? [ 'quote' => $res['data'] ] : [ 'error' => $res['data']['error'] ?? 'quote_failed' ] ), $res['ok'] ? 200 : 422 );
+	}
+
+	public static function post_book( \WP_REST_Request $request ): \WP_REST_Response {
+		$res = Catalog::book( self::clean_params( $request ) );
+		return new \WP_REST_Response( self::envelope( $res ), $res['success'] ? 201 : 422 );
+	}
+
+	public static function get_booking_status( \WP_REST_Request $request ): \WP_REST_Response {
+		$data = Catalog::booking_status( sanitize_text_field( (string) $request->get_param( 'ref' ) ), sanitize_email( (string) $request->get_param( 'email' ) ) );
+		if ( $data === null ) {
+			return new \WP_REST_Response( self::envelope( [ 'error' => 'not_found' ] ), 404 );
+		}
+		return rest_ensure_response( self::envelope( [ 'booking' => $data ] ) );
 	}
 
 	/** Envoltorio común — `site` ayuda al bot a distinguir de cuál instalación viene cada respuesta si consulta varias. */

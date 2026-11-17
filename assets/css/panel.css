@@ -278,6 +278,39 @@ body.tfp-body {
    Una sola columna en cualquier ancho, sin media query: nada que colapsar
    ni scrollear de costado. */
 
+/* Rango de fechas libre (2026-11-17, pedido del cliente: "ver reservas más
+   allá del umbral de días que proponen los botones") — mismo criterio
+   mobile-first del resto de esta sección: flex-wrap, sin media query. El
+   resumen de días y las estadísticas de período reusan .tfp-card/.tfp-stats
+   (ver class-quick-section.php) en vez de clases propias — pedido explícito
+   del cliente de compartir estética con el Dashboard. */
+.tfp-quick-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+
+.tfp-quick-range label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ab-muted, #5a7068);
+  gap: 4px;
+}
+
+.tfp-quick-range input[type="date"] {
+  min-height: 36px;
+}
+
+.tfp-quick-range-hint {
+  font-size: 12.5px;
+  color: #5a7068;
+  margin: 8px 0 0;
+}
+
 .tfp-quick-days {
   display: flex;
   flex-wrap: wrap;
@@ -333,6 +366,44 @@ body.tfp-body {
   color: #3d3d3a;
   margin-bottom: 12px;
   line-height: 1.5;
+}
+
+/* Contacto/requerimientos (2026-11-16) — mismo criterio de touch target que
+   el resto del panel: los links de tel:/mailto: necesitan área clickeable
+   real en mobile, no solo texto subrayado. */
+.tfp-quick-item-contact {
+  font-size: 13px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.tfp-quick-item-contact a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--ab-teal-dark, #0F6E56);
+  text-decoration: none;
+}
+
+.tfp-quick-item-notes {
+  font-size: 13px;
+  color: #5a7068;
+  background: #faf8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  line-height: 1.45;
+}
+
+.tfp-quick-item-money {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ab-text, #1a2e24);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--ab-border, #e1f5ee);
 }
 
 .tfp-quick-item-bottom {

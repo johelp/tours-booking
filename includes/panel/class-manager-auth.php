@@ -35,6 +35,38 @@ class ManagerAuth {
 			|| $user->has_cap( \AmirBooking\Core\QuickPanelRole::CAP_VIEW );
 	}
 
+	/**
+	 * Puente entre el login NORMAL de WordPress (wp-login.php) y la sesión
+	 * propia del panel. Bug real reportado por el cliente, 2026-11-16: un
+	 * Tour Manager o un rol del Panel rápido que inicia sesión por el login
+	 * estándar de WP nunca recibía la cookie propia del panel (solo se
+	 * emitía desde el formulario de /gestor/login, al que nadie llega sin
+	 * que alguien le pase el link a mano) — así que `/gestor/` siempre los
+	 * mandaba de nuevo a loguearse ahí, o quedaban varados en un wp-admin
+	 * sin ningún menú útil (ver TourManagerRole::redirect_after_login() y
+	 * QuickPanelRole::register_hooks(), los dos puntos que llaman a esto).
+	 *
+	 * Deliberadamente excluye a administradores reales (`manage_options`):
+	 * ellos siguen entrando a wp-admin normal, como siempre — forzarlos
+	 * también al panel en cada login sería una regresión para quien
+	 * necesita Configuración/Personalización/plugins, no solo operar el
+	 * día a día.
+	 *
+	 * @return string|null URL del panel a la que redirigir, o null si este
+	 *         usuario no debe puentearse (admin real, o sin ninguna
+	 *         capability del panel) — quien llama debe seguir con su
+	 *         redirect normal en ese caso.
+	 */
+	public static function bridge_from_wp_login( \WP_User $user ): ?string {
+		if ( $user->has_cap( 'manage_options' ) || ! self::user_can_access( $user ) ) {
+			return null;
+		}
+
+		self::set_cookie( self::issue_token( (int) $user->ID ) );
+
+		return \TourFlow\Panel\ManagerPanel::url( 'dashboard' );
+	}
+
 	/** Devuelve el token a guardar en cookie, o null si las credenciales/capability no son válidas. */
 	public static function login( string $username, string $password ): ?string {
 		$user = wp_authenticate( $username, $password );

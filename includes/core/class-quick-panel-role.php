@@ -57,4 +57,42 @@ class QuickPanelRole {
 		remove_role( self::STAFF_SLUG );
 		remove_role( self::CASHIER_SLUG );
 	}
+
+	/**
+	 * Bug real reportado por el cliente (2026-11-16, book.caliafarm.com en
+	 * vivo, `?tourflow_manager_page=rapido`): estos dos roles nunca tuvieron
+	 * NINGÚN hook de login — a diferencia de TourManagerRole, que al menos
+	 * redirigía a un wp-admin curado. Sin `manage_amir_booking`/`edit_posts`,
+	 * un login normal de WP los dejaba en `profile.php` sin ningún menú útil,
+	 * y si después pegaban el link del panel a mano, `ManagerPanel` los
+	 * rebotaba al login del panel (sin cookie propia — ver
+	 * `ManagerAuth::bridge_from_wp_login()`, el mismo puente que ya usa
+	 * TourManagerRole). El docblock de esta clase ya decía que el diseño
+	 * original era "entra directo a /gestor/" — nunca se construyó el
+	 * mecanismo para llegar ahí desde el login estándar.
+	 */
+	public static function register_hooks(): void {
+		add_filter( 'login_redirect', [ __CLASS__, 'redirect_after_login' ], 10, 3 );
+	}
+
+	public static function redirect_after_login( string $redirect_to, string $requested, $user ): string {
+		if ( is_wp_error( $user ) || ! ( $user instanceof \WP_User ) ) {
+			return $redirect_to;
+		}
+		if ( ! $user->has_cap( self::CAP_VIEW ) || $user->has_cap( 'manage_amir_booking' ) || $user->has_cap( 'manage_options' ) ) {
+			// Lo segundo evita pisar a alguien con un rol más amplio (ej. un
+			// Administrador al que también se le sumó este rol por error) —
+			// esos ya tienen su propio redirect (TourManagerRole o ninguno).
+			return $redirect_to;
+		}
+
+		if ( class_exists( '\TourFlow\Panel\ManagerAuth' ) ) {
+			$bridged = \TourFlow\Panel\ManagerAuth::bridge_from_wp_login( $user );
+			if ( $bridged ) {
+				return $bridged;
+			}
+		}
+
+		return $redirect_to;
+	}
 }

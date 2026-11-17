@@ -1,0 +1,4 @@
+name = "tourflow-mcp"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+# Secretos (wrangler secret put): TFBC_BASE_URL (https://sitio/wp-json/tfbc/v1), TFBC_API_KEY, MCP_TOKEN

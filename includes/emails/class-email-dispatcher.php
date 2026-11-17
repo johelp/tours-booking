@@ -610,11 +610,24 @@ abstract class BaseEmail {
         // Todo el contenido se arma dentro de run_in(): __()/_e() traducen
         // al idioma de LA RESERVA (no al locale del sitio) mientras dure el callback.
         $result = \AmirBooking\Core\Languages::run_in( $this->lang, function() use ( $to ) {
-            return wp_mail(
-                $to,
-                $this->get_subject(),
-                $this->wrap_template( $this->get_body_content() )
+            // Punto de extensión único para plugins satélite que necesiten
+            // reemplazar la plantilla COMPLETA de un tipo de email (no solo
+            // el bloque HTML de marca que ya ofrece custom_html_block) —
+            // pedido del cliente 2026-11-16. Aditivo y agnóstico de tipo: el
+            // default es el HTML que ya se arma siempre, así que ningún
+            // sitio sin satélite nota la diferencia. Vive acá (BaseEmail),
+            // no en ConfirmationEmail, para que cubra los ~15 tipos de
+            // email sin otro cambio de núcleo si el satélite suma soporte
+            // para más adelante.
+            $html = apply_filters(
+                'amir_email_render_html',
+                $this->wrap_template( $this->get_body_content() ),
+                $this->booking,
+                static::type_key(),
+                $this
             );
+
+            return wp_mail( $to, $this->get_subject(), $html );
         } );
 
         remove_filter( 'wp_mail_content_type', [ $this, 'set_html' ] );
@@ -655,7 +668,7 @@ abstract class BaseEmail {
     // EmailTexts en wp_options.
 
     /** Clave de tipo para EmailTexts — cada subclase la redefine. */
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return '';
     }
 
@@ -788,7 +801,14 @@ abstract class BaseEmail {
      * access_token de la reserva para que el link autorice la lectura
      * sin pedirle el email de nuevo al cliente.
      */
-    protected function verify_url(): string {
+    /**
+     * Pública (no solo protected) desde 2026-11-16 — la usa un plugin
+     * satélite de plantillas de email 100% personalizables vía el filtro
+     * `amir_email_render_html` (ver send() más arriba), que recibe esta
+     * instancia como 4º argumento. Ensancharla evita que ese satélite
+     * duplique la lógica de verify_page_id/amir_public_site_url acá.
+     */
+    public function verify_url(): string {
         $page_id = (int) get_option( 'amir_verify_page_id', 0 );
         $base    = $page_id ? get_permalink( $page_id ) : false;
         // Headless (v5.13.12): un frontend externo configurado gana sobre la
@@ -1002,8 +1022,9 @@ abstract class BaseEmail {
      * de un punto fijo de Bacalar — antes cualquier instalación sin
      * coordenadas mandaba el link "Ver en mapa" a Quintana Roo sin importar
      * dónde opere el negocio (bug real reportado 2026-08-05).
+     * Pública desde 2026-11-16 — mismo motivo que verify_url()/calendar_url().
      */
-    protected function maps_url(): string {
+    public function maps_url(): string {
         $b = $this->booking;
         if ( $b->meeting_lat && $b->meeting_lng ) {
             return "https://maps.google.com/?q={$b->meeting_lat},{$b->meeting_lng}";
@@ -1011,7 +1032,8 @@ abstract class BaseEmail {
         return 'https://maps.google.com/?q=' . rawurlencode( get_option( 'amir_company_name', 'TourFlow' ) );
     }
 
-    protected function calendar_url(): string {
+    /** Pública por el mismo motivo que verify_url() — ver su comentario. */
+    public function calendar_url(): string {
         $b     = $this->booking;
         $start = str_replace('-','',$b->tour_date) . 'T' . str_replace(':','',$b->time_start??'') . '00';
         $company = get_option( 'amir_company_name', 'TourFlow' );
@@ -1064,7 +1086,7 @@ abstract class BaseEmail {
 
 class ConfirmationEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'confirmation';
     }
 
@@ -1179,7 +1201,7 @@ class ConfirmationEmail extends BaseEmail {
 
 class ReminderEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'reminder';
     }
 
@@ -1227,7 +1249,7 @@ class ReminderEmail extends BaseEmail {
 
 class ReviewEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'review';
     }
 
@@ -1281,7 +1303,7 @@ class CancellationEmail extends BaseEmail {
         $this->reason_type = $reason_type;
     }
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'cancellation';
     }
 
@@ -1368,7 +1390,7 @@ class TourOpenedEmail extends BaseEmail {
      * de contenido). El CTA de pago queda solo en el cuerpo, como en el
      * resto de los emails transaccionales del sistema.
      */
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'tour_opened';
     }
 
@@ -1407,7 +1429,7 @@ class TourOpenedEmail extends BaseEmail {
 
 class PaymentLinkEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'payment_link';
     }
 
@@ -1462,7 +1484,7 @@ class PaymentLinkEmail extends BaseEmail {
 
 class PaymentFailedEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'payment_failed';
     }
 
@@ -1515,7 +1537,7 @@ class PaymentFailedEmail extends BaseEmail {
 
 class RescheduleEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'reschedule';
     }
 
@@ -1555,7 +1577,7 @@ class RescheduleEmail extends BaseEmail {
 
 class ProviderNoticeEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'provider_notice';
     }
 
@@ -1665,7 +1687,7 @@ class ProviderNoticeEmail extends BaseEmail {
 
 class ProviderClientDetailsEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'provider_client_details';
     }
 
@@ -1711,7 +1733,7 @@ class ProviderClientDetailsEmail extends BaseEmail {
 
 class ProviderPendingNoticeEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'provider_pending';
     }
 
@@ -1759,7 +1781,7 @@ class ProviderPendingNoticeEmail extends BaseEmail {
  */
 class DateRequestedEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'date_requested';
     }
 
@@ -1809,7 +1831,7 @@ class DateRequestedEmail extends BaseEmail {
  */
 class DateRequestRejectedEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'date_request_rejected';
     }
 
@@ -1869,7 +1891,7 @@ class DateRequestRejectedEmail extends BaseEmail {
  */
 class BalancePaymentLinkEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'balance_payment_link';
     }
 
@@ -1933,7 +1955,7 @@ class BalancePaymentLinkEmail extends BaseEmail {
  */
 class BalancePaidEmail extends BaseEmail {
 
-    protected static function type_key(): string {
+    protected function type_key(): string {
         return 'balance_paid';
     }
 

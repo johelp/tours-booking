@@ -52,6 +52,9 @@ final class Plugin {
         // el plugin — mismo criterio de autocorrección que
         // Installer::ensure_booking_status_enum()/ManagerPanel::maybe_flush_rewrite_rules().
         QuickPanelRole::register();
+        // Bug real corregido 2026-11-16 (book.caliafarm.com en vivo): faltaba
+        // el puente de login hacia /gestor/ — ver QuickPanelRole::register_hooks().
+        QuickPanelRole::register_hooks();
 
         // ── Panel de gestión sin wp-admin (fase 1: Dashboard/Reservas/
         // Calendario) — universal a las 3 ediciones, no gateado a Pro Max

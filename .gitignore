@@ -13,16 +13,15 @@ Thumbs.db
 # Caché de PHPUnit
 .phpunit.result.cache
 
-# Configuración local de Claude Code
-.claude/settings.local.json
-
-# Worktrees de Claude Code — cada uno trae su propio .git anidado; commitear
-# esto por accidente (ej. un `git add -A` sin revisar) mete un repo git
-# completo dentro de este repo. Hallazgo de auditoría de seguridad,
-# 2026-09-24: .claude/settings.local.json ya estuvo commiteado en el pasado
-# (después removido) precisamente porque solo ESE archivo puntual estaba acá
-# — el resto de .claude/ nunca tuvo cobertura.
-.claude/worktrees/
+# Configuración/estado local de Claude Code — carpeta completa, no archivos
+# puntuales. Hallazgo de auditoría de seguridad, 2026-09-24:
+# .claude/settings.local.json ya estuvo commiteado en el pasado (después
+# removido) precisamente porque solo ESE archivo estaba ignorado, no el
+# resto de .claude/ (ej. .claude/launch.json, worktrees/ con su propio .git
+# anidado). Auditoría de hardening 2026-11-05 (SEC-007): se generaliza a
+# toda la carpeta para que un archivo nuevo de esta carpeta nunca vuelva a
+# colarse por el mismo motivo.
+.claude/
 
 # Archivos temporales de trabajo — nunca deben terminar en un ZIP de
 # distribución (hallazgo de auditoría de seguridad, 2026-09-24: se filtraba

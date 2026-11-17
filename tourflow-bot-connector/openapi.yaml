@@ -1,0 +1,95 @@
+openapi: 3.1.0
+info:
+  title: TourFlow Bot Connector
+  version: 0.2.1
+  description: >
+    Catálogo, disponibilidad, cotización y reserva pendiente de TourFlow para agentes/bots.
+    Nunca cobra ni recibe datos de tarjeta: /book devuelve un payment_url donde el cliente paga.
+servers:
+  - url: https://SITIO.example.com/wp-json/tfbc/v1
+security:
+  - apiKey: []
+components:
+  securitySchemes:
+    apiKey: { type: apiKey, in: header, name: X-TFBC-Api-Key }
+  schemas:
+    BookInput:
+      type: object
+      required: [tour_id, date, adults, customer_name, customer_email, policy_accepted, terms_accepted]
+      properties:
+        tour_id: { type: integer }
+        schedule_id: { type: integer }
+        date: { type: string, format: date }
+        adults: { type: integer, minimum: 1, maximum: 20 }
+        children: { type: integer }
+        babies: { type: integer }
+        customer_name: { type: string }
+        customer_email: { type: string, format: email }
+        customer_phone: { type: string }
+        lang: { type: string }
+        coupon_code: { type: string }
+        special_requests: { type: string }
+        participant_names: { type: array, items: { type: string } }
+        policy_accepted: { type: boolean, description: "Solo true si el cliente aceptó EXPLÍCITAMENTE la política de cancelación." }
+        terms_accepted: { type: boolean, description: "Solo true si el cliente aceptó EXPLÍCITAMENTE los términos." }
+paths:
+  /catalog:
+    get:
+      operationId: listCatalog
+      summary: Lista tours (y habitaciones/productos en Pro Max)
+      parameters: [{ name: lang, in: query, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+  /items/{type}/{id}:
+    get:
+      operationId: getItem
+      summary: Detalle de un ítem
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string, enum: [tour, room, product] } }
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: lang, in: query, schema: { type: string } }
+      responses: { "200": { description: OK }, "404": { description: No existe } }
+  /availability:
+    get:
+      operationId: checkAvailability
+      summary: Disponibilidad de un tour (date) o habitación (check_in/check_out)
+      parameters:
+        - { name: type, in: query, required: true, schema: { type: string, enum: [tour, room] } }
+        - { name: id, in: query, required: true, schema: { type: integer } }
+        - { name: date, in: query, schema: { type: string, format: date } }
+        - { name: check_in, in: query, schema: { type: string, format: date } }
+        - { name: check_out, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: OK } }
+  /quote:
+    post:
+      operationId: quoteTour
+      summary: Cotiza un tour con el motor de precios real
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [tour_id, date, adults], properties: { tour_id: { type: integer }, schedule_id: { type: integer }, date: { type: string, format: date }, adults: { type: integer }, children: { type: integer }, babies: { type: integer }, coupon_code: { type: string }, lang: { type: string } } } } }
+      responses: { "200": { description: Cotización }, "422": { description: No cotizable } }
+  /book:
+    post:
+      operationId: createPendingBooking
+      summary: Crea una reserva PENDIENTE (retiene cupo) y devuelve el link de pago
+      description: Confirmar antes con el cliente fecha, personas, total y aceptación de términos/política.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BookInput" } } }
+      responses: { "201": { description: Creada }, "422": { description: Rechazada por reglas del tour } }
+  /bookings/{ref}:
+    get:
+      operationId: getBookingStatus
+      summary: Estado de una reserva (requiere el email de la reserva)
+      parameters:
+        - { name: ref, in: path, required: true, schema: { type: string } }
+        - { name: email, in: query, required: true, schema: { type: string, format: email } }
+      responses: { "200": { description: OK }, "404": { description: No encontrada } }
+  /booking-link:
+    get:
+      operationId: getBookingLink
+      summary: Link directo a la ficha del ítem, con fecha precargada
+      parameters:
+        - { name: type, in: query, required: true, schema: { type: string } }
+        - { name: id, in: query, required: true, schema: { type: integer } }
+        - { name: date, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: OK } }
